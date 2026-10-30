@@ -253,6 +253,14 @@ h2{letter-spacing:1px}
   h1{font-size:29px}
   h2{font-size:22px}
 }
+@media (min-width:1400px){
+  .app{max-width:1400px}
+  .herovid{max-width:920px;margin-left:auto;margin-right:auto}
+  #npCover{max-width:480px;margin-left:auto;margin-right:auto}
+}
+@media (min-width:1750px){
+  .app{max-width:1560px}
+}
 .statstrip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
 .stat{background:linear-gradient(180deg,#1a1b20,#0c0c0f);border:1px solid #2c2e35;border-radius:12px;padding:9px 4px;text-align:center;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
@@ -280,6 +288,7 @@ h2{letter-spacing:1px}
 .herovid{position:relative;margin:14px 0 6px;border:1px solid #454a56;border-radius:18px;overflow:hidden;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 14px 30px rgba(0,0,0,.55);background:#000}
 .herovid video{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+@media (min-width:1400px){.herovid{margin-left:auto;margin-right:auto}}
 .rowlink.expanded .openhint{display:block;font-size:11px;color:#9db9ff;margin-top:5px;letter-spacing:.4px}
 .upnext .arr{font-size:14px}
 @keyframes nextnudge{0%,100%{transform:translateX(0)}50%{transform:translateX(5px)}}
