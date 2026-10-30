@@ -131,7 +131,7 @@ const CSS = `
   --fire1:#ff5a00; --fire2:#ffb300; --fire3:#ff2d00;
 }
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:100%;overflow-x:clip}
 body{margin:0;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   background:#04060c;background-image:radial-gradient(1100px 560px at 50% -6%,rgba(38,92,255,.15) 0%,rgba(16,42,120,.04) 42%,rgba(20,36,86,0) 62%),linear-gradient(180deg,#0e1830 0%,#0a1224 26%,#060b18 58%,#030509 100%);
   background-attachment:fixed;-webkit-font-smoothing:antialiased;overflow-x:clip}
@@ -150,10 +150,11 @@ header.site{padding:20px 2px 2px;text-align:center;position:relative}
 .crowd.cl2{left:170px;bottom:0;height:168px;z-index:1}
 .crowd.cr2{right:170px;bottom:0;height:168px;z-index:1}
 @media (max-width:1100px){.crowd.cl2,.crowd.cr2{display:none}}
-header.site .wm,header.site .hotline,header.site .tagline,header.site nav.main{position:relative;z-index:2}
+header.site .wm,header.site .tagline,header.site nav.main{position:relative;z-index:2}
+header.site .hotline{position:relative;z-index:5}
 @media (min-width:901px){header.site{padding-top:56px}}
 @media (max-width:900px){.crowd{height:150px;bottom:40px}}
-@media (max-width:560px){.crowd{height:118px;opacity:.92;bottom:84px}.crowd.cl{left:-30px}.crowd.cr{right:-30px}}
+@media (max-width:560px){.crowd{height:118px;opacity:.92;bottom:84px}.crowd.cl{left:-14px}.crowd.cr{right:-14px}}
 .wm{display:inline-block;text-align:center;position:relative;isolation:isolate}
 @keyframes shine{from{background-position:50% 0%}to{background-position:50% 100%}}
 /* Futuristic wordmark (owner round 3): the ENTIRE mark leans right in
@@ -189,9 +190,7 @@ header.site .wm,header.site .hotline,header.site .tagline,header.site nav.main{p
 @keyframes flick{0%,100%{transform:scaleY(1);opacity:1}30%{transform:scaleY(1.14);opacity:.92}55%{transform:scaleY(.93);opacity:1}75%{transform:scaleY(1.08);opacity:.95}}
 .blaze-line{height:2px;width:100%;margin:1px auto 0;border-radius:2px;
   background:linear-gradient(90deg,transparent,var(--fire3) 25%,var(--fire2) 50%,var(--fire3) 75%,transparent)}
-.hotline{margin-top:5px;font-size:11px;font-weight:800;letter-spacing:3.5px;white-space:nowrap;overflow:hidden;
-  -webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);
-  mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.hotline{margin-top:5px;font-size:11px;font-weight:800;letter-spacing:3.5px;white-space:nowrap;overflow:hidden}
 .hotline .tick{display:inline-block;padding-right:12px;
   background:linear-gradient(90deg,#ff7a18,#ffc933,#ff7a18);-webkit-background-clip:text;background-clip:text;color:transparent;
   animation:tickmove 22s linear infinite}
@@ -237,6 +236,9 @@ h2{letter-spacing:1px}
 .btn-blue{background:linear-gradient(180deg,#7198ff,#2b5cff 48%,#1740b4);color:#fff;border-color:#0f2c7d;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 5px 12px rgba(0,0,0,.5)}
 .btn-block{display:block;width:100%}
+.np-top{display:flex;align-items:center;gap:14px}
+.np-bigrank{font-family:Impact,"Arial Narrow Bold",sans-serif;font-weight:900;font-style:italic;font-size:56px;line-height:.9;padding-right:.06em;background:linear-gradient(180deg,#ffffff 0%,#f4f8ff 20%,#aebdd2 38%,#ffffff 47%,#c3d0e2 58%,#7e8ea6 80%,#eef3fa 100%);background-size:100% 210%;animation:shine 4.5s ease-in-out infinite alternate;-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 -1px 1px rgba(0,0,0,.95)) drop-shadow(0 1px 0 rgba(255,255,255,.4)) drop-shadow(0 0 9px rgba(215,230,255,.3))}
+.np-ranklab{font-size:10px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-top:3px}
 .cover{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:16px;border:1px solid #4a4e58;display:block;
   box-shadow:0 10px 24px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.2)}
 /* The Spinner — the Top 20 covers ride a rotating 3D ring (SpinQuest-style
@@ -522,7 +524,7 @@ function layout(title, active, body, opts = {}) {
 <title>${esc(title)} — TOP 20</title>${ogTags}<style>${CSS}</style></head>
 <body><div class="app">
 <header class="site">
-  <img class="crowd cl" src="/crowd-left.webp?v=4" alt="" aria-hidden="true">
+  <img class="crowd cl" src="/crowd-left.webp?v=5" alt="" aria-hidden="true">
   <img class="crowd cl2" src="/crowd-guy.webp?v=4" alt="" aria-hidden="true">
   <img class="crowd cr" src="/crowd-right.webp?v=4" alt="" aria-hidden="true">
   <img class="crowd cr2" src="/crowd-lady.webp?v=4" alt="" aria-hidden="true">
@@ -1185,12 +1187,11 @@ app.get("/", (req, res) => {
   ${first ? `
   <div class="stagegrid">
   <div class="chrome-frame"><div class="panel">
-    <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">Now playing — <span id="npChannel">Main Stage</span></div>
+    <div class="np-top"><div class="np-bigrank" id="npBigRank">#${first.rank}</div><div><div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">Now playing — <span id="npChannel">Main Stage</span></div><div class="np-ranklab">National rank</div></div></div>
     <img class="cover" id="npCover" src="${esc(first.cover)}" alt="cover" style="margin-top:10px">
     <h1 id="npTitle">${esc(first.title)}</h1>
     <div class="sub" id="npArtist">${esc(first.artist)}</div>
     <div class="chips">
-      <span class="chip">National rank <b id="npRank">#${first.rank}</b></span>
       <span class="chip">Craft score <b id="npCraft">${first.craft}</b></span>
       <span class="chip">Only the Top 20 plays — 24/7</span>
     </div>
@@ -1407,7 +1408,7 @@ app.get("/", (req, res) => {
     idx = i;
     audio.src = t.audio;
     $('npCover').src = t.cover; $('npTitle').textContent = t.title;
-    $('npArtist').textContent = t.artist; $('npRank').textContent = '#' + t.rank;
+    $('npArtist').textContent = t.artist; $('npBigRank').textContent = '#' + t.rank;
     $('npCraft').textContent = t.craft; $('npChannel').textContent = LABELS[ch];
     $('npPlays').textContent = fmtN(t.plays); $('npLikes').textContent = fmtN(t.likes); $('npShares').textContent = fmtN(t.shares);
     $('npDays').textContent = t.fresh ? '🔥 New entry · Day 1' : 'Days charted · ' + (t.days || 0);
