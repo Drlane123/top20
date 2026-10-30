@@ -59,6 +59,35 @@ if (HERO) {
     res.end(HERO.poster);
   });
 }
+// Header artist crowd (owner request): two generated artist lineups that
+// stand at the top of every page, behind the TOP 20 wordmark. Same
+// base64-embed shipping as the hero (repo pipeline is text-only).
+const CROWD = (() => {
+  try {
+    return {
+      left: Buffer.from(require("./crowd-left-data"), "base64"),
+      right: Buffer.from(require("./crowd-right-data"), "base64"),
+      center: Buffer.from(require("./crowd-center-data"), "base64"),
+    };
+  } catch (e) { return null; }
+})();
+if (CROWD) {
+  app.get("/crowd-left.webp", (req, res) => {
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.end(CROWD.left);
+  });
+  app.get("/crowd-right.webp", (req, res) => {
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.end(CROWD.right);
+  });
+  app.get("/crowd-center.webp", (req, res) => {
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.end(CROWD.center);
+  });
+}
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(PUBLIC_DIR, {
   setHeaders(res, filePath) {
@@ -103,7 +132,16 @@ body::after{content:"";position:fixed;inset:0;z-index:80;pointer-events:none;
   border-image:linear-gradient(180deg,#f8fafc 0%,#7e8ea6 28%,#eef3fa 50%,#5f6b7d 76%,#dfe7f2 100%) 1;
   box-shadow:0 0 70px rgba(120,160,255,.07)}
 a{color:var(--ink)}
-header.site{padding:20px 2px 2px;text-align:center}
+header.site{padding:20px 2px 2px;text-align:center;position:relative}
+.crowd{position:absolute;bottom:26px;height:212px;width:auto;z-index:0;pointer-events:none;mix-blend-mode:screen;opacity:.94;filter:contrast(1.3) brightness(.92);-webkit-mask-image:linear-gradient(180deg,#000 85%,transparent 99%);mask-image:linear-gradient(180deg,#000 85%,transparent 99%)}
+.crowd.cl{left:-4px}
+.crowd.cr{right:-4px}
+.crowd.cc{left:50%;transform:translateX(-50%);height:208px;bottom:22px}
+@media (max-width:1100px){.crowd.cc{display:none}}
+header.site .wm,header.site .hotline,header.site .tagline,header.site nav.main{position:relative;z-index:2}
+@media (min-width:901px){header.site{padding-top:46px}}
+@media (max-width:900px){.crowd{height:150px;bottom:40px}}
+@media (max-width:560px){.crowd{height:104px;opacity:.5;bottom:88px}}
 .wm{display:inline-block;text-align:center;position:relative;isolation:isolate}
 @keyframes shine{from{background-position:50% 0%}to{background-position:50% 100%}}
 /* Futuristic wordmark (owner round 3): the ENTIRE mark leans right in
@@ -472,6 +510,9 @@ function layout(title, active, body, opts = {}) {
 <title>${esc(title)} — TOP 20</title>${ogTags}<style>${CSS}</style></head>
 <body><div class="app">
 <header class="site">
+  <img class="crowd cl" src="/crowd-left.webp" alt="" aria-hidden="true">
+  <img class="crowd cc" src="/crowd-center.webp" alt="" aria-hidden="true">
+  <img class="crowd cr" src="/crowd-right.webp" alt="" aria-hidden="true">
   <div class="wm">
     <div class="wordmark"><span class="top">TOP</span> <span class="twenty">20</span></div>
     <div class="blaze"></div><div class="blaze-line"></div>
