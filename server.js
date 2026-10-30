@@ -144,7 +144,7 @@ body::after{content:"";position:fixed;inset:0;z-index:80;pointer-events:none;
   box-shadow:0 0 70px rgba(120,160,255,.03)}
 a{color:var(--ink)}
 header.site{padding:20px 2px 2px;text-align:center;position:relative}
-.crowd{position:absolute;bottom:64px;height:176px;width:auto;z-index:0;pointer-events:none;mix-blend-mode:screen;opacity:1;filter:saturate(1.18) contrast(1.1) brightness(1.02);-webkit-mask-image:linear-gradient(180deg,#000 85%,transparent 99%);mask-image:linear-gradient(180deg,#000 85%,transparent 99%)}
+.crowd{position:absolute;bottom:64px;height:176px;width:auto;z-index:0;pointer-events:none;mix-blend-mode:screen;opacity:1;filter:saturate(1.08) contrast(1.04) brightness(1.03);-webkit-mask-image:linear-gradient(180deg,#000 85%,transparent 99%);mask-image:linear-gradient(180deg,#000 85%,transparent 99%)}
 .crowd.cl{left:-72px}
 .crowd.cr{right:-72px}
 .crowd.cl2{left:170px;bottom:0;height:168px;z-index:1}
@@ -522,10 +522,10 @@ function layout(title, active, body, opts = {}) {
 <title>${esc(title)} — TOP 20</title>${ogTags}<style>${CSS}</style></head>
 <body><div class="app">
 <header class="site">
-  <img class="crowd cl" src="/crowd-left.webp" alt="" aria-hidden="true">
-  <img class="crowd cl2" src="/crowd-guy.webp" alt="" aria-hidden="true">
-  <img class="crowd cr" src="/crowd-right.webp" alt="" aria-hidden="true">
-  <img class="crowd cr2" src="/crowd-lady.webp" alt="" aria-hidden="true">
+  <img class="crowd cl" src="/crowd-left.webp?v=4" alt="" aria-hidden="true">
+  <img class="crowd cl2" src="/crowd-guy.webp?v=4" alt="" aria-hidden="true">
+  <img class="crowd cr" src="/crowd-right.webp?v=4" alt="" aria-hidden="true">
+  <img class="crowd cr2" src="/crowd-lady.webp?v=4" alt="" aria-hidden="true">
   <div class="wm">
     <div class="wordmark"><span class="top">TOP</span> <span class="twenty">20</span></div>
     <div class="blaze"></div><div class="blaze-line"></div>
