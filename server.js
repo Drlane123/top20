@@ -160,7 +160,7 @@ header.site .wm,header.site .hotline,header.site .tagline,header.site nav.main{p
   filter:drop-shadow(0 -1px 1px rgba(0,0,0,.95)) drop-shadow(0 1px 0 rgba(210,228,255,.5)) drop-shadow(0 0 10px rgba(43,92,255,.4))}
 .wordmark .twenty{display:inline-block;font-family:Impact,"Arial Narrow Bold","Franklin Gothic Medium Cond","Helvetica Neue Condensed Black",sans-serif;
   font-weight:900;font-style:italic;letter-spacing:0;padding-right:.1em;
-  font-size:54px;position:relative;z-index:2;margin-left:.26em;
+  font-size:68px;position:relative;z-index:2;margin-left:.02em;
   background:linear-gradient(180deg,#ffffff 0%,#f4f8ff 20%,#aebdd2 38%,#ffffff 47%,#c3d0e2 58%,#7e8ea6 80%,#eef3fa 100%);
   background-size:100% 210%;
   animation:shine 4.5s ease-in-out infinite alternate;
