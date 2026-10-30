@@ -22,6 +22,43 @@ fs.mkdirSync(VIDEO_UP, { recursive: true });
 
 const db = openDb();
 const app = express();
+
+// Hero welcome video: the binary ships base64-embedded (hero-data.js)
+// because the repo pipeline is text-only. Decoded once at boot, then
+// streamed with HTTP range support so phones can play/seek it.
+const HERO = (() => {
+  try {
+    const parts = ["./hero-data-1", "./hero-data-2", "./hero-data-3", "./hero-data-4"].map((m) => require(m));
+    return { mp4: Buffer.from(parts.join(""), "base64"), poster: Buffer.from(require("./hero-poster-data"), "base64") };
+  } catch (e) { return null; }
+})();
+if (HERO) {
+  app.get("/hero.mp4", (req, res) => {
+    const total = HERO.mp4.length;
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range || "");
+    if (m) {
+      let start = m[1] ? parseInt(m[1], 10) : 0;
+      let end = m[2] ? parseInt(m[2], 10) : total - 1;
+      if (isNaN(start) || start < 0) start = 0;
+      if (isNaN(end) || end >= total) end = total - 1;
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+      res.setHeader("Content-Length", end - start + 1);
+      res.end(HERO.mp4.subarray(start, end + 1));
+    } else {
+      res.setHeader("Content-Length", total);
+      res.end(HERO.mp4);
+    }
+  });
+  app.get("/hero-poster.jpg", (req, res) => {
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.end(HERO.poster);
+  });
+}
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(PUBLIC_DIR, {
   setHeaders(res, filePath) {
@@ -240,6 +277,9 @@ h2{letter-spacing:1px}
 .rowlink.expanded .t{font-size:18px}
 .rowlink.expanded .rank{font-size:26px}
 .openhint{display:none}
+.herovid{position:relative;margin:14px 0 6px;border:1px solid #454a56;border-radius:18px;overflow:hidden;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 14px 30px rgba(0,0,0,.55);background:#000}
+.herovid video{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
 .rowlink.expanded .openhint{display:block;font-size:11px;color:#9db9ff;margin-top:5px;letter-spacing:.4px}
 .upnext .arr{font-size:14px}
 @keyframes nextnudge{0%,100%{transform:translateX(0)}50%{transform:translateX(5px)}}
@@ -1076,6 +1116,7 @@ app.get("/", (req, res) => {
   const tabs = channels.map((c, i) =>
     `<button type="button" data-ch="${i}" class="${i === 0 ? "active" : ""}">${esc(c.label)}</button>`).join("");
   const body = `
+  <div class="herovid"><video src="/hero.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video></div>
   <div class="tabs" id="channelTabs">${tabs}</div>
   ${first ? `
   <div class="stagegrid">
