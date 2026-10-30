@@ -1,0 +1,156 @@
+// SQLite (built-in node:sqlite) — schema auto-created on first open.
+const { DatabaseSync } = require("node:sqlite");
+const path = require("node:path");
+const fs = require("node:fs");
+const { CATEGORIES } = require("./config");
+
+const DATA_DIR = path.join(__dirname, "data");
+fs.mkdirSync(DATA_DIR, { recursive: true });
+const DB_PATH = path.join(DATA_DIR, "top20.db");
+
+function openDb() {
+  const db = new DatabaseSync(DB_PATH);
+  db.exec("PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA foreign_keys = ON;");
+
+  const categoryCols = CATEGORIES.map((c) => `${c.key} REAL NOT NULL`).join(",\n      ");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      city TEXT NOT NULL,
+      state TEXT NOT NULL,
+      region TEXT NOT NULL,
+      buzz_score REAL NOT NULL DEFAULT 0,   -- seeded/measured social buzz, 0-100
+      -- Artist profile page fields (Phase 2). A profile page + at least one
+      -- uploaded song is how an artist gets recognized.
+      photo_path TEXT,                      -- uploaded photo; NULL = initial avatar
+      bio TEXT,
+      age INTEGER,                          -- NULL = private / not shown
+      history TEXT,                         -- long-form artist history
+      years_in_game INTEGER,                -- NULL = not stated
+      genre TEXT,                           -- artist's primary genre
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS songs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      artist_id INTEGER NOT NULL REFERENCES users(id),
+      title TEXT NOT NULL,
+      genre TEXT NOT NULL,
+      audio_path TEXT NOT NULL,             -- web path, e.g. /audio/song-1.mp3
+      cover_path TEXT NOT NULL,             -- REQUIRED (spec 3.2)
+      lyrics TEXT,
+      status TEXT NOT NULL DEFAULT 'live',  -- 'live' | 'removed'; only live songs are judged/charted; max 2 live per artist
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS judge_scores (
+      song_id INTEGER PRIMARY KEY REFERENCES songs(id),
+      ${categoryCols},
+      total_score REAL NOT NULL,            -- out of 150 (15 criteria x 10)
+      craft_score REAL NOT NULL,            -- 0-100
+      notes TEXT NOT NULL                   -- JSON: { categoryKey: "critique note" }
+    );
+
+    CREATE TABLE IF NOT EXISTS engagements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      song_id INTEGER NOT NULL REFERENCES songs(id),
+      type TEXT NOT NULL CHECK (type IN ('play','like','share','save')),
+      count INTEGER NOT NULL DEFAULT 0,
+      UNIQUE (song_id, type)
+    );
+
+    CREATE TABLE IF NOT EXISTS chart_entries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chart_date TEXT NOT NULL,             -- YYYY-MM-DD
+      level TEXT NOT NULL CHECK (level IN ('local','regional','national')),
+      genre TEXT NOT NULL,                  -- one of GENRES, or 'Overall'
+      region_key TEXT NOT NULL,             -- 'City, ST' | region name | 'ALL'
+      song_id INTEGER NOT NULL REFERENCES songs(id),
+      rank INTEGER NOT NULL,
+      chart_score REAL NOT NULL,
+      UNIQUE (chart_date, level, genre, region_key, song_id)
+    );
+
+    -- Simulated email outbox (spec 3.9). ONLY 'chart_entry' exists.
+    -- There is intentionally NO fall-off notification type, ever.
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id),
+      song_id INTEGER NOT NULL REFERENCES songs(id),
+      type TEXT NOT NULL DEFAULT 'chart_entry' CHECK (type IN ('chart_entry')),
+      level TEXT NOT NULL,
+      genre TEXT NOT NULL,
+      rank INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- ONE profile video per artist, attached to one of the artist's own
+    -- songs: either the song's music video, or a video bio where the
+    -- artist talks about that song. A new upload replaces the old one
+    -- (the upload handler deletes the artist's previous row + file).
+    CREATE TABLE IF NOT EXISTS videos (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      artist_id INTEGER NOT NULL REFERENCES users(id),
+      song_id INTEGER NOT NULL REFERENCES songs(id),
+      video_path TEXT NOT NULL,             -- web path, e.g. /uploads/videos/video-....mp4
+      kind TEXT NOT NULL CHECK (kind IN ('music_video', 'video_bio')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- DJ of the Month (owner feature). The DJs who support independent
+    -- artists get submitted — by themselves, an artist, or a fan — and
+    -- voted on per city, per month. The top DJ in each city for a month
+    -- is that city's DJ of the Month (spotlight + archive). Recognition
+    -- only: DJ votes never touch song scores or charts.
+    CREATE TABLE IF NOT EXISTS dj_submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dj_name TEXT NOT NULL,
+      city TEXT NOT NULL,
+      state TEXT,
+      hood TEXT,                            -- neighborhood, if given
+      support_text TEXT,                    -- how this DJ supports independent artists
+      socials TEXT,                         -- links/handles, free text
+      submitted_by TEXT,                    -- who sent this DJ in
+      month TEXT NOT NULL,                  -- 'YYYY-MM' — the month this DJ is racing in
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    -- One vote per person per DJ per month, enforced by the UNIQUE
+    -- constraint. A "person" is the long-lived t20_voter cookie.
+    CREATE TABLE IF NOT EXISTS dj_votes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      dj_id INTEGER NOT NULL REFERENCES dj_submissions(id),
+      voter_key TEXT NOT NULL,
+      month TEXT NOT NULL,                  -- 'YYYY-MM'
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (dj_id, voter_key, month)
+    );
+  `);
+
+  // Migrations for a DB created by an earlier build (seed rebuilds from
+  // scratch, but a live DB should survive a code update too).
+  const userCols = db.prepare("PRAGMA table_info(users)").all().map((r) => r.name);
+  const addUserCol = (name, ddl) => {
+    if (!userCols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${ddl}`);
+  };
+  addUserCol("photo_path", "photo_path TEXT");
+  addUserCol("bio", "bio TEXT");
+  addUserCol("age", "age INTEGER");
+  addUserCol("history", "history TEXT");
+  addUserCol("years_in_game", "years_in_game INTEGER");
+  addUserCol("genre", "genre TEXT");
+  const scoreCols = db.prepare("PRAGMA table_info(judge_scores)").all().map((r) => r.name);
+  if (!scoreCols.includes("cover_art")) {
+    db.exec("ALTER TABLE judge_scores ADD COLUMN cover_art REAL NOT NULL DEFAULT 5");
+  }
+  // Status vocabulary moved from 'active' to 'live' (Phase 2).
+  db.exec("UPDATE songs SET status = 'live' WHERE status = 'active'");
+
+  return db;
+}
+
+module.exports = { openDb, DB_PATH };

@@ -1,0 +1,218 @@
+[
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-1.png",
+    "title": "Velvet Hours",
+    "artist": "Amara Cole",
+    "genre": "R&B"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-2.png",
+    "title": "Slow Reply",
+    "artist": "Jaylen Brooks",
+    "genre": "R&B"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-3.png",
+    "title": "Silk & Smoke",
+    "artist": "Nia Valentine",
+    "genre": "R&B"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-4.png",
+    "title": "After Midnight Text",
+    "artist": "Dario Wells",
+    "genre": "R&B"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-5.png",
+    "title": "Honey Moon Phase",
+    "artist": "Selene Park",
+    "genre": "R&B"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-6.png",
+    "title": "Come Back Season",
+    "artist": "Marcus Reed",
+    "genre": "R&B"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-7.png",
+    "title": "Front Porch Confessions",
+    "artist": "Big Earl Thompson",
+    "genre": "Southern Soul"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-8.png",
+    "title": "Grown Folks Business",
+    "artist": "Miss Loretta James",
+    "genre": "Southern Soul"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-9.png",
+    "title": "Trail Ride Heart",
+    "artist": "Cowboy Curtis Lee",
+    "genre": "Southern Soul"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-10.png",
+    "title": "Sweet Tea & Regrets",
+    "artist": "Pearl Ann Davis",
+    "genre": "Southern Soul"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-11.png",
+    "title": "Two Step Confession",
+    "artist": "Deacon Ray",
+    "genre": "Southern Soul"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-12.png",
+    "title": "Mama's Front Room",
+    "artist": "Thelma Brooks",
+    "genre": "Southern Soul"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-13.png",
+    "title": "Corner Store Prophet",
+    "artist": "Yung Malachi",
+    "genre": "Hip-Hop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-14.png",
+    "title": "Rent Due",
+    "artist": "Kash Kartel",
+    "genre": "Hip-Hop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-15.png",
+    "title": "Southside Sermon",
+    "artist": "Preacha P",
+    "genre": "Hip-Hop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-16.png",
+    "title": "Concrete Roses",
+    "artist": "Queen Nyla",
+    "genre": "Hip-Hop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-17.png",
+    "title": "Mesquite Made",
+    "artist": "Lil Darnell",
+    "genre": "Hip-Hop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-18.png",
+    "title": "Fourth Quarter",
+    "artist": "Monte Carlo",
+    "genre": "Hip-Hop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-19.png",
+    "title": "Pack Mover",
+    "artist": "Zay Bandz",
+    "genre": "Trap"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-20.png",
+    "title": "Trap Cathedral",
+    "artist": "Guapo Nino",
+    "genre": "Trap"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-21.png",
+    "title": "Digital Scale Dreams",
+    "artist": "Young Peso",
+    "genre": "Trap"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-22.png",
+    "title": "No Sleep Committee",
+    "artist": "Kiki Bands",
+    "genre": "Trap"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-23.png",
+    "title": "Mud Baby Anthem",
+    "artist": "Dirt Road D",
+    "genre": "Trap"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-24.png",
+    "title": "Overnight Shift",
+    "artist": "Trap Selena",
+    "genre": "Trap"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-25.png",
+    "title": "Dirt Road Halo",
+    "artist": "Colton Ray",
+    "genre": "Country"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-26.png",
+    "title": "Mesquite Skyline",
+    "artist": "Hadley Brooks",
+    "genre": "Country"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-27.png",
+    "title": "Whiskey & Wildflowers",
+    "artist": "June Callahan",
+    "genre": "Country"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-28.png",
+    "title": "Small Town Static",
+    "artist": "Beau Harrington",
+    "genre": "Country"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-29.png",
+    "title": "Tailgate Confession",
+    "artist": "Sadie Lynn",
+    "genre": "Country"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-30.png",
+    "title": "Neon Honky Tonk",
+    "artist": "Wyatt Cole",
+    "genre": "Country"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-31.png",
+    "title": "Glitter Cannon",
+    "artist": "Vivi Valentine",
+    "genre": "Pop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-32.png",
+    "title": "Textbook Crush",
+    "artist": "Noah Skye",
+    "genre": "Pop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-33.png",
+    "title": "Ultraviolet",
+    "artist": "Zara Moon",
+    "genre": "Pop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-34.png",
+    "title": "Dance Floor Apology",
+    "artist": "Milo Ferreira",
+    "genre": "Pop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-35.png",
+    "title": "Cherry Lipstick Weather",
+    "artist": "Poppy Lane",
+    "genre": "Pop"
+  },
+  {
+    "file": "/home/hatch/workspace/top20/app/public/covers/song-36.png",
+    "title": "Main Character Energy",
+    "artist": "Gia Laurent",
+    "genre": "Pop"
+  }
+]

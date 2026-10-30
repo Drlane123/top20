@@ -1,0 +1,8 @@
+node_modules
+data
+public/uploads
+public/covers
+public/audio
+public/avatars
+public/videos
+*.log
