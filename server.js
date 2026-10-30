@@ -224,6 +224,11 @@ h2{letter-spacing:1px}
   box-shadow:0 0 18px rgba(43,92,255,.5);animation:nextnudge 1s ease-in-out infinite}
 .upnext[hidden]{display:none}
 .upnext img{width:26px;height:26px;border-radius:7px;object-fit:cover;border:1px solid rgba(255,255,255,.5)}
+.picktag{display:inline-block;margin-left:7px;padding:2px 8px;border-radius:999px;font-size:9.5px;font-weight:900;
+  letter-spacing:1px;vertical-align:2px;color:#231a04;white-space:nowrap;
+  background:linear-gradient(180deg,#ffe9a8,#e8b93c 55%,#b8860b);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 0 10px rgba(232,185,60,.35)}
+.pickchip{border-color:#caa64b;color:#ffd97a}
 .upnext .arr{font-size:14px}
 @keyframes nextnudge{0%,100%{transform:translateX(0)}50%{transform:translateX(5px)}}
 .ringwrap{touch-action:pan-y;cursor:grab}
@@ -409,7 +414,7 @@ function layout(title, active, body, opts = {}) {
     <div class="wordmark"><span class="top">TOP</span> <span class="twenty">20</span></div>
     <div class="blaze"></div><div class="blaze-line"></div>
   </div>
-  ${opts.home ? `<div class="hotline"><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — NOBODY'S SAFE — NEW ENTRIES HIT AT MIDNIGHT — </span><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — NOBODY'S SAFE — NEW ENTRIES HIT AT MIDNIGHT — </span></div>` : ""}
+  ${opts.home ? `<div class="hotline"><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — NOBODY'S SAFE — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY FRIDAY — </span><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — NOBODY'S SAFE — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY FRIDAY — </span></div>` : ""}
   <div class="tagline">Charts by craft, not just clout</div>
   <nav class="main">${nav}</nav>
 </header>
@@ -692,7 +697,7 @@ function billboardRow(e, ctx, prevMap, { stats = true } = {}) {
     <a class="stretch" href="/song/${e.song_id}" aria-label="${esc(e.title)}"></a>
     <span class="rankwrap"><span class="rank">${e.rank}</span>${rankPill(st, e.rank)}<span class="move">${moveHtml(prevMap.get(e.song_id), e.rank)}</span></span>
     <img class="thumb" src="${esc(e.cover_path)}" alt="">
-    <span class="meta"><span class="t">${esc(e.title)}</span><br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a>${stats ? statsLine(st) : ""}</span>
+    <span class="meta"><span class="t">${esc(e.title)}</span>${e.dj_pick ? `<span class="picktag">🎧 DJ Pick</span>` : ""}<br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a>${stats ? statsLine(st) : ""}</span>
     <span class="nums">Craft <b>${e.craft_score}</b><br>Chart <b>${e.chart_score}</b></span>
   </div>`;
 }
@@ -706,7 +711,7 @@ function heroRow(e, ctx, prevMap) {
     <a class="stretch" href="/song/${e.song_id}" aria-label="${esc(e.title)}"></a>
     <span class="rankwrap"><span class="rank">${e.rank}</span>${rankPill(st, e.rank)}</span>
     <img class="cover-lg" src="${esc(e.cover_path)}" alt="">
-    <span class="meta"><span class="t">${esc(e.title)}</span><br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a></span>
+    <span class="meta"><span class="t">${esc(e.title)}</span>${e.dj_pick ? `<span class="picktag">🎧 DJ Pick</span>` : ""}<br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a></span>
     <span class="herobar">${statsLine(st)}<span class="nums">Craft <b>${e.craft_score}</b> · Chart <b>${e.chart_score}</b></span><span class="move">${moveHtml(prevMap.get(e.song_id), e.rank)}</span></span>
   </div>`;
 }
@@ -722,6 +727,25 @@ function chartEntriesFor(date, level, genre, regionKey, limit = 100) {
     WHERE ce.chart_date = ? AND ce.level = ? AND ce.genre = ? AND ce.region_key = ?
     ORDER BY ce.rank LIMIT ${limit}
   `).all(date, level, genre, regionKey);
+}
+
+// DJ'S HOT PICKS reads: the latest Friday's picks, with each pick's
+// current National Overall rank on the given chart date.
+function latestPickDate() {
+  const r = db.prepare("SELECT MAX(pick_date) AS d FROM dj_picks").get();
+  return r ? r.d : null;
+}
+function djHotPicks(pickDate, chartDate) {
+  if (!pickDate) return [];
+  return db.prepare(`
+    SELECT s.id, s.title, s.cover_path, u.id AS artist_id, u.name AS artist, ce.rank AS nowRank
+    FROM dj_picks p
+    JOIN songs s ON s.id = p.song_id
+    JOIN users u ON u.id = s.artist_id
+    LEFT JOIN chart_entries ce ON ce.song_id = s.id AND ce.chart_date = ?
+      AND ce.level = 'national' AND ce.genre = 'Overall' AND ce.region_key = 'ALL'
+    WHERE p.pick_date = ? ORDER BY p.id
+  `).all(chartDate, pickDate);
 }
 
 function prevRankMap(ctx, level, genre, regionKey) {
@@ -941,7 +965,7 @@ function stagePlaylist(genreKey, date) {
   if (!date) return [];
   return db.prepare(`
     SELECT s.id, s.title, s.audio_path, s.cover_path, u.name AS artist,
-           ce.rank, j.craft_score,
+           ce.rank, ce.dj_pick, j.craft_score,
            (SELECT count FROM engagements WHERE song_id = s.id AND type = 'play') AS plays,
            (SELECT count FROM engagements WHERE song_id = s.id AND type = 'like') AS likes,
            (SELECT count FROM engagements WHERE song_id = s.id AND type = 'share') AS shares
@@ -957,7 +981,7 @@ function stagePlaylist(genreKey, date) {
       id: r.id, title: r.title, artist: r.artist, cover: r.cover_path,
       audio: r.audio_path, rank: r.rank, craft: r.craft_score,
       plays: r.plays || 0, likes: r.likes || 0, shares: r.shares || 0,
-      days: dc.days, fresh: dc.days > 0 && dc.first === date,
+      days: dc.days, fresh: dc.days > 0 && dc.first === date, pick: !!r.dj_pick,
     };
   });
 }
@@ -987,6 +1011,21 @@ app.get("/", (req, res) => {
     ${homeDjLeader ? `<p class="sub" style="margin-top:8px">Dallas is riding with <b style="color:#fff">${esc(homeDjLeader.dj_name)}</b> — ${homeDjLeader.votes} vote${homeDjLeader.votes === 1 ? "" : "s"}.</p>` : ""}
     <p style="margin:10px 0 2px"><a href="/djs" style="color:var(--accent);font-weight:700;text-decoration:none">See the city boards →</a></p>
   </div>`;
+  // DJ'S HOT PICKS panel: this Friday's panel picks, front and center.
+  const pickDate = latestPickDate();
+  const djPickRows = djHotPicks(pickDate, date);
+  const djPicksHtml = djPickRows.length ? `
+  <div class="panel">
+    <h2 style="margin-top:0">🎧 DJ's Hot Picks</h2>
+    <p class="sub">Top 20 is strictly algorithmic — with <b style="color:#fff">one exception</b>. Every Friday, a panel of DJs picks 3 songs that are already hot, and those picks step straight into the Top 20. After Friday, the algorithm treats them like everybody else — nobody's safe.</p>
+    ${djPickRows.map((p) => `
+    <a class="row" href="/song/${p.id}">
+      <img class="thumb" src="${esc(p.cover_path)}" alt="">
+      <span class="meta"><span class="t">${esc(p.title)}</span><br><span class="a">${esc(p.artist)}</span></span>
+      <span class="nums">${p.nowRank ? `NOW <b>#${p.nowRank}</b>` : "<b>Top 20</b>"}</span>
+    </a>`).join("")}
+    <p class="note" style="margin-top:8px">This week's picks — ${fmtChartDate(pickDate)}. A new panel, new picks, every Friday.</p>
+  </div>` : "";
   const homeFirst = homeEntries.slice(0, 5);
   const homeRest = homeEntries.slice(5);
   const homeChartHtml = homeEntries.length ? `
@@ -1043,6 +1082,7 @@ app.get("/", (req, res) => {
       <span class="chip">♥ <b id="npLikes">${fmtNum(first.likes || 0)}</b> likes</span>
       <span class="chip">⤴ <b id="npShares">${fmtNum(first.shares || 0)}</b> shares</span>
       <span class="chip" id="npDays">${first.fresh ? "🔥 New entry · Day 1" : "Days charted · " + (first.days || 0)}</span>
+      <span class="chip pickchip" id="npPick"${first.pick ? "" : " hidden"}>🎧 DJ's Hot Pick</span>
     </div>
   </div></div>
   <div class="panel">
@@ -1058,6 +1098,7 @@ app.get("/", (req, res) => {
       <div class="ringnow" id="ringNowB"></div>
     </div></div>
   </div></div>
+  ${djPicksHtml}
   <div class="homegrid">
   ${homeNewHtml}
   ${homeChartHtml}
@@ -1099,7 +1140,7 @@ app.get("/", (req, res) => {
     ring.innerHTML = list.map((t, i) =>
       '<div class="cell" data-gi="' + (r.from + i) + '" style="transform:rotateY(' + (i * step) + 'deg) translateZ(' + R + 'px)">' +
       '<div class="cellin"><img src="' + t.cover + '" alt="" draggable="false">' +
-      '<div class="ct">#' + t.rank + ' ' + t.title + '</div><div class="ca">' + t.artist + '</div></div></div>').join('');
+      '<div class="ct">#' + t.rank + ' ' + t.title + (t.pick ? ' 🎧' : '') + '</div><div class="ca">' + t.artist + '</div></div></div>').join('');
     ring.querySelectorAll('.cell').forEach((el, i) => {
       el.dataset.a = String(i * step);
       el.dataset.r = String(R);
@@ -1250,6 +1291,7 @@ app.get("/", (req, res) => {
     $('npCraft').textContent = t.craft; $('npChannel').textContent = LABELS[ch];
     $('npPlays').textContent = fmtN(t.plays); $('npLikes').textContent = fmtN(t.likes); $('npShares').textContent = fmtN(t.shares);
     $('npDays').textContent = t.fresh ? '🔥 New entry · Day 1' : 'Days charted · ' + (t.days || 0);
+    $('npPick').hidden = !t.pick;
     $('barThumb').src = t.cover; $('barTitle').textContent = t.title; $('barArtist').textContent = t.artist;
     syncRings();
     if (autoplay) audio.play().catch(() => {});
@@ -1433,6 +1475,10 @@ app.get("/song/:id", (req, res) => {
   const dc = daysCharted(song.id);
   const dcNew = dc.days > 0 && dc.first === latestChartDate(db);
   const { ranks } = songRanks(song.id);
+  const myPick = db.prepare("SELECT pick_date FROM dj_picks WHERE song_id = ? ORDER BY pick_date DESC LIMIT 1").get(song.id);
+  const pickChip = myPick
+    ? `<p style="margin:2px 0 10px"><span class="picktag" style="font-size:11px;padding:4px 11px">${myPick.pick_date === latestPickDate() ? "🎧 DJ's Hot Pick — this week" : "🎧 DJ's Hot Pick — " + fmtChartDate(myPick.pick_date)}</span></p>`
+    : "";
   const songVideo = db.prepare(`
     SELECT v.*, s.title AS song_title FROM videos v
     JOIN songs s ON s.id = v.song_id WHERE v.song_id = ? ORDER BY v.id DESC LIMIT 1
@@ -1445,6 +1491,7 @@ app.get("/song/:id", (req, res) => {
   </div></div>
   <h1>${esc(song.title)}</h1>
   <p class="sub"><a href="/artist/${song.artist_id}" style="color:var(--accent);font-weight:700;text-decoration:none">${esc(song.artist)}</a> · ${esc(song.genre)} · ${esc(song.city)}, ${esc(song.state)}</p>
+  ${pickChip}
   ${removedNote}
   <audio controls preload="metadata" src="${esc(song.audio_path)}"></audio>
   <div class="flexbtns">
@@ -1724,7 +1771,7 @@ const RULES_PANEL = `
       <li>Audio must be <b>radio quality</b> — WAV, FLAC, or 320 kbps MP3, the same quality radio stations accept.</li>
       <li>New charts land at <b>12:00 midnight</b>, every night.</li>
       <li>The only chart email is the <b>entry email</b> — when you enter a Top 20. Falling off is never emailed.</li>
-      <li><b>No pay, no labels, no hand-picks</b> can move a song. The algorithm decides — and artists who believe in themselves put in the work.</li>
+      <li><b>No pay, no labels</b> can move a song — the algorithm decides, and artists who believe in themselves put in the work. The one exception: <b>DJ's Hot Picks</b> — every Friday, a DJ panel steps 3 songs that are already hot into the Top 20, badged for all to see.</li>
     </ul>
   </div>`;
 
@@ -1987,7 +2034,7 @@ app.get("/how-it-works", (req, res) => {
       <li>Only songs <b>uploaded to TOP 20</b> are ever judged — if it isn't uploaded here, it isn't looked at.</li>
       <li><b>Two live songs per artist, max</b> — those are the only songs that get judged. Remove one to put another up.</li>
       <li>A <b>profile page + at least one song uploaded</b> is how you get recognized.</li>
-      <li><b>No labels, no pay, no hand-picks</b> can move a song. The algorithm decides.</li>
+      <li><b>No labels, no pay</b> can move a song. The algorithm decides — with one exception: <b>DJ's Hot Picks</b>. Every Friday a panel of DJs picks 3 songs that are already hot, and those picks step into the Top 20, badged for all to see. After Friday, the algorithm treats them like everybody else.</li>
       <li>Audio must be <b>radio quality</b> — WAV, FLAC, or 320 kbps MP3, the same quality radio stations accept.</li>
       <li>Charts <b>recalculate daily</b> — the new chart lands at 12:00 midnight.</li>
       <li>Only the <b>Top 20 plays on the Stage</b>.</li>
@@ -2124,11 +2171,34 @@ app.get("/djs", (req, res) => {
     .map((c) => ({ ...c, winner: djBoard(prev, c.city, c.state)[0] }))
     .filter((c) => c.winner);
 
+  // DJ'S HOT PICKS: this week's panel picks + the archive of past Fridays.
+  const hpChartDate = latestChartDate(db);
+  const hpLatest = latestPickDate();
+  const hpWeeks = db.prepare("SELECT DISTINCT pick_date FROM dj_picks ORDER BY pick_date DESC LIMIT 5").all().map((r) => r.pick_date);
+  const hpRow = (p) => `
+    <a class="row" href="/song/${p.id}">
+      <img class="thumb" src="${esc(p.cover_path)}" alt="">
+      <span class="meta"><span class="t">${esc(p.title)}</span><br><span class="a">${esc(p.artist)}</span></span>
+      <span class="nums">${p.nowRank ? `NOW <b>#${p.nowRank}</b>` : "<b>Top 20</b>"}</span>
+    </a>`;
+  const hotPicksHtml = hpLatest ? `
+  <div class="panel">
+    <h2 style="margin-top:0">🎧 DJ's Hot Picks</h2>
+    <p class="sub">The DJs are the industry — radio and the clubs. So every <b style="color:#fff">Friday</b>, a panel of DJs gets a say-so: they pick <b style="color:#fff">3 songs that are already hot</b>, and those picks step straight into the Top 20. It's the one exception to the algorithm — and it's capped at 3 a week. The DJs take these records back to their stations and their clubs; after Friday, the algorithm treats a pick like everybody else.</p>
+    <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px;margin-top:10px">This week — ${fmtChartDate(hpLatest)}</div>
+    ${djHotPicks(hpLatest, hpChartDate).map(hpRow).join("")}
+    ${hpWeeks.filter((d) => d !== hpLatest).length ? `
+    <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px;margin-top:14px">Past Fridays</div>
+    ${hpWeeks.filter((d) => d !== hpLatest).map((d) => `
+    <p class="sub" style="margin:8px 0 0"><b style="color:#fff">${fmtChartDate(d)}</b> — ${djHotPicks(d, hpChartDate).map((p) => esc(p.title)).join(" · ")}</p>`).join("")}` : ""}
+  </div>` : "";
+
   const body = `
   <h1>City DJs</h1>
   <p class="sub">The DJs who spin independent artists get their flowers too. Every month, every city picks its <b style="color:#fff">DJ of the Month</b> — submit the DJ who's been holding independents down in your city, and vote. Anybody can submit: the DJ, an artist, a fan.</p>
   <p><a class="btn btn-blue btn-block" href="/djs/submit">Submit a DJ</a></p>
   ${djMsgHtml(req)}
+  ${hotPicksHtml}
   ${spotlights.length ? spotlights.map((c) => `
   <div class="panel">
     <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">DJ of the Month race — ${esc(djCityLabel(c))} · ${fmtMonth(month)}</div>

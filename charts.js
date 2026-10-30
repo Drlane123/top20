@@ -106,6 +106,36 @@ function top20Keys(db, date) {
   return new Set(rows.map((r) => `${r.level}|${r.genre}|${r.region_key}|${r.song_id}`));
 }
 
+// DJ'S HOT PICKS — the one stated exception to the strictly-algorithmic
+// rule. On a pick Friday, the panel's picks (max 3, entered in dj_picks)
+// step into the National Overall Top 20: a pick already in the Top 20 by
+// score keeps its earned spot; picks outside take the bottom slots of the
+// 20, in pick order, and every pick is flagged dj_pick = 1 so the badge
+// shows everywhere. All other charts stay purely algorithmic, and from
+// the next day's recalc a pick is treated like any other song.
+function applyDjPicks(db, entries, date) {
+  let picks = [];
+  try {
+    picks = db.prepare("SELECT song_id FROM dj_picks WHERE pick_date = ? ORDER BY id").all(date).map((r) => r.song_id);
+  } catch (e) { picks = []; }
+  const out = entries.map((e) => ({ ...e, dj_pick: 0 }));
+  if (!picks.length) return out;
+  const pickSet = new Set(picks);
+  const isGroup = (e) => e.level === "national" && e.genre === OVERALL && e.region_key === "ALL";
+  const group = out.filter(isGroup).sort((a, b) => a.rank - b.rank);
+  const rest = out.filter((e) => !isGroup(e));
+  const topIds = new Set(group.filter((e) => e.rank <= 20).map((e) => e.song_id));
+  const outPicks = picks.filter((id) => !topIds.has(id));
+  const keepNonPicks = 20 - picks.length;
+  const chosenNonPicks = new Set(group.filter((e) => !pickSet.has(e.song_id)).slice(0, keepNonPicks).map((e) => e.song_id));
+  const scoredPart = group.filter((e) => chosenNonPicks.has(e.song_id) || (pickSet.has(e.song_id) && topIds.has(e.song_id)));
+  const outPart = outPicks.map((id) => group.find((e) => e.song_id === id)).filter(Boolean);
+  const remainder = group.filter((e) => !scoredPart.includes(e) && !outPart.includes(e));
+  const newGroup = [...scoredPart, ...outPart, ...remainder];
+  newGroup.forEach((e, i) => { e.rank = i + 1; e.dj_pick = pickSet.has(e.song_id) ? 1 : 0; });
+  return [...rest, ...newGroup];
+}
+
 // Recalculate today's charts. Compares Top 20 membership against the
 // previous chart date: every NEW Top 20 entry creates exactly one
 // 'chart_entry' notification (the simulated email). Songs that fall OUT
@@ -115,10 +145,10 @@ function recalc(db, date = todayStr()) {
   const prevTop = top20Keys(db, prevDate);
   const existingTodayTop = top20Keys(db, date); // guards same-day re-runs
 
-  const entries = computeRankings(db);
+  const entries = applyDjPicks(db, computeRankings(db), date);
   const insert = db.prepare(
-    `INSERT INTO chart_entries (chart_date, level, genre, region_key, song_id, rank, chart_score)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO chart_entries (chart_date, level, genre, region_key, song_id, rank, chart_score, dj_pick)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const artistOf = db.prepare("SELECT artist_id FROM songs WHERE id = ?");
   const alreadyNotified = db.prepare(
@@ -135,7 +165,7 @@ function recalc(db, date = todayStr()) {
   try {
     db.prepare("DELETE FROM chart_entries WHERE chart_date = ?").run(date);
     for (const e of entries) {
-      insert.run(date, e.level, e.genre, e.region_key, e.song_id, e.rank, e.chart_score);
+      insert.run(date, e.level, e.genre, e.region_key, e.song_id, e.rank, e.chart_score, e.dj_pick || 0);
       if (e.rank > 20) continue;
       const key = `${e.level}|${e.genre}|${e.region_key}|${e.song_id}`;
       if (prevTop.has(key) || existingTodayTop.has(key)) continue;

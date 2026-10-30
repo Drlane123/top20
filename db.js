@@ -72,6 +72,7 @@ function openDb() {
       song_id INTEGER NOT NULL REFERENCES songs(id),
       rank INTEGER NOT NULL,
       chart_score REAL NOT NULL,
+      dj_pick INTEGER NOT NULL DEFAULT 0,   -- 1 when this entry is a DJ's Hot Pick (charts.js)
       UNIQUE (chart_date, level, genre, region_key, song_id)
     );
 
@@ -129,6 +130,20 @@ function openDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (dj_id, voter_key, month)
     );
+
+    -- DJ'S HOT PICKS (owner feature): every Friday a panel of DJs picks
+    -- up to 3 songs that are already hot, and those picks step into the
+    -- National Overall Top 20 for that Friday's chart — the ONE stated
+    -- exception to the strictly-algorithmic rule. Max 3 per pick_date is
+    -- enforced where picks are entered. From the next day's recalc the
+    -- algorithm treats a pick like any other song.
+    CREATE TABLE IF NOT EXISTS dj_picks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      song_id INTEGER NOT NULL REFERENCES songs(id),
+      pick_date TEXT NOT NULL,              -- the Friday, YYYY-MM-DD
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (song_id, pick_date)
+    );
   `);
 
   // Migrations for a DB created by an earlier build (seed rebuilds from
@@ -146,6 +161,10 @@ function openDb() {
   const scoreCols = db.prepare("PRAGMA table_info(judge_scores)").all().map((r) => r.name);
   if (!scoreCols.includes("cover_art")) {
     db.exec("ALTER TABLE judge_scores ADD COLUMN cover_art REAL NOT NULL DEFAULT 5");
+  }
+  const ceCols = db.prepare("PRAGMA table_info(chart_entries)").all().map((r) => r.name);
+  if (!ceCols.includes("dj_pick")) {
+    db.exec("ALTER TABLE chart_entries ADD COLUMN dj_pick INTEGER NOT NULL DEFAULT 0");
   }
   // Status vocabulary moved from 'active' to 'live' (Phase 2).
   db.exec("UPDATE songs SET status = 'live' WHERE status = 'active'");

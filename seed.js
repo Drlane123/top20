@@ -348,6 +348,17 @@ function main() {
     throw err;
   }
 
+  // DJ'S HOT PICKS: this Friday's panel picks — 3 songs that are already
+  // hot just outside the Top 20 (unjittered National Overall ranks 22, 25
+  // and 28). The recalc below steps them into today's Top 20, badged.
+  const pickDate = charts.todayStr();
+  const insPick = db.prepare("INSERT OR IGNORE INTO dj_picks (song_id, pick_date) VALUES (?, ?)");
+  const hotPicks = [22, 25, 28]
+    .map((rk) => baseRanks.find((e) => e.level === "national" && e.genre === "Overall" && e.rank === rk))
+    .filter(Boolean);
+  for (const e of hotPicks) insPick.run(e.song_id, pickDate);
+  console.log(`dj's hot picks: seeded ${hotPicks.length} for Friday ${pickDate}`);
+
   const result = charts.recalc(db);
   const counts = {
     users: db.prepare("SELECT COUNT(*) c FROM users").get().c,
