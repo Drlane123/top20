@@ -59,6 +59,13 @@ const CATALOG = [
   ["Pop", "Dance Floor Apology", "Milo Ferreira", "Houston", "TX", 7.9],
   ["Pop", "Cherry Lipstick Weather", "Poppy Lane", "Nashville", "TN", 8.2],
   ["Pop", "Main Character Energy", "Gia Laurent", "Atlanta", "GA", 6.3],
+
+  ["Dance/Techno/House", "Laser Confession", "Nova Reign", "Miami", "FL", 9.3],
+  ["Dance/Techno/House", "Warehouse Heartbeat", "KAIRO", "Chicago", "IL", 8.4],
+  ["Dance/Techno/House", "Neon Skyline Run", "Vex Marlowe", "Las Vegas", "NV", 7.7],
+  ["Dance/Techno/House", "Bassline Confidential", "DJ Solenne", "Los Angeles", "CA", 8.8],
+  ["Dance/Techno/House", "4AM in Dallas", "Rio Delacroix", "Dallas", "TX", 7.1],
+  ["Dance/Techno/House", "Glass Cathedral", "Iona Waves", "New York", "NY", 6.6],
 ];
 
 function emailFor(name) {

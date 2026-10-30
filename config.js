@@ -1,7 +1,7 @@
 // Top 20 — owner-tunable config (spec section 9: rubric, weights and
 // formula splits live in one owner-controlled place).
 
-const GENRES = ["R&B", "Southern Soul", "Hip-Hop", "Trap", "Country", "Pop"];
+const GENRES = ["R&B", "Southern Soul", "Hip-Hop", "Trap", "Country", "Pop", "Dance/Techno/House"];
 const OVERALL = "Overall"; // cross-genre chart key (spec refinement)
 
 // The 15 universal judging criteria (spec 3.3). Same 15 for every genre.
