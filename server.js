@@ -92,15 +92,16 @@ const CSS = `
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  background:#000;background-image:radial-gradient(900px 480px at 50% -8%,#26272e 0%,#070708 55%,#000 100%);
+  background:#04060c;background-image:radial-gradient(1000px 520px at 50% -6%,rgba(64,110,255,.20) 0%,rgba(20,36,86,0) 55%),linear-gradient(180deg,#0e1830 0%,#0a1224 26%,#060b18 58%,#030509 100%);
   background-attachment:fixed;-webkit-font-smoothing:antialiased;overflow-x:clip}
 body::after{content:"";position:fixed;inset:0;z-index:80;pointer-events:none;
   background:linear-gradient(112deg,transparent 24%,rgba(255,255,255,.05) 40%,rgba(255,255,255,.10) 50%,rgba(255,255,255,.05) 60%,transparent 76%),
   linear-gradient(180deg,rgba(255,255,255,.05),transparent 24%)}
 .app{max-width:430px;margin:0 auto;min-height:100vh;padding:0 14px 34px;
-  background:linear-gradient(155deg,rgba(255,255,255,.05),transparent 42%),radial-gradient(720px 360px at 50% -40px,rgba(43,92,255,.07),transparent 62%),linear-gradient(180deg,#101013 0,#080809 260px);
-  border-left:1px solid #2c2e34;border-right:1px solid #2c2e34;
-  box-shadow:0 0 70px rgba(255,255,255,.05)}
+  background:linear-gradient(155deg,rgba(255,255,255,.06),transparent 42%),radial-gradient(720px 360px at 50% -40px,rgba(64,110,255,.10),transparent 62%);
+  border-left:1px solid;border-right:1px solid;
+  border-image:linear-gradient(180deg,#f8fafc 0%,#7e8ea6 28%,#eef3fa 50%,#5f6b7d 76%,#dfe7f2 100%) 1;
+  box-shadow:0 0 70px rgba(120,160,255,.07)}
 a{color:var(--ink)}
 header.site{padding:20px 2px 2px;text-align:center}
 .wm{display:inline-block;text-align:center;position:relative;isolation:isolate}
@@ -719,7 +720,7 @@ function newEntryRows(date, level, genre, regionKey, ctx) {
 function newEntriesSection(idPrefix, list) {
   if (!list.length) return "";
   const row = (e) => `
-    <div class="row rowlink">
+    <div class="row rowlink" data-song="${e.song_id}">
       <a class="stretch" href="/song/${e.song_id}" aria-label="${esc(e.title)}"></a>
       <img class="thumb" src="${esc(e.cover_path)}" alt="">
       <span class="meta"><span class="ne-tag">🔥 New Entry #${e.rank}</span><br>
@@ -758,7 +759,7 @@ function billboardRow(e, ctx, prevMap, { stats = true } = {}) {
     <a class="stretch" href="/song/${e.song_id}" aria-label="${esc(e.title)}"></a>
     <span class="rankwrap"><span class="rank">${e.rank}</span>${rankPill(st, e.rank)}<span class="move">${moveHtml(prevMap.get(e.song_id), e.rank)}</span></span>
     <img class="thumb" src="${esc(e.cover_path)}" alt="">
-    <span class="meta"><span class="t">${esc(e.title)}</span>${e.dj_pick ? `<span class="picktag">🎧 DJ Pick</span>` : ""}<br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a>${stats ? statsLine(st) : ""}<span class="openhint">Playing on the Stage — tap again to open the song page →</span></span>
+    <span class="meta"><span class="t">${esc(e.title)}</span>${e.dj_pick ? `<span class="picktag">🎧 DJ Pick</span>` : ""}<br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a>${stats ? statsLine(st) : ""}<span class="openhint">▶ Playing — tap again to open the song page →</span></span>
     <span class="nums">Craft <b>${e.craft_score}</b><br>Chart <b>${e.chart_score}</b></span>
   </div>`;
 }
@@ -1537,6 +1538,60 @@ app.get("/charts", (req, res) => {
   const topHtml = entries.slice(0, tier).map((e, i) =>
     i === 0 ? heroRow(e, ctx, prevMap) : billboardRow(e, ctx, prevMap)).join("");
 
+  // Two-click rows on the charts too (owner request): first click lifts the
+  // row and PLAYS the song in this page's player bar (the chart the visitor
+  // is looking at becomes the queue); second click opens the song page.
+  const audioMap = {};
+  if (entries.length) {
+    const ids = entries.map((e) => e.song_id).join(",");
+    for (const r of db.prepare(`SELECT id, audio_path FROM songs WHERE id IN (${ids})`).all()) audioMap[r.id] = r.audio_path;
+  }
+  const chartQ = entries.map((e) => ({ id: e.song_id, title: e.title, artist: e.artist, cover: e.cover_path, audio: audioMap[e.song_id] || "" }));
+  const chartPlayer = entries.length ? `
+  <div class="playerbar"><div class="panel">
+    <img id="cBarThumb" src="${esc(entries[0].cover_path)}" alt="">
+    <div class="meta"><div class="t" id="cBarTitle">${esc(entries[0].title)}</div><div class="a" id="cBarArtist">${esc(entries[0].artist)}</div></div>
+    <button type="button" class="playbtn" id="cPlayBtn" aria-label="Play or pause">▶</button>
+    <audio id="cAudio" preload="none"></audio>
+  </div></div>
+  <script>
+  (function(){
+    var Q = ${JSON.stringify(chartQ).replace(/</g, "\\u003c")};
+    var byId = {}; Q.forEach(function(s, i){ byId[s.id] = i; });
+    var audio = document.getElementById('cAudio');
+    var btn = document.getElementById('cPlayBtn');
+    var cur = -1;
+    function paint(){ var s = Q[cur]; if (!s) return;
+      document.getElementById('cBarThumb').src = s.cover;
+      document.getElementById('cBarTitle').textContent = s.title;
+      document.getElementById('cBarArtist').textContent = s.artist; }
+    function playAt(i){ if (i < 0 || i >= Q.length || !Q[i].audio) return; cur = i;
+      audio.src = Q[i].audio; audio.play().catch(function(){});
+      fetch('/api/play/' + Q[i].id, { method: 'POST' }).catch(function(){});
+      paint(); }
+    audio.addEventListener('play', function(){ btn.textContent = '❚❚'; });
+    audio.addEventListener('pause', function(){ btn.textContent = '▶'; });
+    audio.addEventListener('ended', function(){ if (cur >= 0 && cur < Q.length - 1) playAt(cur + 1); });
+    btn.addEventListener('click', function(){
+      if (cur < 0) { playAt(0); return; }
+      if (audio.paused) audio.play().catch(function(){}); else audio.pause();
+    });
+    document.querySelectorAll('.rowlink').forEach(function(row){
+      row.addEventListener('click', function(e){
+        if (e.target.closest('.artistlink')) return;
+        if (row.classList.contains('expanded')) return;
+        var sid = row.getAttribute('data-song');
+        if (!sid || !(sid in byId)) return;
+        e.preventDefault();
+        document.querySelectorAll('.rowlink.expanded').forEach(function(x){ if (x !== row) x.classList.remove('expanded'); });
+        row.classList.add('expanded');
+        playAt(byId[sid]);
+        row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+    });
+  })();
+  </script>` : "";
+
   const body = `
   <h1>${cap(level)} Top 20 — ${esc(genre)}</h1>
   <div class="chartdate">Today's Top 20 — ${fmtChartDate(date)}</div>
@@ -1553,7 +1608,8 @@ app.get("/charts", (req, res) => {
   ${chartRisersHtml}
   ${entries.length > 20 ? `<div class="panel"><h2 style="margin-top:0">Extended rankings — Top 100</h2>
     <p class="sub">Standing, not charting: no Stage play yet — but any day these can pop into the Top 20.</p>
-    ${entries.slice(20, 100).map((e) => billboardRow(e, ctx, prevMap)).join("")}</div>` : ""}`;
+    ${entries.slice(20, 100).map((e) => billboardRow(e, ctx, prevMap)).join("")}</div>` : ""}
+  ${chartPlayer}`;
   res.send(layout("Charts", "charts", body, {
     meta: {
       title: `${cap(level)} ${genre} Top 20 — TOP 20`,
