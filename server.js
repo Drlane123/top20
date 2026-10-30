@@ -229,6 +229,15 @@ h2{letter-spacing:1px}
   background:linear-gradient(180deg,#ffe9a8,#e8b93c 55%,#b8860b);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.7),0 0 10px rgba(232,185,60,.35)}
 .pickchip{border-color:#caa64b;color:#ffd97a}
+.rowlink{transition:padding .35s ease,background .35s ease,box-shadow .35s ease}
+.rowlink .thumb{transition:width .35s ease,height .35s ease}
+.rowlink.expanded{background:linear-gradient(180deg,rgba(43,92,255,.14),rgba(43,92,255,.03));border-radius:14px;
+  box-shadow:inset 0 0 0 1px rgba(125,177,255,.45),0 0 22px rgba(43,92,255,.22);padding-top:14px;padding-bottom:14px}
+.rowlink.expanded .thumb{width:96px;height:96px;border-radius:12px}
+.rowlink.expanded .t{font-size:18px}
+.rowlink.expanded .rank{font-size:26px}
+.openhint{display:none}
+.rowlink.expanded .openhint{display:block;font-size:11px;color:#9db9ff;margin-top:5px;letter-spacing:.4px}
 .upnext .arr{font-size:14px}
 @keyframes nextnudge{0%,100%{transform:translateX(0)}50%{transform:translateX(5px)}}
 .ringwrap{touch-action:pan-y;cursor:grab}
@@ -693,11 +702,11 @@ function emailSubject(n) {
 function billboardRow(e, ctx, prevMap, { stats = true } = {}) {
   const st = ctx.stats.get(e.song_id);
   return `
-  <div class="row rowlink">
+  <div class="row rowlink" data-song="${e.song_id}" data-rank="${e.rank}">
     <a class="stretch" href="/song/${e.song_id}" aria-label="${esc(e.title)}"></a>
     <span class="rankwrap"><span class="rank">${e.rank}</span>${rankPill(st, e.rank)}<span class="move">${moveHtml(prevMap.get(e.song_id), e.rank)}</span></span>
     <img class="thumb" src="${esc(e.cover_path)}" alt="">
-    <span class="meta"><span class="t">${esc(e.title)}</span>${e.dj_pick ? `<span class="picktag">🎧 DJ Pick</span>` : ""}<br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a>${stats ? statsLine(st) : ""}</span>
+    <span class="meta"><span class="t">${esc(e.title)}</span>${e.dj_pick ? `<span class="picktag">🎧 DJ Pick</span>` : ""}<br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a>${stats ? statsLine(st) : ""}<span class="openhint">Playing on the Stage — tap again to open the song page →</span></span>
     <span class="nums">Craft <b>${e.craft_score}</b><br>Chart <b>${e.chart_score}</b></span>
   </div>`;
 }
@@ -707,7 +716,7 @@ function billboardRow(e, ctx, prevMap, { stats = true } = {}) {
 function heroRow(e, ctx, prevMap) {
   const st = ctx.stats.get(e.song_id);
   return `
-  <div class="hero rowlink">
+  <div class="hero rowlink" data-song="${e.song_id}" data-rank="${e.rank}">
     <a class="stretch" href="/song/${e.song_id}" aria-label="${esc(e.title)}"></a>
     <span class="rankwrap"><span class="rank">${e.rank}</span>${rankPill(st, e.rank)}</span>
     <img class="cover-lg" src="${esc(e.cover_path)}" alt="">
@@ -771,7 +780,7 @@ function topRisers(date, level, genre, regionKey) {
     "SELECT song_id, rank FROM chart_entries WHERE chart_date = ? AND level = ? AND genre = ? AND region_key = ?"
   ).all(prevDate, level, genre, regionKey)) prev.set(r.song_id, r.rank);
   const today = db.prepare(`
-    SELECT ce.rank, ce.song_id, s.title, s.cover_path, u.id AS artist_id, u.name AS artist
+    SELECT ce.rank, ce.song_id, s.title, s.cover_path, s.audio_path, u.id AS artist_id, u.name AS artist
     FROM chart_entries ce
     JOIN songs s ON s.id = ce.song_id
     JOIN users u ON u.id = s.artist_id
@@ -793,14 +802,14 @@ function topRisers(date, level, genre, regionKey) {
 function risersHtml(list) {
   if (!list.length) return "";
   const rows = list.map((e) => `
-    <div class="row rowlink">
+    <div class="row rowlink" data-song="${e.song_id}" data-rank="${e.rank}" data-audio="${esc(e.audio_path)}" data-title="${esc(e.title)}" data-artist="${esc(e.artist)}" data-cover="${esc(e.cover_path)}">
       <a class="stretch" href="/song/${e.song_id}" aria-label="${esc(e.title)}"></a>
       <span class="rankbadge">#${e.rank}</span>
       <img class="thumb" src="${esc(e.cover_path)}" alt="">
-      <span class="meta"><span class="t">${esc(e.title)}</span><br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a></span>
+      <span class="meta"><span class="t">${esc(e.title)}</span><br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a><span class="openhint">Playing now — tap again to open the song page →</span></span>
       <span class="gainchip">▲ ${e.gain}</span>
     </div>`).join("");
-  return `<div class="panel">
+  return `<div class="panel riserspanel">
     <h2 style="margin-top:0">TOP RISERS</h2>
     <p class="sub" style="margin-top:-4px">Rising the fastest — not in the Top 20 yet. These are knocking on the door.</p>
     ${rows}
@@ -1121,6 +1130,7 @@ app.get("/", (req, res) => {
   const PLAYLISTS = ${JSON.stringify(channels.map((c) => c.list)).replace(/</g, "\\u003c")};
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   let ch = 0, idx = 0, lastCounted = "";
+  let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
   const $ = (id) => document.getElementById(id);
   const rings = [
@@ -1262,6 +1272,7 @@ app.get("/", (req, res) => {
       const local = idx - r.from;
       if (list.length && local >= 0 && local < list.length) anc = { r, list, local };
     });
+    if (previewOn) { const ua = $('upNextA'), ub = $('upNextB'); if (ua) ua.hidden = true; if (ub) ub.hidden = true; anc = null; }
     if (anc) {
       const t = anc.list[anc.local];
       const dur = audio.duration || 0, cur = audio.currentTime || 0;
@@ -1284,6 +1295,7 @@ app.get("/", (req, res) => {
   function stopShowcase(){ if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } }
   function load(i, autoplay){
     const t = PLAYLISTS[ch][i]; if (!t) return;
+    previewOn = false;
     idx = i;
     audio.src = t.audio;
     $('npCover').src = t.cover; $('npTitle').textContent = t.title;
@@ -1317,7 +1329,7 @@ app.get("/", (req, res) => {
     }
   });
   audio.addEventListener('pause', () => { $('playBtn').textContent = '▶'; });
-  audio.addEventListener('ended', () => load((idx + 1) % PLAYLISTS[ch].length, true));
+  audio.addEventListener('ended', () => { if (previewOn) { previewOn = false; return; } load((idx + 1) % PLAYLISTS[ch].length, true); });
   // Drag or scroll a spinner by hand — the playing ring always swings back
   // to the song that's playing; the other ring goes back to spinning.
   rings.forEach((r) => {
@@ -1363,6 +1375,43 @@ app.get("/", (req, res) => {
       settle(r, 1400);
       lastInteract = Date.now();
     }, { passive: false });
+  });
+  // Two-click rows (owner request): the FIRST click on a home Top 20 chart
+  // row or a Top Risers row lifts it up big in place — like the #1 hero —
+  // and plays it. The SECOND click on the same row opens the song page.
+  function collapseRows(except){
+    document.querySelectorAll('.rowlink.expanded').forEach((x) => { if (x !== except) x.classList.remove('expanded'); });
+  }
+  document.querySelectorAll('#homeChart .rowlink, #homeMore .rowlink').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.artistlink')) return;
+      if (row.classList.contains('expanded')) return; // second click — open the song page
+      e.preventDefault();
+      collapseRows(row);
+      row.classList.add('expanded');
+      const rank = parseInt(row.dataset.rank, 10);
+      if (rank >= 1 && rank <= 20) {
+        if (ch !== 0) document.querySelector('#channelTabs button[data-ch="0"]').click();
+        load(rank - 1, true);
+      }
+      row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  });
+  document.querySelectorAll('.riserspanel .rowlink').forEach((row) => {
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('.artistlink')) return;
+      if (row.classList.contains('expanded')) return; // second click — open the song page
+      e.preventDefault();
+      collapseRows(row);
+      row.classList.add('expanded');
+      previewOn = true;
+      audio.src = row.dataset.audio;
+      $('barThumb').src = row.dataset.cover;
+      $('barTitle').textContent = row.dataset.title;
+      $('barArtist').textContent = row.dataset.artist;
+      audio.play().catch(() => {});
+      row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
   });
   renderRings(); load(0, false); startShowcase();
   </script>` : `<div class="panel"><h2>No songs yet</h2><p class="sub">Run the seed or upload the first song.</p></div>`}`;
