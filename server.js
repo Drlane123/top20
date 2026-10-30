@@ -133,16 +133,15 @@ const CSS = `
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  background:#04060c;background-image:radial-gradient(1100px 560px at 50% -6%,rgba(38,92,255,.24) 0%,rgba(16,42,120,.07) 42%,rgba(20,36,86,0) 62%),linear-gradient(180deg,#0e1830 0%,#0a1224 26%,#060b18 58%,#030509 100%);
+  background:#04060c;background-image:radial-gradient(1100px 560px at 50% -6%,rgba(38,92,255,.15) 0%,rgba(16,42,120,.04) 42%,rgba(20,36,86,0) 62%),linear-gradient(180deg,#0e1830 0%,#0a1224 26%,#060b18 58%,#030509 100%);
   background-attachment:fixed;-webkit-font-smoothing:antialiased;overflow-x:clip}
 body::after{content:"";position:fixed;inset:0;z-index:80;pointer-events:none;
-  background:linear-gradient(112deg,transparent 24%,rgba(255,255,255,.05) 40%,rgba(255,255,255,.10) 50%,rgba(255,255,255,.05) 60%,transparent 76%),
-  linear-gradient(180deg,rgba(255,255,255,.05),transparent 24%)}
+  background:linear-gradient(180deg,rgba(255,255,255,.02),transparent 18%)}
 .app{max-width:430px;margin:0 auto;min-height:100vh;padding:0 14px 34px;
-  background:linear-gradient(155deg,rgba(255,255,255,.06),transparent 42%),radial-gradient(720px 360px at 50% -40px,rgba(64,110,255,.10),transparent 62%);
+  background:radial-gradient(720px 360px at 50% -40px,rgba(64,110,255,.05),transparent 62%);
   border-left:1px solid;border-right:1px solid;
   border-image:linear-gradient(180deg,#f8fafc 0%,#7e8ea6 28%,#eef3fa 50%,#5f6b7d 76%,#dfe7f2 100%) 1;
-  box-shadow:0 0 70px rgba(120,160,255,.07)}
+  box-shadow:0 0 70px rgba(120,160,255,.03)}
 a{color:var(--ink)}
 header.site{padding:20px 2px 2px;text-align:center;position:relative}
 .crowd{position:absolute;bottom:64px;height:176px;width:auto;z-index:0;pointer-events:none;mix-blend-mode:screen;opacity:1;filter:saturate(1.18) contrast(1.1) brightness(1.02);-webkit-mask-image:linear-gradient(180deg,#000 85%,transparent 99%);mask-image:linear-gradient(180deg,#000 85%,transparent 99%)}
