@@ -68,18 +68,19 @@ header.site{padding:20px 2px 2px;text-align:center}
    italic + skew, stamped into the black surface — dark shadow pressed at
    the top/inner edge, thin bright highlight along the bottom edge. The
    blaze runs the full width of the mark, under TOP and the 20 both. */
-.wordmark{font-size:44px;font-weight:900;letter-spacing:.5px;line-height:1;text-align:center;
-  font-style:italic;transform:skewX(-8deg)}
-.wordmark .top{display:inline-block;color:var(--accent);
+.wordmark{font-size:46px;font-weight:900;letter-spacing:.5px;line-height:1;text-align:center;
+  font-style:italic;transform:skewX(-12deg)}
+.wordmark .top{display:inline-block;color:var(--accent);font-size:62px;transform:skewX(-7deg);
   background:linear-gradient(180deg,#9db9ff 0%,#2b5cff 45%,#123a9e 78%,#6f97ff 100%);
   -webkit-background-clip:text;background-clip:text;color:transparent;
   filter:drop-shadow(0 -1px 1px rgba(0,0,0,.95)) drop-shadow(0 1px 0 rgba(190,214,255,.35)) drop-shadow(0 0 16px rgba(43,92,255,.35))}
 .wordmark .twenty{display:inline-block;font-family:Impact,"Arial Narrow Bold","Franklin Gothic Medium Cond","Helvetica Neue Condensed Black",sans-serif;
   font-weight:900;font-style:italic;letter-spacing:0;padding-right:.1em;
+  font-size:54px;position:relative;z-index:2;margin-left:.12em;
   background:linear-gradient(180deg,#ffffff 0%,#e8ebf1 30%,#aeb5c2 48%,#f4f6fa 55%,#c3c9d4 76%,#ffffff 100%);
   -webkit-background-clip:text;background-clip:text;color:transparent;
   filter:drop-shadow(0 -1px 1px rgba(0,0,0,.95)) drop-shadow(0 1px 0 rgba(255,255,255,.4))}
-.blaze{height:11px;width:100%;margin:3px auto 0;position:relative;
+.blaze{height:11px;width:100%;margin:7px auto 0;position:relative;
   background:
    radial-gradient(16px 11px at 16% 100%,rgba(255,45,0,.85),transparent 70%),
    radial-gradient(22px 13px at 33% 100%,rgba(255,90,0,.95),transparent 70%),
@@ -176,6 +177,29 @@ h1{font-size:25px;margin:12px 0 4px} h2{font-size:20px;margin:4px 0 10px;letter-
 .ringwrap.dim{opacity:.72}
 .prog{display:block;height:5px;background:#232429;border-radius:99px;overflow:hidden;margin-top:6px}
 .prog i{display:block;height:100%;background:linear-gradient(90deg,#2b5cff,#7db1ff);border-radius:99px;transition:width .5s linear}
+.stagegrid{display:block}
+.ringsrow{display:flex;flex-direction:column}
+.ringcol{min-width:0}
+.homegrid{display:block}
+.ctabar{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.ctabar .cta-txt{flex:1;min-width:210px}
+.ctabar .cta-txt b{display:block;font-size:15.5px;color:#fff}
+.ctabar .cta-txt span{color:var(--dim);font-size:13px}
+.ctabar .cta-btn{min-height:40px;padding:9px 18px;font-size:13.5px;white-space:nowrap;margin-left:auto}
+@media (min-width:700px){
+  .app{max-width:720px;padding:0 22px 40px}
+  .songcover{max-width:520px;margin-left:auto;margin-right:auto}
+  .homegrid{display:grid;grid-template-columns:1fr 1fr;gap:0 18px;align-items:start}
+}
+@media (min-width:1024px){
+  .app{max-width:1120px;padding:0 28px 48px}
+  .stagegrid{display:grid;grid-template-columns:5fr 7fr;gap:18px;align-items:start}
+  .stagegrid>.panel{margin-top:0}
+  .ringsrow{flex-direction:row;gap:10px}
+  .ringcol{flex:1}
+  h1{font-size:29px}
+  h2{font-size:22px}
+}
 .statstrip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
 .stat{background:linear-gradient(180deg,#1a1b20,#0c0c0f);border:1px solid #2c2e35;border-radius:12px;padding:9px 4px;text-align:center;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
@@ -375,7 +399,6 @@ function layout(title, active, body, opts = {}) {
   </div>
   ${opts.home ? `<div class="hotline"><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — NOBODY'S SAFE — NEW ENTRIES HIT AT MIDNIGHT — </span><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — NOBODY'S SAFE — NEW ENTRIES HIT AT MIDNIGHT — </span></div>` : ""}
   <div class="tagline">Charts by craft, not just clout</div>
-  ${opts.home ? `<div style="margin-top:9px"><a class="btn" href="/profile" style="min-height:38px;padding:8px 20px;font-size:13.5px">Create Profile</a></div>` : ""}
   <nav class="main">${nav}</nav>
 </header>
 ${body}
@@ -992,6 +1015,7 @@ app.get("/", (req, res) => {
   const body = `
   <div class="tabs" id="channelTabs">${tabs}</div>
   ${first ? `
+  <div class="stagegrid">
   <div class="chrome-frame"><div class="panel">
     <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">Now playing — <span id="npChannel">Main Stage</span></div>
     <img class="cover" id="npCover" src="${esc(first.cover)}" alt="cover" style="margin-top:10px">
@@ -1011,21 +1035,28 @@ app.get("/", (req, res) => {
   </div></div>
   <div class="panel">
     <h2 style="margin-top:0">In rotation</h2>
-    <p class="sub">The Top 20 never sits still — the first 10 ride the top spinner, the next 10 ride right under it. The song that's playing sticks out big, with its timer running under it. Drag a spinner to look around — it always swings back to the song that's playing.</p>
+    <p class="sub">The Top 20 never sits still — the first 10 ride one spinner, the next 10 ride the other. The song that's playing sticks out big, with its timer running under it. Drag a spinner to look around — it always swings back to the song that's playing.</p>
+    <div class="ringsrow"><div class="ringcol">
     <div class="spinlabel" id="spinLabelA">TOP 10</div>
     <div class="ringwrap" id="wrapA"><div class="ring" id="ringA"></div><div class="upnext" id="upNextA" hidden></div></div>
     <div class="ringnow" id="ringNowA"></div>
-    <div id="ringBBlock">
+    </div><div class="ringcol" id="ringBBlock">
       <div class="spinlabel" id="spinLabelB">11 – 20</div>
       <div class="ringwrap" id="wrapB"><div class="ring" id="ringB"></div><div class="upnext" id="upNextB" hidden></div></div>
       <div class="ringnow" id="ringNowB"></div>
-    </div>
-  </div>
+    </div></div>
+  </div></div>
+  <div class="homegrid">
   ${homeNewHtml}
   ${homeChartHtml}
   ${homeRisersHtml}
   ${homeDjHtml}
+  </div>
   ${howStrip}
+  <div class="panel ctabar">
+    <div class="cta-txt"><b>Your music and your profile will speak for themselves.</b><span>Make your free artist profile, upload a song, and let the 15 judges do the rest.</span></div>
+    <a class="btn btn-blue cta-btn" href="/profile">Create Profile</a>
+  </div>
   ${stageRules}
   <div class="playerbar"><div class="panel">
     <img id="barThumb" src="${esc(first.cover)}" alt="">
@@ -1355,7 +1386,7 @@ app.get("/song/:id", (req, res) => {
   const removedNote = song.status !== "live"
     ? `<div class="panel"><p class="sub" style="margin:0">This song has been removed by the artist — only live songs are judged and charted.</p></div>` : "";
   const body = `
-  <div class="chrome-frame"><div class="panel" style="padding:10px">
+  <div class="chrome-frame songcover"><div class="panel" style="padding:10px">
     <img class="cover" src="${esc(song.cover_path)}" alt="cover">
   </div></div>
   <h1>${esc(song.title)}</h1>
