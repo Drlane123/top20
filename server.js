@@ -36,6 +36,7 @@ app.use(express.static(PUBLIC_DIR, {
 
 /* ---------------------------------- utils --------------------------------- */
 
+const fmtNum = (n) => Number(n || 0).toLocaleString("en-US");
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -55,7 +56,7 @@ const CSS = `
 html{-webkit-text-size-adjust:100%}
 body{margin:0;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   background:#000;background-image:radial-gradient(900px 480px at 50% -8%,#26272e 0%,#070708 55%,#000 100%);
-  background-attachment:fixed;-webkit-font-smoothing:antialiased}
+  background-attachment:fixed;-webkit-font-smoothing:antialiased;overflow-x:clip}
 .app{max-width:430px;margin:0 auto;min-height:100vh;padding:0 14px 34px;
   background:linear-gradient(180deg,#101013 0,#080809 260px);
   border-left:1px solid #2c2e34;border-right:1px solid #2c2e34;
@@ -85,33 +86,39 @@ header.site{padding:20px 2px 2px;text-align:center}
    radial-gradient(18px 12px at 50% 100%,rgba(255,179,0,.9),transparent 70%),
    radial-gradient(24px 13px at 67% 100%,rgba(255,90,0,.95),transparent 70%),
    radial-gradient(16px 11px at 84% 100%,rgba(255,45,0,.85),transparent 70%);
-  filter:blur(.3px)}
+  filter:blur(.3px);animation:flick 2.6s ease-in-out infinite;transform-origin:50% 100%}
+@keyframes flick{0%,100%{transform:scaleY(1);opacity:1}30%{transform:scaleY(1.14);opacity:.92}55%{transform:scaleY(.93);opacity:1}75%{transform:scaleY(1.08);opacity:.95}}
 .blaze-line{height:2px;width:100%;margin:1px auto 0;border-radius:2px;
   background:linear-gradient(90deg,transparent,var(--fire3) 25%,var(--fire2) 50%,var(--fire3) 75%,transparent)}
-.hotline{text-align:center;margin-top:5px;font-size:11px;font-weight:800;letter-spacing:3.5px;
-  background:linear-gradient(90deg,#ff7a18,#ffc933,#ff7a18);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hotline{margin-top:5px;font-size:11px;font-weight:800;letter-spacing:3.5px;white-space:nowrap;overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 8%,#000 92%,transparent)}
+.hotline .tick{display:inline-block;padding-right:12px;
+  background:linear-gradient(90deg,#ff7a18,#ffc933,#ff7a18);-webkit-background-clip:text;background-clip:text;color:transparent;
+  animation:tickmove 22s linear infinite}
+@keyframes tickmove{from{transform:translateX(0)}to{transform:translateX(-100%)}}
 .tagline{color:var(--dim);font-size:11px;letter-spacing:3px;text-transform:uppercase;margin-top:5px}
-nav.main{display:flex;gap:8px;overflow-x:auto;padding:14px 0 4px;scrollbar-width:none}
-nav.main::-webkit-scrollbar{display:none}
-nav.main a{flex:0 0 auto;text-decoration:none;color:var(--ink);padding:9px 15px;border-radius:999px;
-  border:1px solid var(--line);background:linear-gradient(180deg,#1e1e21,#121214);font-size:14px}
+nav.main{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:14px 0 4px}
+nav.main a{flex:0 0 auto;text-decoration:none;color:var(--ink);padding:8px 12px;border-radius:999px;
+  border:1px solid var(--line);background:linear-gradient(180deg,#26262b,#121214);font-size:13.5px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 3px 8px rgba(0,0,0,.4)}
 nav.main a.active{background:var(--chrome);color:#0b0b0d;border-color:#7d828d;font-weight:700}
-.panel{position:relative;background:linear-gradient(180deg,#141416,#0c0c0e);border:1px solid #33363d;border-radius:16px;
-  box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 6px 16px rgba(0,0,0,.45);
-  padding:16px;margin:14px 0;overflow:hidden}
-.panel::before{content:"";position:absolute;left:0;right:0;top:0;height:38%;
-  background:linear-gradient(180deg,rgba(255,255,255,.045),rgba(255,255,255,0));pointer-events:none}
+.panel{position:relative;background:linear-gradient(180deg,#1a1b20,#0a0a0c);border:1px solid #3a3d45;border-radius:18px;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -18px 28px rgba(0,0,0,.38),0 12px 26px rgba(0,0,0,.5);
+  padding:18px;margin:18px 0;overflow:hidden}
+.panel::before{content:"";position:absolute;left:0;right:0;top:0;height:48%;
+  background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,0));pointer-events:none}
 .chrome-frame{border:1px solid transparent;border-radius:20px;padding:2px;
   background:linear-gradient(#101013,#0a0a0c) padding-box,var(--chrome) border-box;
   box-shadow:0 8px 22px rgba(0,0,0,.55)}
 .chrome-frame .panel{margin:0;border-color:#232429;border-radius:18px;box-shadow:none}
 .chrome-frame .panel::before{display:none}
-h1{font-size:24px;margin:10px 0 4px} h2{font-size:19px;margin:4px 0 10px} h3{font-size:16px;margin:14px 0 6px}
+h1{font-size:25px;margin:12px 0 4px} h2{font-size:20px;margin:4px 0 10px;letter-spacing:.2px} h3{font-size:16px;margin:14px 0 6px}
 .sub{color:var(--dim);font-size:14px;line-height:1.5}
-.tabs{display:flex;gap:8px;overflow-x:auto;padding:6px 0 2px;scrollbar-width:none}
-.tabs::-webkit-scrollbar{display:none}
-.tabs a,.tabs button{flex:0 0 auto;text-decoration:none;cursor:pointer;color:var(--ink);padding:9px 14px;border-radius:999px;
-  border:1px solid var(--line);background:linear-gradient(180deg,#1e1e21,#121214);font-size:14px;font-family:inherit}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;padding:6px 0 2px}
+.tabs a,.tabs button{flex:0 0 auto;text-decoration:none;cursor:pointer;color:var(--ink);padding:8px 12px;border-radius:999px;
+  border:1px solid var(--line);background:linear-gradient(180deg,#26262b,#121214);font-size:13.5px;font-family:inherit;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 3px 8px rgba(0,0,0,.4)}
 .tabs a.active,.tabs button.active{background:var(--chrome);color:#0b0b0d;border-color:#7d828d;font-weight:700}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
 .chip{border:1px solid #43464e;border-radius:999px;padding:5px 11px;font-size:13px;color:var(--ink);
@@ -125,14 +132,81 @@ h1{font-size:24px;margin:10px 0 4px} h2{font-size:19px;margin:4px 0 10px} h3{fon
 .btn-blue{background:linear-gradient(180deg,#7198ff,#2b5cff 48%,#1740b4);color:#fff;border-color:#0f2c7d;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 5px 12px rgba(0,0,0,.5)}
 .btn-block{display:block;width:100%}
-.cover{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:14px;border:1px solid #43464e;display:block}
+.cover{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:16px;border:1px solid #4a4e58;display:block;
+  box-shadow:0 10px 24px rgba(0,0,0,.55),inset 0 1px 0 rgba(255,255,255,.2)}
+/* The Spinner — the Top 20 covers ride a rotating 3D ring (SpinQuest-style
+   motion, owner request): front cover big and glowing, the ring keeps
+   turning on its own and swings to each song as it plays. */
+.ringwrap{position:relative;height:206px;margin-top:10px;perspective:720px;overflow:hidden;
+  -webkit-mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent);
+  mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
+.ring{position:absolute;left:50%;top:50%;width:0;height:0;transform-style:preserve-3d;
+  transition:transform 1.1s cubic-bezier(.25,.8,.25,1)}
+.cell{position:absolute;left:-50px;top:-66px;width:100px;text-align:center;cursor:pointer;backface-visibility:hidden;
+  transition:opacity .8s ease,transform .45s ease}
+.cell img{width:100px;height:100px;border-radius:14px;border:1px solid #4a4e58;object-fit:cover;display:block;
+  box-shadow:0 14px 28px rgba(0,0,0,.62),inset 0 1px 0 rgba(255,255,255,.25)}
+.cellin{position:relative;transition:transform .45s cubic-bezier(.2,.9,.3,1.35)}
+.cellin::after{content:"";position:absolute;inset:0;height:100px;border-radius:14px;pointer-events:none;
+  background:linear-gradient(155deg,rgba(120,170,255,.22),rgba(255,255,255,.06) 40%,transparent 62%)}
+.cell:hover .cellin,.cell.pop .cellin{transform:scale(1.25)}
+.cell.front .cellin::after{background:linear-gradient(155deg,rgba(120,170,255,.34),rgba(255,255,255,.10) 40%,transparent 62%)}
+.cell .ct{margin-top:7px;font-size:11.5px;font-weight:700;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell .ca{font-size:10.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cell:hover .ct,.cell.pop .ct{font-size:13px;color:#fff;white-space:normal;overflow:visible}
+.cell:hover .ca,.cell.pop .ca{font-size:11.5px;color:#cfd6e4;white-space:normal;overflow:visible}
+.cell.front img{border-color:#aeb6c4;
+  box-shadow:0 0 0 1px rgba(255,255,255,.3),0 0 30px rgba(43,92,255,.4),0 18px 34px rgba(0,0,0,.68)}
+.cell:hover img,.cell.pop img{border-color:#8fb4ff;
+  box-shadow:0 0 0 1px rgba(160,195,255,.55),0 0 34px rgba(43,92,255,.55),0 20px 38px rgba(0,0,0,.7)}
+.ringnow{text-align:center;font-size:13px;color:var(--dim);margin-top:4px}
+.ringnow b{color:#fff}
+.spinlabel{display:inline-block;margin:16px 0 0;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:900;
+  letter-spacing:2px;color:#e3edff;border:1px solid #5f8dff;
+  background:linear-gradient(180deg,#4a7de6,#1c46a8 55%,#122c6e);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 16px rgba(43,92,255,.35);transition:box-shadow .6s ease,filter .6s ease}
+.cell.playing .cellin{transform:scale(1.45)}
+.cell.playing img{border-color:#d7e6ff;
+  box-shadow:0 0 0 1px rgba(210,230,255,.7),0 0 48px rgba(43,92,255,.75),0 22px 40px rgba(0,0,0,.72)}
+.cell.playing .ct{font-size:13.5px;color:#fff;white-space:normal;overflow:visible}
+.spinlabel.lit{filter:brightness(1.3);animation:litpulse 1.6s ease-in-out infinite}
+@keyframes litpulse{0%,100%{box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 0 16px rgba(43,92,255,.4)}50%{box-shadow:inset 0 1px 0 rgba(255,255,255,.6),0 0 34px rgba(43,92,255,.85)}}
+.ringwrap{transition:opacity .6s ease}
+.ringwrap.lit{background:radial-gradient(300px 150px at 50% 46%,rgba(43,92,255,.17),transparent 68%)}
+.ringwrap.dim{opacity:.72}
+.prog{display:block;height:5px;background:#232429;border-radius:99px;overflow:hidden;margin-top:6px}
+.prog i{display:block;height:100%;background:linear-gradient(90deg,#2b5cff,#7db1ff);border-radius:99px;transition:width .5s linear}
+.statstrip{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.stat{background:linear-gradient(180deg,#1a1b20,#0c0c0f);border:1px solid #2c2e35;border-radius:12px;padding:9px 4px;text-align:center;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06)}
+.stat b{display:block;font-size:16px;color:#fff}
+.stat span{font-size:10px;letter-spacing:1.2px;text-transform:uppercase;color:#9aa3b2}
+.upnext{position:absolute;top:44%;right:2px;z-index:5;display:flex;align-items:center;gap:7px;
+  padding:6px 9px;border-radius:999px;font-size:10.5px;font-weight:900;letter-spacing:1px;color:#eaf2ff;
+  background:linear-gradient(180deg,rgba(38,84,205,.92),rgba(16,38,96,.92));border:1px solid #7db1ff;
+  box-shadow:0 0 18px rgba(43,92,255,.5);animation:nextnudge 1s ease-in-out infinite}
+.upnext[hidden]{display:none}
+.upnext img{width:26px;height:26px;border-radius:7px;object-fit:cover;border:1px solid rgba(255,255,255,.5)}
+.upnext .arr{font-size:14px}
+@keyframes nextnudge{0%,100%{transform:translateX(0)}50%{transform:translateX(5px)}}
+.ringwrap{touch-action:pan-y;cursor:grab}
+.ring.drag{transition:none}
+.ringwrap img{-webkit-user-drag:none;user-drag:none}
+.cell{-webkit-user-select:none;user-select:none}
+nav.main a,.tabs a,.tabs button{position:relative;overflow:hidden}
+nav.main a::after,.tabs a::after,.tabs button::after{content:"";position:absolute;top:0;bottom:0;left:-70%;width:45%;
+  background:linear-gradient(100deg,transparent,rgba(255,255,255,.14),transparent);transform:skewX(-18deg);
+  animation:sheen 7s ease-in-out infinite;pointer-events:none}
+@keyframes sheen{0%,55%{left:-70%}85%,100%{left:130%}}
 .row{display:flex;gap:11px;align-items:center;padding:10px 4px;border-bottom:1px solid #232429;text-decoration:none;color:var(--ink)}
 .row:last-child{border-bottom:none}
 .row .rank{font-size:20px;font-weight:800;width:32px;text-align:center;flex:0 0 auto}
-.row .thumb{width:46px;height:46px;border-radius:10px;border:1px solid #43464e;object-fit:cover;flex:0 0 auto}
+.row .thumb{width:46px;height:46px;border-radius:10px;border:1px solid #4a4e58;object-fit:cover;flex:0 0 auto;box-shadow:0 4px 10px rgba(0,0,0,.45)}
 .row .meta{flex:1;min-width:0}
-.row .t{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.row .a{color:var(--dim);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t{display:block;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .a{display:block;color:var(--dim);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .t + br,.row .a + br{display:none}
+.row .artistlink{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .row .nums{text-align:right;font-size:12.5px;color:var(--dim);flex:0 0 auto}
 .row .nums b{color:var(--ink);font-size:15px}
 .row.playing{background:linear-gradient(90deg,rgba(43,92,255,.14),transparent);border-radius:10px}
@@ -142,6 +216,7 @@ h1{font-size:24px;margin:10px 0 4px} h2{font-size:19px;margin:4px 0 10px} h3{fon
 .move .flat{color:var(--flat)}
 .move .new{color:var(--newgreen)}
 .rankwrap{display:flex;flex-direction:column;align-items:center;gap:3px;width:38px;flex:0 0 auto}
+.rankwrap .move{width:auto;text-align:center;font-size:12px}
 .rankpill{font-size:8.5px;font-weight:900;letter-spacing:.6px;padding:1.5px 5px;border-radius:5px;line-height:1.25;white-space:nowrap}
 .rankpill.new{background:var(--newgreen);color:#03140a}
 .rankpill.reentry{background:#454b57;color:#e6e9ef;border:1px solid #6a707c}
@@ -158,19 +233,25 @@ h1{font-size:24px;margin:10px 0 4px} h2{font-size:19px;margin:4px 0 10px} h3{fon
   background:linear-gradient(180deg,#7198ff,#2b5cff 48%,#1740b4);
   box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 4px 10px rgba(0,0,0,.5)}
 .votebtn:active{transform:translateY(1px)}
-.stats{display:block;margin-top:3px;font-size:10.5px;letter-spacing:1.2px;text-transform:uppercase;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stats{display:block;margin-top:3px;font-size:10.5px;letter-spacing:1.2px;line-height:1.6;text-transform:uppercase;color:var(--dim);white-space:normal}
 .stats b{color:#eceef1;font-weight:800}
 .chartdate{text-align:center;font-size:12.5px;font-weight:800;letter-spacing:2.5px;color:#dfe3ea;margin:12px 0 2px;text-transform:uppercase}
-.hero{display:flex;gap:13px;align-items:center;padding:13px 10px;margin-bottom:6px;border-radius:14px;text-decoration:none;color:var(--ink);
+.hero{display:flex;flex-wrap:wrap;gap:13px;align-items:center;padding:14px 12px;margin-bottom:6px;border-radius:16px;text-decoration:none;color:var(--ink);
   border:1px solid transparent;
-  background:linear-gradient(180deg,#17171b,#0d0d0f) padding-box,linear-gradient(180deg,#f2f4f8,#9aa1ae 50%,#e8ebf0) border-box;
-  box-shadow:0 0 22px rgba(210,218,232,.13),inset 0 1px 0 rgba(255,255,255,.15)}
+  background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,0) 46%) padding-box,linear-gradient(180deg,#191a1f,#0c0c0e) padding-box,linear-gradient(180deg,#f2f4f8,#9aa1ae 50%,#e8ebf0) border-box;
+  box-shadow:0 0 22px rgba(210,218,232,.13),0 10px 22px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.18)}
 .hero .rank{font-size:36px;font-weight:900;line-height:1;
   background:linear-gradient(180deg,#ffffff,#c9cedb 55%,#f4f6fa);-webkit-background-clip:text;background-clip:text;color:transparent}
 .hero .cover-lg{width:96px;height:96px;border-radius:12px;border:1px solid #565b66;object-fit:cover;flex:0 0 auto}
 .hero .meta{flex:1;min-width:0}
-.hero .t{font-size:19px;font-weight:800}
+.hero .t{display:block;font-size:19px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hero .t + br{display:none}
+.hero .artistlink{display:block;color:var(--dim);font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .hero .a{color:var(--dim);font-size:13.5px}
+.hero .herobar{flex:1 1 100%;display:flex;justify-content:space-between;align-items:baseline;gap:12px;border-top:1px solid #232429;padding-top:9px}
+.hero .herobar .stats{margin-top:0}
+.hero .herobar .nums{flex:0 0 auto;text-align:right;font-size:12.5px;color:var(--dim)}
+.hero .herobar .nums b{color:var(--ink);font-size:15px}
 .hero .nums{text-align:right;font-size:12.5px;color:var(--dim);flex:0 0 auto}
 .hero .nums b{color:var(--ink);font-size:15px}
 .ne{border:1px solid transparent;border-radius:16px;padding:13px 14px;margin:14px 0;
@@ -292,7 +373,7 @@ function layout(title, active, body, opts = {}) {
     <div class="wordmark"><span class="top">TOP</span> <span class="twenty">20</span></div>
     <div class="blaze"></div><div class="blaze-line"></div>
   </div>
-  ${opts.home ? `<div class="hotline">— HOT 20 — TRENDING NOW —</div>` : ""}
+  ${opts.home ? `<div class="hotline"><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — NOBODY'S SAFE — NEW ENTRIES HIT AT MIDNIGHT — </span><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — NOBODY'S SAFE — NEW ENTRIES HIT AT MIDNIGHT — </span></div>` : ""}
   <div class="tagline">Charts by craft, not just clout</div>
   ${opts.home ? `<div style="margin-top:9px"><a class="btn" href="/profile" style="min-height:38px;padding:8px 20px;font-size:13.5px">Create Profile</a></div>` : ""}
   <nav class="main">${nav}</nav>
@@ -467,8 +548,9 @@ function chartContext(date, level, genre, regionKey) {
     for (const r of rows) {
       if (st.peak == null || r.rank < st.peak) st.peak = r.rank;
       if (r.rank <= 20) {
-        weekDates.add(r.chart_date);
-        if (r.rank === 1) at1Dates.add(r.chart_date);
+        const wk = Math.floor(new Date(r.chart_date + "T00:00:00Z").getTime() / 604800000);
+        weekDates.add(wk);
+        if (r.rank === 1) at1Dates.add(wk);
         if (r.chart_date === ctx.prevDate) st.inPrevTop20 = true;
         else if (r.chart_date < date) st.top20BeforePrev = true;
       }
@@ -482,6 +564,16 @@ function chartContext(date, level, genre, regionKey) {
     if (st.todayRank != null && st.todayRank <= 20) ctx.todayTop20.add(songId);
   }
   return ctx;
+}
+
+// Days charted: distinct chart days the song has held a spot on THE chart —
+// the National Overall Top 20 (the one the Stage plays). A song whose first
+// day on it is the latest chart day is a NEW ENTRY, Day 1.
+function daysCharted(songId) {
+  const r = db.prepare(
+    "SELECT COUNT(DISTINCT chart_date) AS days, MIN(chart_date) AS first_date FROM chart_entries WHERE song_id = ? AND rank <= 20 AND level = 'national' AND genre = 'Overall' AND region_key = 'ALL'"
+  ).get(songId);
+  return { days: r && r.days ? r.days : 0, first: r ? r.first_date : null };
 }
 
 function moveHtml(prevRank, rank) {
@@ -563,11 +655,10 @@ function billboardRow(e, ctx, prevMap, { stats = true } = {}) {
   return `
   <div class="row rowlink">
     <a class="stretch" href="/song/${e.song_id}" aria-label="${esc(e.title)}"></a>
-    <span class="rankwrap"><span class="rank">${e.rank}</span>${rankPill(st, e.rank)}</span>
+    <span class="rankwrap"><span class="rank">${e.rank}</span>${rankPill(st, e.rank)}<span class="move">${moveHtml(prevMap.get(e.song_id), e.rank)}</span></span>
     <img class="thumb" src="${esc(e.cover_path)}" alt="">
     <span class="meta"><span class="t">${esc(e.title)}</span><br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a>${stats ? statsLine(st) : ""}</span>
     <span class="nums">Craft <b>${e.craft_score}</b><br>Chart <b>${e.chart_score}</b></span>
-    <span class="move">${moveHtml(prevMap.get(e.song_id), e.rank)}</span>
   </div>`;
 }
 
@@ -580,9 +671,8 @@ function heroRow(e, ctx, prevMap) {
     <a class="stretch" href="/song/${e.song_id}" aria-label="${esc(e.title)}"></a>
     <span class="rankwrap"><span class="rank">${e.rank}</span>${rankPill(st, e.rank)}</span>
     <img class="cover-lg" src="${esc(e.cover_path)}" alt="">
-    <span class="meta"><span class="t">${esc(e.title)}</span><br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a>${statsLine(st)}</span>
-    <span class="nums">Craft <b>${e.craft_score}</b><br>Chart <b>${e.chart_score}</b></span>
-    <span class="move">${moveHtml(prevMap.get(e.song_id), e.rank)}</span>
+    <span class="meta"><span class="t">${esc(e.title)}</span><br><a class="artistlink" href="/artist/${e.artist_id}">${esc(e.artist)}</a></span>
+    <span class="herobar">${statsLine(st)}<span class="nums">Craft <b>${e.craft_score}</b> · Chart <b>${e.chart_score}</b></span><span class="move">${moveHtml(prevMap.get(e.song_id), e.rank)}</span></span>
   </div>`;
 }
 
@@ -816,17 +906,25 @@ function stagePlaylist(genreKey, date) {
   if (!date) return [];
   return db.prepare(`
     SELECT s.id, s.title, s.audio_path, s.cover_path, u.name AS artist,
-           ce.rank, j.craft_score
+           ce.rank, j.craft_score,
+           (SELECT count FROM engagements WHERE song_id = s.id AND type = 'play') AS plays,
+           (SELECT count FROM engagements WHERE song_id = s.id AND type = 'like') AS likes,
+           (SELECT count FROM engagements WHERE song_id = s.id AND type = 'share') AS shares
     FROM chart_entries ce
     JOIN songs s ON s.id = ce.song_id
     JOIN users u ON u.id = s.artist_id
     JOIN judge_scores j ON j.song_id = s.id
     WHERE ce.chart_date = ? AND ce.level = 'national' AND ce.genre = ? AND ce.region_key = 'ALL' AND ce.rank <= 20
     ORDER BY ce.rank
-  `).all(date, genreKey).map((r) => ({
-    id: r.id, title: r.title, artist: r.artist, cover: r.cover_path,
-    audio: r.audio_path, rank: r.rank, craft: r.craft_score,
-  }));
+  `).all(date, genreKey).map((r) => {
+    const dc = daysCharted(r.id);
+    return {
+      id: r.id, title: r.title, artist: r.artist, cover: r.cover_path,
+      audio: r.audio_path, rank: r.rank, craft: r.craft_score,
+      plays: r.plays || 0, likes: r.likes || 0, shares: r.shares || 0,
+      days: dc.days, fresh: dc.days > 0 && dc.first === date,
+    };
+  });
 }
 
 app.get("/", (req, res) => {
@@ -904,16 +1002,30 @@ app.get("/", (req, res) => {
       <span class="chip">Craft score <b id="npCraft">${first.craft}</b></span>
       <span class="chip">Only the Top 20 plays — 24/7</span>
     </div>
+    <div class="chips" style="margin-top:8px">
+      <span class="chip">▶ <b id="npPlays">${fmtNum(first.plays || 0)}</b> plays</span>
+      <span class="chip">♥ <b id="npLikes">${fmtNum(first.likes || 0)}</b> likes</span>
+      <span class="chip">⤴ <b id="npShares">${fmtNum(first.shares || 0)}</b> shares</span>
+      <span class="chip" id="npDays">${first.fresh ? "🔥 New entry · Day 1" : "Days charted · " + (first.days || 0)}</span>
+    </div>
   </div></div>
+  <div class="panel">
+    <h2 style="margin-top:0">In rotation</h2>
+    <p class="sub">The Top 20 never sits still — the first 10 ride the top spinner, the next 10 ride right under it. The song that's playing sticks out big, with its timer running under it. Drag a spinner to look around — it always swings back to the song that's playing.</p>
+    <div class="spinlabel" id="spinLabelA">TOP 10</div>
+    <div class="ringwrap" id="wrapA"><div class="ring" id="ringA"></div><div class="upnext" id="upNextA" hidden></div></div>
+    <div class="ringnow" id="ringNowA"></div>
+    <div id="ringBBlock">
+      <div class="spinlabel" id="spinLabelB">11 – 20</div>
+      <div class="ringwrap" id="wrapB"><div class="ring" id="ringB"></div><div class="upnext" id="upNextB" hidden></div></div>
+      <div class="ringnow" id="ringNowB"></div>
+    </div>
+  </div>
   ${homeNewHtml}
   ${homeChartHtml}
   ${homeRisersHtml}
   ${homeDjHtml}
   ${howStrip}
-  <div class="panel">
-    <h2 style="margin-top:0">In rotation</h2>
-    <div id="rotList"></div>
-  </div>
   ${stageRules}
   <div class="playerbar"><div class="panel">
     <img id="barThumb" src="${esc(first.cover)}" alt="">
@@ -927,18 +1039,126 @@ app.get("/", (req, res) => {
   let ch = 0, idx = 0, lastCounted = "";
   const audio = document.getElementById('stageAudio');
   const $ = (id) => document.getElementById(id);
-  function renderList(){
-    $('rotList').innerHTML = PLAYLISTS[ch].map((t,i) =>
-      '<a class="row' + (i===idx?' playing':'') + '" href="#" data-i="' + i + '">' +
-      '<span class="rank">' + t.rank + '</span>' +
-      '<img class="thumb" src="' + t.cover + '" alt="">' +
-      '<span class="meta"><span class="t">' + t.title + '</span><br><span class="a">' + t.artist + '</span></span>' +
-      '<span class="nums">Craft<br><b>' + t.craft + '</b></span></a>').join('') ||
-      '<p class="sub">No songs in this channel yet.</p>';
-    document.querySelectorAll('#rotList .row').forEach((el) => {
-      el.addEventListener('click', (e) => { e.preventDefault(); load(parseInt(el.dataset.i, 10), true); });
+  const rings = [
+    { el: 'ringA', now: 'ringNowA', from: 0, to: 10, front: 0, dir: 1, hover: false },
+    { el: 'ringB', now: 'ringNowB', from: 10, to: 20, front: 0, dir: -1, hover: false },
+  ];
+  let ringTimer = null;
+  function ringList(r){ return PLAYLISTS[ch].slice(r.from, Math.min(r.to, PLAYLISTS[ch].length)); }
+  function ringRadius(n){ return Math.round(50 / Math.tan(Math.PI / n)) + 8; }
+  function buildRing(r){
+    const list = ringList(r);
+    const ring = $(r.el);
+    if (r.el === 'ringB') $('ringBBlock').style.display = list.length ? '' : 'none';
+    if (!list.length){ ring.innerHTML = ''; return; }
+    if (r.front >= list.length) r.front = 0;
+    const R = ringRadius(list.length), step = 360 / list.length;
+    ring.innerHTML = list.map((t, i) =>
+      '<div class="cell" data-gi="' + (r.from + i) + '" style="transform:rotateY(' + (i * step) + 'deg) translateZ(' + R + 'px)">' +
+      '<div class="cellin"><img src="' + t.cover + '" alt="" draggable="false">' +
+      '<div class="ct">#' + t.rank + ' ' + t.title + '</div><div class="ca">' + t.artist + '</div></div></div>').join('');
+    ring.querySelectorAll('.cell').forEach((el, i) => {
+      el.dataset.a = String(i * step);
+      el.dataset.r = String(R);
+      const raise = (on) => {
+        const baseA = parseInt(el.dataset.a, 10);
+        const a2 = on ? Math.round(baseA * 0.55) : baseA;
+        const rr = parseInt(el.dataset.r, 10) + parseInt(el.dataset.zb || '0', 10) + (on ? 34 : 0);
+        el.style.transform = 'rotateY(' + a2 + 'deg) translateZ(' + rr + 'px)';
+      };
+      el.addEventListener('click', (e) => {
+        if (dragMoved) { dragMoved = false; return; }
+        lastInteract = Date.now();
+        const t = PLAYLISTS[ch][parseInt(el.dataset.gi, 10)];
+        if (!t) return;
+        const touchy = (e.pointerType === 'touch') || window.matchMedia('(hover: none)').matches;
+        if (touchy && !el.classList.contains('pop')) {
+          ring.querySelectorAll('.cell').forEach((x) => { x.classList.remove('pop'); x.dispatchEvent(new Event('unpop')); });
+          el.classList.add('pop');
+          raise(true);
+          return;
+        }
+        location.href = '/song/' + t.id;
+      });
+      el.addEventListener('unpop', () => raise(false));
+      el.addEventListener('mouseenter', () => { r.hover = true; lastInteract = Date.now(); raise(true); });
+      el.addEventListener('mouseleave', () => { r.hover = false; el.classList.remove('pop'); raise(false); });
+    });
+    spinRing(r);
+  }
+  function spinRing(r){
+    const list = ringList(r); if (!list.length) return;
+    const R = ringRadius(list.length), step = 360 / list.length;
+    $(r.el).style.transform = 'translateZ(' + (-R) + 'px) rotateY(' + (-r.front * step) + 'deg)';
+    $(r.el).querySelectorAll('.cell').forEach((el, i) => {
+      el.classList.toggle('front', i === r.front);
+      const d = Math.min(Math.abs(i - r.front), list.length - Math.abs(i - r.front));
+      el.style.opacity = d === 0 ? '1' : d === 1 ? '.88' : d === 2 ? '.62' : '.4';
+    });
+    const t = list[r.front];
+    if (t) $(r.now).innerHTML = 'Up front: <b>#' + t.rank + ' — ' + t.title + '</b> · ' + t.artist + ' · Craft ' + t.craft;
+  }
+  function renderRings(){ rings.forEach(buildRing); }
+  function syncRings(){
+    rings.forEach((r) => {
+      const list = ringList(r);
+      const local = idx - r.from;
+      const has = !!(list.length && local >= 0 && local < list.length);
+      if (has) r.front = local;
+      spinRing(r);
+      const wrap = $(r.el === 'ringA' ? 'wrapA' : 'wrapB');
+      const label = $(r.el === 'ringA' ? 'spinLabelA' : 'spinLabelB');
+      wrap.classList.toggle('lit', has);
+      wrap.classList.toggle('dim', !has);
+      label.classList.toggle('lit', has);
+      $(r.el).querySelectorAll('.cell').forEach((el, i) => {
+        const on = has && i === local;
+        el.classList.toggle('playing', on);
+        el.dataset.zb = on ? '40' : '0';
+        const a = parseInt(el.dataset.a, 10);
+        const rr = parseInt(el.dataset.r, 10) + (on ? 40 : 0);
+        el.style.transform = 'rotateY(' + a + 'deg) translateZ(' + rr + 'px)';
+      });
     });
   }
+  let lastInteract = 0, dragMoved = false, tickN = 0;
+  function fmtN(n){ return (n || 0).toLocaleString('en-US'); }
+  function fmtT(s){ if (!isFinite(s) || s < 0) s = 0; s = Math.floor(s); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+  function tick(){
+    tickN++;
+    let anc = null;
+    rings.forEach((r) => {
+      const list = ringList(r);
+      const local = idx - r.from;
+      if (list.length && local >= 0 && local < list.length) anc = { r, list, local };
+    });
+    if (anc) {
+      const t = anc.list[anc.local];
+      const dur = audio.duration || 0, cur = audio.currentTime || 0;
+      const pct = dur ? Math.min(100, Math.round(cur / dur * 100)) : 0;
+      $(anc.r.now).innerHTML = (audio.paused ? 'Loaded: ' : '&#9654; Playing: ') + '<b>#' + t.rank + ' — ' + t.title + '</b> · ' + t.artist +
+        '<br>' + fmtT(cur) + ' / ' + fmtT(dur) + '<span class="prog"><i style="width:' + pct + '%"></i></span>';
+      const all = PLAYLISTS[ch];
+      const nx = all.length > 1 ? all[(idx + 1) % all.length] : null;
+      const upEl = $(anc.r.el === 'ringA' ? 'upNextA' : 'upNextB');
+      const win = dur ? Math.min(25, dur * 0.45) : 0;
+      if (nx && !audio.paused && dur > 0 && (dur - cur) <= win) {
+        upEl.innerHTML = '<span>UP NEXT</span><img src="' + nx.cover + '" alt=""><span>#' + nx.rank + ' ' + nx.title + '</span><span class="arr">&#10132;</span>';
+        upEl.hidden = false;
+      } else upEl.hidden = true;
+      const other = $(anc.r.el === 'ringA' ? 'upNextB' : 'upNextA');
+      if (other) other.hidden = true;
+    }
+    if (Date.now() - lastInteract < 4000) return;
+    rings.forEach((r) => {
+      const list = ringList(r); if (!list.length) return;
+      const local = idx - r.from;
+      if (local >= 0 && local < list.length) { if (r.front !== local) { r.front = local; spinRing(r); } }
+      else if (audio.paused && tickN % 3 === 0 && !r.hover) { r.front = (r.front + r.dir + list.length) % list.length; spinRing(r); }
+    });
+  }
+  function startShowcase(){ stopShowcase(); ringTimer = setInterval(tick, 1000); }
+  function stopShowcase(){ if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } }
   function load(i, autoplay){
     const t = PLAYLISTS[ch][i]; if (!t) return;
     idx = i;
@@ -946,8 +1166,10 @@ app.get("/", (req, res) => {
     $('npCover').src = t.cover; $('npTitle').textContent = t.title;
     $('npArtist').textContent = t.artist; $('npRank').textContent = '#' + t.rank;
     $('npCraft').textContent = t.craft; $('npChannel').textContent = LABELS[ch];
+    $('npPlays').textContent = fmtN(t.plays); $('npLikes').textContent = fmtN(t.likes); $('npShares').textContent = fmtN(t.shares);
+    $('npDays').textContent = t.fresh ? '🔥 New entry · Day 1' : 'Days charted · ' + (t.days || 0);
     $('barThumb').src = t.cover; $('barTitle').textContent = t.title; $('barArtist').textContent = t.artist;
-    renderList();
+    syncRings();
     if (autoplay) audio.play().catch(() => {});
   }
   document.querySelectorAll('#channelTabs button').forEach((b) => {
@@ -955,6 +1177,9 @@ app.get("/", (req, res) => {
       document.querySelectorAll('#channelTabs button').forEach((x) => x.classList.remove('active'));
       b.classList.add('active');
       ch = parseInt(b.dataset.ch, 10);
+      rings.forEach((r) => { r.front = 0; });
+      $('spinLabelA').textContent = ch === 0 ? 'TOP 10' : LABELS[ch].toUpperCase();
+      renderRings();
       load(0, false);
     });
   });
@@ -969,7 +1194,50 @@ app.get("/", (req, res) => {
   });
   audio.addEventListener('pause', () => { $('playBtn').textContent = '▶'; });
   audio.addEventListener('ended', () => load((idx + 1) % PLAYLISTS[ch].length, true));
-  renderList(); load(0, false);
+  // Drag or scroll a spinner by hand — it always swings back to the song that's playing.
+  rings.forEach((r) => {
+    const wrap = $(r.el === 'ringA' ? 'wrapA' : 'wrapB');
+    const ringEl = $(r.el);
+    let dragging = false, startX = 0, startFront = 0, floatFront = 0;
+    wrap.addEventListener('dragstart', (e) => e.preventDefault());
+    wrap.addEventListener('pointerdown', (e) => {
+      if (ringList(r).length < 2) return;
+      dragging = true; dragMoved = false; startX = e.clientX; startFront = r.front; floatFront = r.front;
+      lastInteract = Date.now();
+      ringEl.classList.add('drag');
+    });
+    wrap.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const list = ringList(r); if (!list.length) return;
+      const step = 360 / list.length; const R = ringRadius(list.length);
+      const dx = e.clientX - startX;
+      if (Math.abs(dx) > 8 && !dragMoved) { dragMoved = true; try { wrap.setPointerCapture(e.pointerId); } catch (err) {} }
+      if (!dragMoved) return;
+      floatFront = startFront - dx / 44;
+      ringEl.style.transform = 'translateZ(' + (-R) + 'px) rotateY(' + (-floatFront * step) + 'deg)';
+      lastInteract = Date.now();
+    });
+    const endDrag = () => {
+      if (!dragging) return;
+      dragging = false;
+      const list = ringList(r); if (!list.length) return;
+      r.front = ((Math.round(floatFront) % list.length) + list.length) % list.length;
+      ringEl.classList.remove('drag');
+      spinRing(r);
+      lastInteract = Date.now();
+      setTimeout(() => { dragMoved = false; }, 60);
+    };
+    wrap.addEventListener('pointerup', endDrag);
+    wrap.addEventListener('pointercancel', endDrag);
+    wrap.addEventListener('wheel', (e) => {
+      const list = ringList(r); if (list.length < 2) return;
+      e.preventDefault();
+      r.front = (((r.front + (e.deltaY > 0 ? 1 : -1)) % list.length) + list.length) % list.length;
+      spinRing(r);
+      lastInteract = Date.now();
+    }, { passive: false });
+  });
+  renderRings(); load(0, false); startShowcase();
   </script>` : `<div class="panel"><h2>No songs yet</h2><p class="sub">Run the seed or upload the first song.</p></div>`}`;
   res.send(layout("The Stage", "stage", body, {
     home: true,
@@ -1077,6 +1345,8 @@ app.get("/song/:id", (req, res) => {
   const judge = db.prepare("SELECT * FROM judge_scores WHERE song_id = ?").get(song.id);
   const eng = {};
   for (const r of db.prepare("SELECT type, count FROM engagements WHERE song_id = ?").all(song.id)) eng[r.type] = r.count;
+  const dc = daysCharted(song.id);
+  const dcNew = dc.days > 0 && dc.first === latestChartDate(db);
   const { ranks } = songRanks(song.id);
   const songVideo = db.prepare(`
     SELECT v.*, s.title AS song_title FROM videos v
@@ -1093,10 +1363,37 @@ app.get("/song/:id", (req, res) => {
   ${removedNote}
   <audio controls preload="metadata" src="${esc(song.audio_path)}"></audio>
   <div class="flexbtns">
-    <form method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="like"><button class="btn" type="submit">♥ Like (${eng.like || 0})</button></form>
-    <form method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="save"><button class="btn" type="submit">Save (${eng.save || 0})</button></form>
+    <form method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="like"><button class="btn" type="submit">♥ Like (${fmtNum(eng.like || 0)})</button></form>
+    <form id="shareForm" method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="share"><button class="btn" type="submit">⤴ Share (${fmtNum(eng.share || 0)})</button></form>
   </div>
-  <p class="sub" style="margin-top:8px">${eng.play || 0} plays · ${eng.share || 0} shares</p>
+  <p class="sub" id="shareMsg" style="margin-top:6px"></p>
+  <div class="statstrip">
+    <div class="stat"><b>${fmtNum(eng.play || 0)}</b><span>plays</span></div>
+    <div class="stat"><b>${fmtNum(eng.share || 0)}</b><span>shares</span></div>
+    <div class="stat"><b>${fmtNum(eng.like || 0)}</b><span>likes</span></div>
+    <div class="stat"><b>${dcNew ? "Day 1" : dc.days > 0 ? dc.days : "—"}</b><span>${dcNew ? "🔥 new entry" : dc.days > 0 ? "days charted" : "not charted yet"}</span></div>
+  </div>
+  <script>
+  (function(){
+    var form = document.getElementById('shareForm');
+    if (!form) return;
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var url = location.origin + '/song/${song.id}';
+      var msg = document.getElementById('shareMsg');
+      var counted = function(text){ msg.textContent = text; setTimeout(function(){ form.submit(); }, 350); };
+      if (navigator.share) {
+        navigator.share({ title: document.title, text: document.title, url: url }).then(function(){
+          counted('Shared — that link points to this song\\'s Top 20 page.');
+        }, function(){});
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function(){
+          counted('Link copied — it points to this song\\'s Top 20 page. Paste it anywhere.');
+        }, function(){ form.submit(); });
+      } else { form.submit(); }
+    });
+  })();
+  </script>
   ${songVideo ? videoDisplayHtml(songVideo) : ""}
   <div class="panel">
     <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">Craft score</div>

@@ -317,20 +317,30 @@ function main() {
   }
   console.log(`dj of the month: seeded races for ${thisMonth} (Dallas/Houston/Atlanta) + ${lastMonth} Dallas archive`);
 
-  // Yesterday's snapshot: same computation with per-song score jitter,
-  // so today's movement arrows and chart-entry emails have something
-  // real to compare against.
+  // Chart history: the past 13 days of snapshots, same computation with a
+  // per-day score jitter, so movement arrows, WEEKS and days-charted counts
+  // all have something real to compare against.
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  const jitter = (songId) => mulberry32(songId * 7919 + 13)() * 7 - 3.5;
-  const yEntries = charts.computeRankings(db, jitter);
   const insEntry = db.prepare(
     `INSERT INTO chart_entries (chart_date, level, genre, region_key, song_id, rank, chart_score)
      VALUES (?, ?, ?, ?, ?, ?, ?)`
   );
+  // Designate today's NEW ENTRY: the song sitting at #19 on the real
+  // (unjittered) National Overall chart is held out of every past day's
+  // Top 20, so its first day on the big chart is today — a genuine Day 1.
+  const baseRanks = charts.computeRankings(db, () => 0);
+  const newEntryRow = baseRanks.find((e) => e.level === "national" && e.genre === "Overall" && e.rank === 19);
+  const newEntryId = newEntryRow ? newEntryRow.song_id : -1;
   db.exec("BEGIN");
   try {
-    for (const e of yEntries) {
-      insEntry.run(yesterday, e.level, e.genre, e.region_key, e.song_id, e.rank, e.chart_score);
+    for (let back = 13; back >= 1; back--) {
+      const day = new Date(Date.now() - back * 86400000).toISOString().slice(0, 10);
+      const jitter = (songId) => songId === newEntryId
+        ? -6.5 - mulberry32(songId * 31 + back * 7)() * 2
+        : mulberry32(songId * 7919 + back * 131 + 13)() * 7 - 3.5;
+      for (const e of charts.computeRankings(db, jitter)) {
+        insEntry.run(day, e.level, e.genre, e.region_key, e.song_id, e.rank, e.chart_score);
+      }
     }
     db.exec("COMMIT");
   } catch (err) {
