@@ -57,8 +57,11 @@ html{-webkit-text-size-adjust:100%}
 body{margin:0;color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   background:#000;background-image:radial-gradient(900px 480px at 50% -8%,#26272e 0%,#070708 55%,#000 100%);
   background-attachment:fixed;-webkit-font-smoothing:antialiased;overflow-x:clip}
+body::after{content:"";position:fixed;inset:0;z-index:80;pointer-events:none;
+  background:linear-gradient(112deg,transparent 24%,rgba(255,255,255,.05) 40%,rgba(255,255,255,.10) 50%,rgba(255,255,255,.05) 60%,transparent 76%),
+  linear-gradient(180deg,rgba(255,255,255,.05),transparent 24%)}
 .app{max-width:430px;margin:0 auto;min-height:100vh;padding:0 14px 34px;
-  background:radial-gradient(720px 360px at 50% -40px,rgba(43,92,255,.07),transparent 62%),linear-gradient(180deg,#101013 0,#080809 260px);
+  background:linear-gradient(155deg,rgba(255,255,255,.05),transparent 42%),radial-gradient(720px 360px at 50% -40px,rgba(43,92,255,.07),transparent 62%),linear-gradient(180deg,#101013 0,#080809 260px);
   border-left:1px solid #2c2e34;border-right:1px solid #2c2e34;
   box-shadow:0 0 70px rgba(255,255,255,.05)}
 a{color:var(--ink)}
@@ -113,8 +116,8 @@ nav.main a.active{color:#fff;border-bottom:2px solid var(--accent)}
 .panel{position:relative;background:linear-gradient(180deg,#1a1b20,#0a0a0c);border:1px solid #3a3d45;border-radius:18px;
   box-shadow:inset 0 1px 0 rgba(255,255,255,.14),inset 0 -18px 28px rgba(0,0,0,.38),0 12px 26px rgba(0,0,0,.5);
   padding:18px;margin:18px 0;overflow:hidden}
-.panel::before{content:"";position:absolute;left:0;right:0;top:0;height:48%;
-  background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,0));pointer-events:none}
+.panel::before{content:"";position:absolute;left:0;right:0;top:0;height:55%;
+  background:linear-gradient(180deg,rgba(255,255,255,.13),rgba(255,255,255,0));pointer-events:none}
 .chrome-frame{border:1px solid transparent;border-radius:20px;padding:2px;
   background:linear-gradient(#101013,#0a0a0c) padding-box,var(--chrome) border-box;
   box-shadow:0 8px 22px rgba(0,0,0,.55)}
