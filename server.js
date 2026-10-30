@@ -154,7 +154,8 @@ header.site .wm,header.site .tagline,header.site nav.main{position:relative;z-in
 header.site .hotline{position:relative;z-index:5}
 @media (min-width:901px){header.site{padding-top:56px}}
 @media (max-width:900px){.crowd{height:150px;bottom:40px}}
-@media (max-width:560px){.crowd{height:118px;opacity:.92;bottom:84px}.crowd.cl{left:-14px}.crowd.cr{right:-14px}}
+@media (max-width:560px){.crowd{height:104px;opacity:.92;bottom:102px}.crowd.cl{left:-14px}.crowd.cr{right:-14px}.wordmark .top{font-size:44px}.wordmark .twenty{font-size:48px}}
+@media (max-width:400px){.crowd{bottom:114px}}
 .wm{display:inline-block;text-align:center;position:relative;isolation:isolate}
 @keyframes shine{from{background-position:50% 0%}to{background-position:50% 100%}}
 /* Futuristic wordmark (owner round 3): the ENTIRE mark leans right in
