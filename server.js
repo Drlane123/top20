@@ -68,6 +68,8 @@ const CROWD = (() => {
       left: Buffer.from(require("./crowd-left-data"), "base64"),
       right: Buffer.from(require("./crowd-right-data"), "base64"),
       center: Buffer.from(require("./crowd-center-data"), "base64"),
+      guy: Buffer.from(require("./crowd-guy-data"), "base64"),
+      lady: Buffer.from(require("./crowd-lady-data"), "base64"),
     };
   } catch (e) { return null; }
 })();
@@ -86,6 +88,16 @@ if (CROWD) {
     res.setHeader("Content-Type", "image/webp");
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.end(CROWD.center);
+  });
+  app.get("/crowd-guy.webp", (req, res) => {
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.end(CROWD.guy);
+  });
+  app.get("/crowd-lady.webp", (req, res) => {
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.end(CROWD.lady);
   });
 }
 app.use(express.urlencoded({ extended: true }));
@@ -133,11 +145,12 @@ body::after{content:"";position:fixed;inset:0;z-index:80;pointer-events:none;
   box-shadow:0 0 70px rgba(120,160,255,.07)}
 a{color:var(--ink)}
 header.site{padding:20px 2px 2px;text-align:center;position:relative}
-.crowd{position:absolute;bottom:26px;height:212px;width:auto;z-index:0;pointer-events:none;mix-blend-mode:screen;opacity:1;filter:saturate(1.18) contrast(1.1) brightness(1.02);-webkit-mask-image:linear-gradient(180deg,#000 85%,transparent 99%);mask-image:linear-gradient(180deg,#000 85%,transparent 99%)}
-.crowd.cl{left:-58px}
-.crowd.cr{right:-58px}
-.crowd.cc{left:50%;transform:translateX(-54%);height:238px;bottom:16px}
-@media (max-width:1100px){.crowd.cc{display:none}}
+.crowd{position:absolute;bottom:64px;height:176px;width:auto;z-index:0;pointer-events:none;mix-blend-mode:screen;opacity:1;filter:saturate(1.18) contrast(1.1) brightness(1.02);-webkit-mask-image:linear-gradient(180deg,#000 85%,transparent 99%);mask-image:linear-gradient(180deg,#000 85%,transparent 99%)}
+.crowd.cl{left:-72px}
+.crowd.cr{right:-72px}
+.crowd.cl2{left:170px;bottom:0;height:168px;z-index:1}
+.crowd.cr2{right:170px;bottom:0;height:168px;z-index:1}
+@media (max-width:1100px){.crowd.cl2,.crowd.cr2{display:none}}
 header.site .wm,header.site .hotline,header.site .tagline,header.site nav.main{position:relative;z-index:2}
 @media (min-width:901px){header.site{padding-top:56px}}
 @media (max-width:900px){.crowd{height:150px;bottom:40px}}
@@ -511,8 +524,9 @@ function layout(title, active, body, opts = {}) {
 <body><div class="app">
 <header class="site">
   <img class="crowd cl" src="/crowd-left.webp" alt="" aria-hidden="true">
-  <img class="crowd cc" src="/crowd-center.webp" alt="" aria-hidden="true">
+  <img class="crowd cl2" src="/crowd-guy.webp" alt="" aria-hidden="true">
   <img class="crowd cr" src="/crowd-right.webp" alt="" aria-hidden="true">
+  <img class="crowd cr2" src="/crowd-lady.webp" alt="" aria-hidden="true">
   <div class="wm">
     <div class="wordmark"><span class="top">TOP</span> <span class="twenty">20</span></div>
     <div class="blaze"></div><div class="blaze-line"></div>
