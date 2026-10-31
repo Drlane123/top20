@@ -201,6 +201,15 @@ function openDb() {
   if (adCols.length && !adCols.includes("genre")) {
     db.exec("ALTER TABLE ads ADD COLUMN genre TEXT NOT NULL DEFAULT 'All'");
   }
+  // Public ad submissions (Oct 31 2026): advertisers send ads from the
+  // /advertise page; they land as status='pending' and only go into the
+  // rotation when the owner personally approves them (status='live').
+  if (adCols.length && !adCols.includes("status")) {
+    db.exec("ALTER TABLE ads ADD COLUMN status TEXT NOT NULL DEFAULT 'live'");
+    db.exec("ALTER TABLE ads ADD COLUMN submitter TEXT");
+    db.exec("ALTER TABLE ads ADD COLUMN contact TEXT");
+    db.exec("ALTER TABLE ads ADD COLUMN note TEXT");
+  }
   const userCols = db.prepare("PRAGMA table_info(users)").all().map((r) => r.name);
   const addUserCol = (name, ddl) => {
     if (!userCols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${ddl}`);

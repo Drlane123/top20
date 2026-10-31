@@ -1348,7 +1348,7 @@ app.get("/", (req, res) => {
   <script>
   const PLAYLISTS = ${JSON.stringify(channels.map((c) => c.list)).replace(/</g, "\\u003c")};
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
-  const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
+  const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -2940,23 +2940,79 @@ app.post("/admin/ads/:id/delete", requireAdmin, (req, res) => {
 });
 
 app.get("/advertise", (req, res) => {
+  const sent = req.query.sent ? `<div class="panel" style="border-color:rgba(80,220,140,.6)"><h2>✔ Your ad is in</h2><p style="margin:0">Dale reviews every ad personally. When yours is approved it goes straight into the Stage rotation on your channel — watch the Stage and you'll see it roll between the songs.</p></div>` : "";
+  const err = req.query.err ? `<p class="note" style="color:#ffb3ab">${esc(req.query.err)}</p>` : "";
   const body = `
   <h1>Advertise on Top 20</h1>
-  <p class="sub">The Stage runs 24/7 — the charts, in rotation, in front of independent artists and the fans who ride for them.</p>
+  <p class="sub">The Stage runs 24/7 — the charts in rotation, in front of independent artists and the fans who ride for them. Here's exactly how advertising works here, no fine print:</p>
+  ${sent}${err}
   <div class="panel" style="border-color:rgba(255,190,60,.65)">
-    <h2>📣 AD SLOTS — COMING SOON</h2>
-    <p>Advertisement slots inside the Stage rotation are on the way:</p>
+    <h2>📣 HOW IT WORKS</h2>
     <ul class="rules">
-      <li>Your ad plays <b>inside the Stage rotation, between songs</b> — not buried on a side page.</li>
-      <li><b>Image ads</b>, or <b>video ads up to 30 seconds</b>.</li>
-      <li><b>Pick your channel</b> — R&B, Southern Soul, Hip-Hop, Trap, Country, Pop, Dance — or run it on every channel at once.</li>
-      <li>Your ad can link straight to your store, your page or your event.</li>
-      <li>Local businesses and independent brands get first shot when slots open.</li>
+      <li><b>Your ad plays inside the Stage rotation, between songs</b> — one ad break after every 5 songs, right in the middle of the show.</li>
+      <li><b>Pick your channel</b> — R&amp;B, Southern Soul, Hip-Hop, Trap, Country, Pop, Dance/Techno/House — or run it on <b>every channel at once</b>, Main Stage included.</li>
+      <li><b>Image ads</b> (8 seconds on screen) or <b>video ads up to 30 seconds</b>.</li>
+      <li>Your ad can <b>link straight to your store, your page or your event</b> — one tap and they're there.</li>
+      <li><b>Every ad is reviewed by Dale personally</b> before it runs. Nothing hits the Stage without his eyes on it.</li>
     </ul>
-    <p class="note">Slots open with the Top 20 rollout. Watch this page — when it opens, this is where it happens.</p>
   </div>
+  <form class="panel" method="post" action="/advertise/submit" enctype="multipart/form-data">
+    <h2>📤 SEND YOUR AD</h2>
+    <div class="field"><label for="adfile2">Your ad — image or video (max 30 seconds)</label><input id="adfile2" type="file" name="adfile" accept="image/*,video/mp4,video/webm,video/quicktime" required></div>
+    <div class="grid">
+      <div class="field"><label for="subname">Your name / business</label><input id="subname" name="submitter" maxlength="80" required placeholder="e.g. Mesquite BBQ Co."></div>
+      <div class="field"><label for="subcontact">Your email (so we can reach you)</label><input id="subcontact" name="contact" type="email" maxlength="120" required placeholder="you@business.com"></div>
+    </div>
+    <div class="grid">
+      <div class="field"><label for="subgenre">Run my ad on</label><select id="subgenre" name="genre"><option value="All">All channels (incl. Main Stage)</option>${GENRES.map((g) => `<option value="${esc(g)}">${esc(g)} only</option>`).join("")}</select></div>
+      <div class="field"><label for="sublink">Tap/click takes people here (optional)</label><input id="sublink" name="link_url" maxlength="300" placeholder="https://..."></div>
+    </div>
+    <div class="field"><label for="subnote">Anything Dale should know? (optional)</label><input id="subnote" name="note" maxlength="280" placeholder="e.g. Grand opening Nov 8 — push it on Hip-Hop and All channels if you can"></div>
+    <button class="btn primary">Send my ad for review</button>
+    <p class="note">Sending is free and commits you to nothing — your ad waits in Dale's review box until he puts it in rotation himself.</p>
+  </form>
   <p style="text-align:center"><a class="ghost" href="/">← Back to the Stage</a></p>`;
   res.send(layout("Advertise on Top 20", "", body));
+});
+
+app.post("/advertise/submit", (req, res) => {
+  adUpload.single("adfile")(req, res, (err) => {
+    const backErr = (m) => res.redirect("/advertise?err=" + encodeURIComponent(m));
+    if (err || !req.file) return backErr("Pick your ad file first — an image, or a video up to 30 seconds.");
+    const submitter = String(req.body.submitter || "").trim().slice(0, 80);
+    const contact = String(req.body.contact || "").trim().slice(0, 120);
+    if (!submitter || !contact.includes("@")) {
+      fs.unlink(req.file.path, () => {});
+      return backErr("Add your name/business and a real email so Dale knows whose ad this is.");
+    }
+    const ext = (path.extname(req.file.filename) || "").toLowerCase();
+    const web = `/uploads/ads/${req.file.filename}`;
+    const genre = [...GENRES, "All"].includes(req.body.genre) ? req.body.genre : "All";
+    let link = String(req.body.link_url || "").trim().slice(0, 300);
+    if (link && !/^https?:\/\//i.test(link)) link = "";
+    const note = String(req.body.note || "").trim().slice(0, 280);
+    const title = submitter + " — ad";
+    if (AD_IMAGE_EXTS.includes(ext)) {
+      db.prepare("INSERT INTO ads (kind, file_path, link_url, title, seconds, genre, status, submitter, contact, note) VALUES ('image', ?, ?, ?, 8, ?, 'pending', ?, ?, ?)").run(web, link || null, title, genre, submitter, contact, note || null);
+      return res.redirect("/advertise?sent=1");
+    }
+    if (AD_VIDEO_EXTS.includes(ext)) {
+      const dur = probeDurationSec(req.file.path);
+      if (dur > 30.5) {
+        fs.unlink(req.file.path, () => {});
+        return backErr(`That video runs ${Math.round(dur)} seconds — ads cap at 30 seconds. Trim it and send it again.`);
+      }
+      db.prepare("INSERT INTO ads (kind, file_path, link_url, title, seconds, genre, status, submitter, contact, note) VALUES ('video', ?, ?, ?, ?, ?, 'pending', ?, ?, ?)").run(web, link || null, title, Math.ceil(dur) || 0, genre, submitter, contact, note || null);
+      return res.redirect("/advertise?sent=1");
+    }
+    fs.unlink(req.file.path, () => {});
+    return backErr("That file type won't run as an ad — JPG/PNG/WebP for images, MP4/WebM/MOV for video.");
+  });
+});
+
+app.post("/admin/ads/:id/approve", requireAdmin, (req, res) => {
+  db.prepare("UPDATE ads SET status = 'live', active = 1 WHERE id = ?").run(req.params.id);
+  res.redirect("/admin/placements?admsg=" + encodeURIComponent("Ad approved — it's in the rotation now."));
 });
 
 app.get("/admin/login", (req, res) => {
@@ -3281,8 +3337,18 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
       <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Set the spotlight</button>
     </form>
   </div>
+  ${(() => { const pend = adsList.filter((a) => a.status === 'pending'); return pend.length ? `<div class="panel" style="border-color:rgba(255,190,60,.7)"><h2>📥 Ad submissions waiting on you (${pend.length})</h2><p class="sub" style="margin-top:0">Sent from the Advertise page. Watch each one — nothing runs until you approve it.</p>${pend.map((a) => `
+    <div style="padding:10px 0;border-bottom:1px solid var(--line)">
+      ${a.kind === 'video' ? `<video src="${esc(a.file_path)}" controls preload="metadata" style="width:100%;max-height:220px;border-radius:10px;background:#000"></video>` : `<img src="${esc(a.file_path)}" alt="Submitted ad" style="width:100%;max-height:220px;object-fit:contain;border-radius:10px;background:#000">`}
+      <p style="margin:8px 0 2px"><b style="color:#fff">${esc(a.submitter || a.title)}</b> <span class="note">${esc(a.contact || '')} · 🎯 ${!a.genre || a.genre === 'All' ? 'All channels' : esc(a.genre)} · ${a.kind === 'video' ? 'video' : 'image · ' + a.seconds + 's'}${a.link_url ? ` · links to ${esc(a.link_url)}` : ''}</span></p>
+      ${a.note ? `<p class="note" style="margin:2px 0">“${esc(a.note)}”</p>` : ''}
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <form method="post" action="/admin/ads/${a.id}/approve"><button class="btn primary" style="padding:9px 16px">✔ Approve — put it in rotation</button></form>
+        <form method="post" action="/admin/ads/${a.id}/delete" onsubmit="return confirm('Decline and delete this ad?')"><button class="mini" style="padding:9px 14px">✖ Decline</button></form>
+      </div>
+    </div>`).join('')}</div>` : ''; })()}
   <form class="panel" method="post" action="/admin/ads" enctype="multipart/form-data" style="border-color:rgba(255,120,190,.55)">
-    <h2>📣 Stage ads</h2>
+    <h2>📣 Stage ads — upload your own</h2>
     <p class="sub" style="margin-top:0">Ads play <b style="color:#fff">inside the Stage rotation, between songs</b> — one ad after every 5 songs, <b style="color:#fff">on the channel you pick</b>: a Pop ad runs on the Pop stage, a Hip-Hop ad on the Hip-Hop stage. "All channels" runs everywhere, and the Main Stage rotates every ad. Upload an <b style="color:#fff">image</b> or a <b style="color:#fff">video no longer than 30 seconds</b>. When the ad ends, the rotation picks right back up and the next song's countdown keeps running. Ads never touch scores or ranks.</p>
     <div class="field"><label for="adfile">Ad file — image or video (max 30 seconds)</label><input id="adfile" type="file" name="adfile" accept="image/*,video/mp4,video/webm,video/quicktime" required></div>
     <div class="grid">
@@ -3293,7 +3359,7 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
     <div class="field"><label for="adlink">Tap/click takes people here (optional)</label><input id="adlink" name="link_url" maxlength="300" placeholder="https://..."></div>
     <button class="btn primary">Upload ad</button>
   </form>
-  ${adsList.length ? `<div class="panel"><h2>Ads on file (${adsList.length})</h2>${adsList.map((a) => `
+  ${adsList.filter((a) => a.status !== 'pending').length ? `<div class="panel"><h2>Ads on file (${adsList.filter((a) => a.status !== 'pending').length})</h2>${adsList.filter((a) => a.status !== 'pending').map((a) => `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
       <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.kind === 'video' ? '🎬' : '🖼️'} <b style="color:#fff">${esc(a.title || a.file_path.split('/').pop())}</b> <span class="note">${a.kind === 'video' ? 'video' : 'image · ' + a.seconds + 's'} · 🎯 ${!a.genre || a.genre === 'All' ? 'All channels' : a.genre} · ${a.active ? '<b style="color:#9fe8b6">IN ROTATION</b>' : 'off'}</span></span>
       <span style="display:flex;gap:6px;flex:none">
