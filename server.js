@@ -1187,6 +1187,10 @@ app.get("/", (req, res) => {
     <p class="sub"><b style="color:#fff">A great song holds its spot.</b> New entries can hit at midnight any night, but nobody loses a Top 20 spot for not uploading — a song only moves when hotter songs out-score it. So put your hottest material up here and keep doing what you're doing — that's what got you into the Top 20 in the first place. And a song that slides out of the 20 doesn't disappear — it stays in the big Top 100, ready to climb back.</p>
     <p class="sub">Same rule in the Top 100: a song only leaves the hundred when a hotter new entry out-scores it — every song faces the same evaluation. The 15-point scale evaluation measures every song on these 15 points: Mix Quality · Mastering &amp; Sound Quality · Hook Strength · Melody · Lyrical Quality · Song Structure · Vocal Delivery &amp; Performance · Production &amp; Instrumentation · Groove &amp; Rhythm · Emotional Impact · Dynamics &amp; Energy · Originality &amp; Identity · Replay Value · Radio &amp; Commercial Readiness · Cover Art &amp; Presentation. And even a song that falls out of the Top 100 still stays in the system — it's just not one of the Hot 100 right now.</p>
     <p class="sub"><b style="color:#fff">Give it time to be judged.</b> The system takes 24 hours to run a song through the full 15-point scale evaluation — it has to collect the data on you and your song first. So if you don't see your song in the Top 100 today or tomorrow, that doesn't mean anything — just wait. And if a week or so goes by and it still hasn't cracked the hundred, your song may just not be strong enough to break through yet — but don't pull it down. Leave it up, keep doing what you're doing, and keep giving your song its opportunity — the algorithm is checking 24 hours a day, and songs move when the numbers say so.</p>
+  </div>
+  <div class="panel" style="border:1px solid rgba(255,190,60,.55);background:linear-gradient(180deg,rgba(255,170,40,.10),rgba(255,170,40,.03))">
+    <h2 style="margin-top:0;color:#ffd98a">The 16th Law</h2>
+    <p class="sub">The 15 points measure your song. The 16th law is <b style="color:#fff">pure raw talent</b> — the gift no machine can value. Motown saw it in a young Michael Jackson; the world saw it in New Edition, and in a young Chris Brown. Our staff is always looking for that gift, and the law is simple: <b style="color:#fff">talent like that does not escape.</b> When we see it, you get the opportunity to grow right here on Top 20.</p>
   </div>`;
 
   const tabs = channels.map((c, i) =>
@@ -2246,6 +2250,13 @@ app.get("/how-it-works", (req, res) => {
     <ul class="rules">${CATEGORIES.map((c, i) => `<li><b>${i + 1}. ${esc(c.label)}</b></li>`).join("")}</ul>
     <p class="sub">Yes — the cover is one of the points. Quality artwork helps your score; anything slapped together will hurt it. The craft score is then blended with real engagement (60% craft / 40% engagement, social buzz capped at about 10% of the total) to set the charts — chart position is never popularity alone, and the craft score can't be bought.</p>
     <p class="sub">Launch genres: <b style="color:#fff">${GENRES.join(" · ")}</b> — plus a cross-genre Overall chart at every level.</p>
+  </div>
+  <div class="panel" style="border:1px solid rgba(255,190,60,.55);background:linear-gradient(180deg,rgba(255,170,40,.10),rgba(255,170,40,.03))">
+    <h2 style="margin-top:0;color:#ffd98a">The 16th Law</h2>
+    <p class="sub">The 15-Point Scale Evaluation measures your song — point by point, the craft, the sound, the record. But the 16th law is about something no machine can measure: <b style="color:#fff">pure raw talent.</b></p>
+    <p class="sub">Motown saw it in a young Michael Jackson. The world saw it in New Edition — and in a young Chris Brown. They were young, and the gift was already undeniable. If you have the eye, you recognize it from the door, before any number proves it.</p>
+    <p class="sub">So the 16th law of TOP 20 is this: <b style="color:#fff">talent like that does not escape us.</b> Our staff is always looking for that raw, pure gift — and when we capture it, when we see it, that artist gets the opportunity to grow right here on Top 20.</p>
+    <p class="sub" style="margin-bottom:0">Fifteen points measure the song. <b style="color:#ffd98a">The 16th law watches for the gift.</b></p>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">The Stage</h2>
