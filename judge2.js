@@ -34,7 +34,45 @@ const bandScore = (v, [lo, hi], slope) =>
   v == null ? 5.5 : round5(v >= lo && v <= hi ? 10 : 10 - (v < lo ? lo - v : v - hi) * slope);
 const fmt = (v, d = 1) => (v == null ? "—" : Number(v).toFixed(d));
 
-function judgeMeasured(m, genre, coverAbsPath) {
+// Lyrical Quality from the words themselves, when the artist submits them
+// with the upload — pure text mathematics, no machine listening: rhyme
+// density on line endings, vocabulary richness, hook-line recurrence and
+// line-length flow. Returns null when there isn't enough text to judge.
+function rhymeKey(word) {
+  const w = String(word || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (w.length < 2) return w;
+  const m = w.match(/[aeiouy]+[^aeiouy]*$/);
+  return m ? m[0] : w.slice(-2);
+}
+function scoreLyricsText(text) {
+  const lines = String(text).split(/\r?\n/).map((l) => l.trim()).filter((l) => l.length > 1);
+  const words = String(text).toLowerCase().replace(/[^a-z0-9' ]/g, " ").split(/\s+/).filter(Boolean);
+  if (lines.length < 8 || words.length < 50) return null;
+  const unique = new Set(words).size;
+  const uniqueRatio = unique / words.length;
+  const vocabScore = uniqueRatio >= 0.55 ? 9 : uniqueRatio >= 0.45 ? 8 : uniqueRatio >= 0.35 ? 6.5 : 5;
+  const endKeys = lines.map((l) => rhymeKey(l.split(/\s+/).pop()));
+  const keyCounts = {};
+  for (const k of endKeys) if (k) keyCounts[k] = (keyCounts[k] || 0) + 1;
+  const rhymed = endKeys.filter((k) => k && keyCounts[k] >= 2).length;
+  const rhymePct = Math.round((rhymed / Math.max(1, endKeys.length)) * 100);
+  const rhymeScore = rhymePct >= 60 ? 9.5 : rhymePct >= 45 ? 8 : rhymePct >= 30 ? 6.5 : 5;
+  const lineCounts = {};
+  for (const l of lines) { const k = l.toLowerCase(); lineCounts[k] = (lineCounts[k] || 0) + 1; }
+  const hookLineCount = Math.max(...Object.values(lineCounts));
+  const recurScore = hookLineCount >= 3 ? 8.5 : hookLineCount === 2 ? 7 : 5.5;
+  const lens = lines.map((l) => l.split(/\s+/).length);
+  const mean = lens.reduce((a, b) => a + b, 0) / lens.length;
+  const sd = Math.sqrt(lens.reduce((a, b) => a + (b - mean) ** 2, 0) / lens.length);
+  const cv = mean > 0 ? sd / mean : 1;
+  const flowScore = cv <= 0.35 ? 8.5 : cv <= 0.55 ? 7 : 5.5;
+  return {
+    score: round5(0.35 * rhymeScore + 0.30 * vocabScore + 0.20 * recurScore + 0.15 * flowScore),
+    lines: lines.length, rhymePct, hookLineCount, uniqueWords: unique,
+  };
+}
+
+function judgeMeasured(m, genre, coverAbsPath, lyricsText) {
   const T = TEMPLATE_FOR[genre];
   const g = genre; // the song's own genre name, used in its notes
   const S = {}; // raw (unrounded) sub-scores
@@ -54,17 +92,23 @@ function judgeMeasured(m, genre, coverAbsPath) {
       ? `Reads ${fmt(m.lufs)} LUFS with true peak at ${fmt(m.truePeak)} — inside the ${g} pocket (${T.lufs[0]} to ${T.lufs[1]} LUFS) with clean headroom. Measured, not opinion.`
       : `Reads ${fmt(m.lufs)} LUFS against a ${g} pocket of ${T.lufs[0]} to ${T.lufs[1]} LUFS, true peak ${fmt(m.truePeak)}. The loudness isn't sitting where ${g} records compete yet.`;
 
-  // ---- Mix Quality: low end and top end against the template, mids alive
+  // ---- Mix Quality: low end and top end against the template, mids alive,
+  // and the stereo physically in place (mono fold-down safety).
   const lowScore = bandScore(m.lowEndDb, T.low, 0.55);
   const topScore = bandScore(m.topEndDb, T.top, 0.55);
   const midRel = m.bands.mid;
   const midHealth = midRel >= -16 && midRel <= -3 ? 9.5 : round5(9.5 - (midRel < -16 ? (-16 - midRel) * 0.35 : (midRel + 3) * 0.5));
+  const phys = m.physical || {};
+  const physScore = phys.monoSource ? 7
+    : phys.correlation == null ? 7
+    : phys.correlation >= 0.5 ? 9.5 : phys.correlation >= 0.3 ? 7.5 : phys.correlation >= 0 ? 5 : 3;
   // The weakest leg drags the blend — a balance with one leg off the
   // template is not a balanced mix, however strong the other legs read.
-  out.mix = round5(0.55 * (0.40 * lowScore + 0.35 * topScore + 0.25 * midHealth) + 0.45 * Math.min(lowScore, topScore, midHealth));
+  out.mix = round5(0.55 * (0.32 * lowScore + 0.28 * topScore + 0.16 * midHealth + 0.24 * physScore) + 0.45 * Math.min(lowScore, topScore, midHealth));
+  if (!phys.monoSource && phys.correlation != null && phys.correlation < 0) out.mix = Math.min(out.mix, 6); // phase-broken: folds down broken
   notes.mix = out.mix >= 7
-    ? `The spectrum balances like a ${g} record — low end ${fmt(m.lowEndDb)} dB over the mids (band: ${T.low[0]} to ${T.low[1]}), top end ${fmt(m.topEndDb)} (band: ${T.top[0]} to ${T.top[1]}). Everything has its space.`
-    : `The balance is off the ${g} template — low end reads ${fmt(m.lowEndDb)} dB over the mids (band: ${T.low[0]} to ${T.low[1]}) and the top reads ${fmt(m.topEndDb)} (band: ${T.top[0]} to ${T.top[1]}). Rebalance toward those numbers.`;
+    ? `The spectrum balances like a ${g} record — low end ${fmt(m.lowEndDb)} dB over the mids (band: ${T.low[0]} to ${T.low[1]}), top end ${fmt(m.topEndDb)} (band: ${T.top[0]} to ${T.top[1]})${phys.monoSource ? "" : `, and the stereo folds down clean at ${Math.round((phys.correlation || 0) * 100)}% correlation`}. Everything has its space.`
+    : `The balance is off the ${g} template — low end reads ${fmt(m.lowEndDb)} dB over the mids (band: ${T.low[0]} to ${T.low[1]}) and the top reads ${fmt(m.topEndDb)} (band: ${T.top[0]} to ${T.top[1]})${!phys.monoSource && phys.correlation != null && phys.correlation < 0.3 ? `. Worse, the stereo folds to mono at ${Math.round(phys.correlation * 100)}% correlation — parts cancel on phone speakers and mono radios; check the phase` : ""}. Rebalance toward those numbers.`;
 
   // ---- Dynamics & Energy: crest (the DR-style read) vs the genre band + breathing
   const breath = m.drProxy < 1.5 ? 4.5 : m.drProxy < 2.5 ? 7 : m.drProxy <= 9 ? 9.5 : m.drProxy <= 13 ? 7.5 : 6;
@@ -83,7 +127,10 @@ function judgeMeasured(m, genre, coverAbsPath) {
     : `The pulse doesn't fully lock — beat periodicity measures ${Math.round(m.tempoStrength * 100)}%. Tighten the drum grid and let the bass and kick agree on where the beat lives.`;
 
   // ---- Structure + Hook (shared reads)
-  const introScore = m.leadQuietSec <= 6 ? 9.5 : m.leadQuietSec <= 12 ? 7.5 : m.leadQuietSec <= 20 ? 5.5 : 4;
+  const introLenScore = m.leadQuietSec <= 6 ? 9.5 : m.leadQuietSec <= 12 ? 7.5 : m.leadQuietSec <= 20 ? 5.5 : 4;
+  const introRead = m.intro || {};
+  const introBuildScore = introRead.coldOpen ? 9 : introRead.buildDb == null ? 7.5 : introRead.buildDb >= 3 ? 9.5 : introRead.buildDb >= 1 ? 8 : introRead.buildDb >= -1 ? 6 : 5;
+  const introScore = 0.55 * introLenScore + 0.45 * introBuildScore;
   const arrAbs = m.hook.startSec <= 20 ? 10 : m.hook.startSec <= 35 ? 9 : m.hook.startSec <= 50 ? 7.5 : m.hook.startSec <= 70 ? 6 : 4.5;
   const arrRel = m.durationSec > 0 ? m.hook.startSec / m.durationSec : 1;
   const arrRelScore = arrRel <= 0.15 ? 10 : arrRel <= 0.3 ? 8.5 : arrRel <= 0.45 ? 7 : arrRel <= 0.6 ? 5.5 : 4;
@@ -101,9 +148,10 @@ function judgeMeasured(m, genre, coverAbsPath) {
   const consistency = matchParts.length ? matchParts.reduce((a, b) => a + b, 0) / matchParts.length : 7;
   const blendScore = sec.blend == null ? 7 : sec.blend > 0.995 ? 6.5 : sec.blend >= 0.8 ? 9 : sec.blend >= 0.7 ? 7 : 4.5;
   out.structure = round5(0.22 * introScore + 0.28 * arrival + 0.22 * (0.5 * effLift + 0.5 * breath) + 0.28 * (0.6 * consistency + 0.4 * blendScore));
+  if (phys.abruptEnd) out.structure = Math.min(out.structure, 7); // chopped ending = unfinished form
   notes.structure = out.structure >= 7
-    ? `Built right — the body is moving by second ${m.leadQuietSec}, the hook lands at ${m.hook.startSec}s${sec.prominenceDb != null ? ` standing ${fmt(sec.prominenceDb)} dB over the verse` : ""}${sec.verseMatch != null ? `, the verses match each other at ${Math.round(sec.verseMatch * 100)}%` : ""}${sec.blend != null ? `, and hook and verse blend at ${Math.round(sec.blend * 100)}% — one record, sections working together` : ""}.`
-    : `The shape needs work — ${m.leadQuietSec > 12 ? `the song takes ${m.leadQuietSec}s to get going and ` : ""}the hook arrives at ${m.hook.startSec}s${sec.prominenceDb != null ? ` with only ${fmt(sec.prominenceDb)} dB over the verse` : ""}${sec.verseMatch != null && sec.verseMatch < 0.92 ? `, and the verses don't match each other (${Math.round(sec.verseMatch * 100)}%)` : ""}${sec.blend != null && sec.blend < 0.7 ? `; hook and verse barely blend (${Math.round(sec.blend * 100)}%) — they sound like different records` : ""}.`;
+    ? `Built right — ${introRead.coldOpen ? "it opens cold, straight in" : introRead.buildDb != null && introRead.buildDb >= 1 ? `the intro builds ${fmt(introRead.buildDb)} dB into the song` : `the body is moving by second ${m.leadQuietSec}`}, the hook lands at ${m.hook.startSec}s${sec.prominenceDb != null ? ` standing ${fmt(sec.prominenceDb)} dB over the verse` : ""}${sec.verseMatch != null ? `, the verses match each other at ${Math.round(sec.verseMatch * 100)}%` : ""}${sec.blend != null ? `, and hook and verse blend at ${Math.round(sec.blend * 100)}% — one record, sections working together` : ""}${phys.abruptEnd ? " — but the ending is chopped off mid-sound: no fade, no ring-out, the record just stops" : ""}.`
+    : `The shape needs work — ${m.leadQuietSec > 12 ? `the song takes ${m.leadQuietSec}s to get going and ` : ""}the hook arrives at ${m.hook.startSec}s${sec.prominenceDb != null ? ` with only ${fmt(sec.prominenceDb)} dB over the verse` : ""}${sec.verseMatch != null && sec.verseMatch < 0.92 ? `, and the verses don't match each other (${Math.round(sec.verseMatch * 100)}%)` : ""}${sec.blend != null && sec.blend < 0.7 ? `; hook and verse barely blend (${Math.round(sec.blend * 100)}%) — they sound like different records` : ""}${phys.abruptEnd ? "; and the ending is chopped off mid-sound — no fade, no ring-out, the record just stops" : ""}.`;
 
   const winCount = Math.max(1, Math.floor(m.durationSec / 8));
   const repRatio = m.hook.repeats / winCount;
@@ -134,11 +182,22 @@ function judgeMeasured(m, genre, coverAbsPath) {
     ? `The voice owns its band — ${Math.round(vs * 100)}% of the song's energy sits in the vocal range and the presence cuts through. The performance reads clear and up front.`
     : `The voice isn't owning the record — only ${Math.round(vs * 100)}% of the energy sits in the vocal band. Push the vocal forward and clear the instruments out of its way.`;
 
-  // ---- Lyrics (proxy: vocal clarity — the words can only land if they're heard)
-  out.lyrics = round5(0.65 * out.vocals + 0.35 * presenceCut);
-  notes.lyrics = out.lyrics >= 7
-    ? `The words come through intelligible and present — every line can be heard the first time, which is what lets writing land.`
-    : `The words are fighting the track — vocal clarity measures low, so lines get lost. A clearer, more forward vocal gives the writing its chance.`;
+  // ---- Lyrics. When the artist sent the words in with the upload, the
+  // words themselves are read (pure text math: rhyme, vocabulary,
+  // recurrence, flow). Without them, the honest fallback is the vocal
+  // clarity proxy — a spectrum cannot hear words.
+  const lyricRead = lyricsText ? scoreLyricsText(lyricsText) : null;
+  if (lyricRead) {
+    out.lyrics = lyricRead.score;
+    notes.lyrics = lyricRead.score >= 7
+      ? `Read from the words you sent in: ${lyricRead.lines} lines, rhyme lands on ${lyricRead.rhymePct}% of the line endings, the hook line comes back ${lyricRead.hookLineCount} times, and the vocabulary runs ${lyricRead.uniqueWords} distinct words. The writing has structure and a hook of its own.`
+      : `Read from the words you sent in: ${lyricRead.lines} lines with rhyme on ${lyricRead.rhymePct}% of line endings and ${lyricRead.uniqueWords} distinct words. ${lyricRead.rhymePct < 30 ? "The line endings rarely rhyme — give the ear something to hold. " : ""}${lyricRead.hookLineCount < 2 ? "No line comes back — a hook line that repeats is what sticks. " : ""}Sharper, more musical writing raises this.`;
+  } else {
+    out.lyrics = round5(0.65 * out.vocals + 0.35 * presenceCut);
+    notes.lyrics = out.lyrics >= 7
+      ? `The words come through intelligible and present — every line can be heard the first time, which is what lets writing land. (No lyrics were sent in with this upload, so this point rides on vocal clarity.)`
+      : `The words are fighting the track — vocal clarity measures low, so lines get lost. A clearer, more forward vocal gives the writing its chance. (No lyrics were sent in with this upload, so this point rides on vocal clarity.)`;
+  }
 
   // ---- Melody (range + presence of the melodic line)
   const rangeScore = m.melodicRangeSemis >= 5 && m.melodicRangeSemis <= 15 ? 9.5 : m.melodicRangeSemis >= 3 ? 7.5 : m.melodicRangeSemis > 15 && m.melodicRangeSemis <= 20 ? 7.5 : m.melodicRangeSemis < 3 ? 4.5 : 5.5;
@@ -153,9 +212,13 @@ function judgeMeasured(m, genre, coverAbsPath) {
   const alive = ["sub", "bass", "lowmid", "mid", "presence", "brilliance"].filter((k) => rel[k] >= -32).length + (rel.air >= -45 ? 1 : 0);
   const completeness = 3 + 7 * (alive / 7);
   out.production = round5(0.35 * completeness + 0.35 * ((lowScore + topScore) / 2) + 0.30 * tempoMap);
-  notes.production = out.production >= 7
-    ? `A full-spectrum production — ${alive} of 7 frequency bands are alive and working, balanced on the ${g} template. The record sounds finished.`
-    : `The production has holes — only ${alive} of 7 frequency bands are really alive. Fill the spectrum: a record should have something working from the sub to the air.`;
+  const drops = (phys.dropouts || []);
+  if (drops.length) out.production = Math.min(out.production, 6); // a hole in the audio is a production fault
+  notes.production = drops.length
+    ? `There's a hole in the record — ${fmt(drops[0].dur, 1)} seconds of silence at ${Math.floor(drops[0].at / 60)}:${String(Math.floor(drops[0].at % 60)).padStart(2, "0")} where the music should be${drops.length > 1 ? `, and ${drops.length - 1} more` : ""}. A dropout like that reads as a broken file, not a breakdown. Fix the export and re-upload.`
+    : out.production >= 7
+      ? `A full-spectrum production — ${alive} of 7 frequency bands are alive and working, balanced on the ${g} template. The record sounds finished.`
+      : `The production has holes — only ${alive} of 7 frequency bands are really alive. Fill the spectrum: a record should have something working from the sub to the air.`;
 
   // ---- Emotional Impact (proxy: dynamic contrast + the big moment landing)
   out.emotion = round5(0.55 * out.dynamics + 0.45 * liftMap);
@@ -214,11 +277,11 @@ function judgeMeasured(m, genre, coverAbsPath) {
 
 // Measured judging of one uploaded file. Returns null when the file can't
 // be measured — the caller falls back to Judge v1 for that song.
-async function judgeMeasuredFile(absPath, genre, coverAbsPath = null) {
+async function judgeMeasuredFile(absPath, genre, coverAbsPath = null, lyricsText = null) {
   if (!TEMPLATE_FOR[genre]) return null;
   const m = await analyzeAudio(absPath);
   if (!m || m.lufs == null) return null;
-  return judgeMeasured(m, genre, coverAbsPath);
+  return judgeMeasured(m, genre, coverAbsPath, lyricsText);
 }
 
-module.exports = { judgeMeasuredFile, judgeMeasured, TEMPLATES, TEMPLATE_FOR };
+module.exports = { judgeMeasuredFile, judgeMeasured, scoreLyricsText, TEMPLATES, TEMPLATE_FOR };
