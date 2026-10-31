@@ -539,7 +539,7 @@ function layout(title, active, body, opts = {}) {
     <div class="wordmark"><span class="top">TOP</span> <span class="twenty">20</span></div>
     <div class="blaze"></div><div class="blaze-line"></div>
   </div>
-  ${opts.home ? `<div class="hotline"><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — NOBODY'S SAFE — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY FRIDAY — </span><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — NOBODY'S SAFE — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY FRIDAY — </span></div>` : ""}
+  ${opts.home ? `<div class="hotline"><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — GREAT SONGS HOLD THEIR SPOT — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY FRIDAY — </span><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — GREAT SONGS HOLD THEIR SPOT — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY FRIDAY — </span></div>` : ""}
   <div class="tagline">Charts by craft, not just clout</div>
   <nav class="main">${nav}</nav>
 </header>
@@ -1142,7 +1142,7 @@ app.get("/", (req, res) => {
   const djPicksHtml = djPickRows.length ? `
   <div class="panel">
     <h2 style="margin-top:0">🎧 DJ's Hot Picks</h2>
-    <p class="sub">Top 20 is strictly algorithmic — with <b style="color:#fff">one exception</b>. Every Friday, a panel of DJs picks 3 songs that are already hot, and those picks step straight into the Top 20. After Friday, the algorithm treats them like everybody else — nobody's safe.</p>
+    <p class="sub">Top 20 is strictly algorithmic — with <b style="color:#fff">one exception</b>. Every Friday, a panel of DJs picks 3 songs that are already hot, and those picks step straight into the Top 20. After Friday, the algorithm treats them like everybody else — their spot rides on their score, same as every song on the chart.</p>
     ${djPickRows.map((p) => `
     <a class="row" href="/song/${p.id}">
       <img class="thumb" src="${esc(p.cover_path)}" alt="">
@@ -1183,7 +1183,7 @@ app.get("/", (req, res) => {
     <p class="sub">The rotation plays the Top 20 in order, 1 through 20, 24 hours a day.</p>
     <p class="sub">You're being critiqued 24 hours a day — the algorithm never sleeps.</p>
     <p class="sub">New entries come into play at 12:00 midnight, every night — that's when the new chart takes effect and knocked-off songs leave the rotation.</p>
-    <p class="sub"><b style="color:#fff">Nobody's safe.</b> A new entry can hit at midnight any night — you have to keep putting out great material to stay in the Top 20.</p>
+    <p class="sub"><b style="color:#fff">A great song holds its spot.</b> New entries can hit at midnight any night, but nobody loses a Top 20 spot for not uploading — a song only moves when hotter songs out-score it. So put your hottest material up here and keep doing what you're doing — that's what got you into the Top 20 in the first place. And a song that slides out of the 20 doesn't disappear — it stays in the big Top 100, ready to climb back.</p>
   </div>`;
 
   const tabs = channels.map((c, i) =>
@@ -2247,7 +2247,7 @@ app.get("/how-it-works", (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">The Stage</h2>
     <p class="sub">The rotation plays the Top 20 in order, 1 through 20, 24 hours a day. New entries come into play at 12:00 midnight, every night — that's when the new chart takes effect and knocked-off songs leave the rotation.</p>
-    <p class="sub"><b style="color:#fff">Nobody's safe.</b> A new entry can hit at midnight any night — you have to keep putting out great material to stay in the Top 20.</p>
+    <p class="sub"><b style="color:#fff">A great song holds its spot.</b> New entries can hit at midnight any night, but nobody loses a Top 20 spot for not uploading — a song only moves when hotter songs out-score it. So put your hottest material up here and keep doing what you're doing — that's what got you into the Top 20 in the first place. And a song that slides out of the 20 doesn't disappear — it stays in the big Top 100, ready to climb back.</p>
   </div>
   <div class="ne">
     <div class="ne-banner">THE RULES</div>
