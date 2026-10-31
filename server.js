@@ -2648,12 +2648,11 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
     WHERE p.removed_at IS NULL ORDER BY p.id DESC`).all();
   const chartName = (p) => p.level === "national" ? `National ${p.genre}`
     : p.level === "regional" ? `Regional ${p.genre} (${p.region_key})` : `Local ${p.genre} (${p.region_key})`;
-  const today = todayStr();
-  const statusOf = (p) => p.ends_on && p.ends_on < today ? "ended"
-    : p.starts_on > today ? "scheduled" : "active now";
+  const statusOf = (p) => p.ends_on && latest && p.ends_on < latest ? "ended"
+    : latest && p.starts_on > latest ? "starts at midnight tonight" : "on the chart now";
   const body = `
   <h1>Chart placements</h1>
-  <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. The placement holds through the daily midnight recalculation until it ends or you remove it. A song's evaluation scores are never changed — this sets chart position only.</p>
+  <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. You can enter a placement any time — it goes onto the chart at the next 12 AM chart change, same as every entry, and holds through each midnight recalculation until it ends or you remove it (removals also land at midnight). A song's evaluation scores are never changed — this sets chart position only.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
   <div class="panel">
     <h2 style="margin-top:0">Place a song</h2>
@@ -2709,21 +2708,26 @@ app.post("/admin/placements", requireAdmin, (req, res) => {
   ).get(latestChartDate(db), level, genre, region_key);
   if (!song || !chartOk) return res.redirect("/admin/placements?msg=" + encodeURIComponent("That song or chart isn't available — the song has to be uploaded and live first."));
   const today = todayStr();
+  // Placements ride the midnight cycle like every chart entry: entered
+  // today, the song first appears on TOMORROW's chart (dealt at 12 AM).
+  const starts_on = new Date(new Date(today + "T12:00:00Z").getTime() + 86400000).toISOString().slice(0, 10);
   let ends_on = null;
   const days = Number(req.body.duration);
   if (days === 7 || days === 30) {
-    ends_on = new Date(new Date(today + "T12:00:00Z").getTime() + (days - 1) * 86400000).toISOString().slice(0, 10);
+    ends_on = new Date(new Date(starts_on + "T12:00:00Z").getTime() + (days - 1) * 86400000).toISOString().slice(0, 10);
   }
   db.prepare(`INSERT INTO admin_placements (song_id, level, genre, region_key, rank, starts_on, ends_on, note)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(songId, level, genre, region_key, rank, today, ends_on, String(req.body.note || "").slice(0, 200) || null);
-  recalc(db); // today's chart reflects the placement immediately
-  return res.redirect("/admin/placements?msg=" + encodeURIComponent(`Placed "${song.title}" at #${rank}. It will hold there through the daily recalculation until ${ends_on || "you remove it"}.`));
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(songId, level, genre, region_key, rank, starts_on, ends_on, String(req.body.note || "").slice(0, 200) || null);
+  return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" is set for #${rank}. It goes onto the chart tonight at 12 AM (the ${starts_on} chart) and holds until ${ends_on || "you remove it"}.`));
 });
 
 app.post("/admin/placements/:id/remove", requireAdmin, (req, res) => {
-  db.prepare("UPDATE admin_placements SET removed_at = datetime('now') WHERE id = ? AND removed_at IS NULL").run(Number(req.params.id));
-  recalc(db);
-  return res.redirect("/admin/placements?msg=" + encodeURIComponent("Placement removed. The chart is back to pure score order for that song."));
+  const today = todayStr();
+  db.prepare(`UPDATE admin_placements
+    SET removed_at = datetime('now'),
+        ends_on = CASE WHEN ends_on IS NULL OR ends_on > ? THEN ? ELSE ends_on END
+    WHERE id = ? AND removed_at IS NULL`).run(today, today, Number(req.params.id));
+  return res.redirect("/admin/placements?msg=" + encodeURIComponent("Placement ends tonight at 12 AM — tomorrow's chart returns that song to pure score order."));
 });
 
 /* --------------------------------- Outbox --------------------------------- */
