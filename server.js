@@ -1197,6 +1197,40 @@ app.get("/", (req, res) => {
     `<button type="button" data-ch="${i}" class="${i === 0 ? "active" : ""}">${esc(c.label)}</button>`).join("");
   const body = `
   <div class="herovid"><video src="/hero.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video></div>
+  <div id="rolloutBar" style="margin:12px 0 2px;padding:14px 14px 12px;border:1px solid rgba(255,190,60,.65);border-radius:12px;background:linear-gradient(180deg,rgba(14,24,52,.92),rgba(6,10,22,.94));text-align:center">
+    <div style="font-family:Anton,sans-serif;letter-spacing:2.5px;font-size:15px;color:#ffd98a">⏳ THE TOP 20 ROLLOUT — COMING SOON</div>
+    <div style="display:flex;justify-content:center;gap:10px;margin:10px 0 8px">
+      <div style="min-width:64px;padding:8px 4px;border-radius:10px;background:rgba(255,190,60,.10);border:1px solid rgba(255,190,60,.35)"><div id="cdD" style="font-family:Anton,sans-serif;font-size:30px;color:#fff;line-height:1">--</div><div style="font-size:10px;letter-spacing:2px;color:#ffd98a;margin-top:4px">DAYS</div></div>
+      <div style="min-width:64px;padding:8px 4px;border-radius:10px;background:rgba(255,190,60,.10);border:1px solid rgba(255,190,60,.35)"><div id="cdH" style="font-family:Anton,sans-serif;font-size:30px;color:#fff;line-height:1">--</div><div style="font-size:10px;letter-spacing:2px;color:#ffd98a;margin-top:4px">HOURS</div></div>
+      <div style="min-width:64px;padding:8px 4px;border-radius:10px;background:rgba(255,190,60,.10);border:1px solid rgba(255,190,60,.35)"><div id="cdM" style="font-family:Anton,sans-serif;font-size:30px;color:#fff;line-height:1">--</div><div style="font-size:10px;letter-spacing:2px;color:#ffd98a;margin-top:4px">MIN</div></div>
+      <div style="min-width:64px;padding:8px 4px;border-radius:10px;background:rgba(255,190,60,.10);border:1px solid rgba(255,190,60,.35)"><div id="cdS" style="font-family:Anton,sans-serif;font-size:30px;color:#fff;line-height:1">--</div><div style="font-size:10px;letter-spacing:2px;color:#ffd98a;margin-top:4px">SEC</div></div>
+    </div>
+    <div style="font-size:13.5px;line-height:1.45;color:#e8eaf0"><b style="color:#fff">Upload your song now</b> and get prepared — the Top 100 bucket fills first, then the Top 20 rollout begins. <a href="/upload" style="color:#ffd98a;font-weight:800;text-decoration:none">Upload your song →</a></div>
+  </div>
+  <script>
+  (function () {
+    var target = new Date("2026-11-30T06:00:00Z").getTime(); // Nov 30, 2026, 12:00 AM Central
+    function pad(n) { return (n < 10 ? "0" : "") + n; }
+    function tick() {
+      var left = target - Date.now();
+      var d = document.getElementById("cdD"), h = document.getElementById("cdH"),
+          m = document.getElementById("cdM"), s = document.getElementById("cdS");
+      if (!d) return;
+      if (left <= 0) {
+        d.textContent = "00"; h.textContent = "00"; m.textContent = "00"; s.textContent = "00";
+        var bar = document.getElementById("rolloutBar");
+        if (bar) bar.querySelector("div").textContent = "🔥 THE TOP 20 ROLLOUT IS ON";
+        return;
+      }
+      d.textContent = pad(Math.floor(left / 86400000));
+      h.textContent = pad(Math.floor(left / 3600000) % 24);
+      m.textContent = pad(Math.floor(left / 60000) % 60);
+      s.textContent = pad(Math.floor(left / 1000) % 60);
+      setTimeout(tick, 1000);
+    }
+    tick();
+  })();
+  </script>
   <div style="margin:12px 0 2px;padding:10px 14px;border:1px solid rgba(255,190,60,.55);border-radius:12px;background:linear-gradient(180deg,rgba(255,170,40,.14),rgba(255,170,40,.05));color:#ffd98a;font-size:13.5px;line-height:1.45;text-align:center">🎧 <b style="color:#fff">STAGE SHOWCASE</b> — these covers are on display for show right now. <b style="color:#fff">The Top 20 starts airing within 30 days of launch.</b> Artists — get your song uploaded and judged now, and be ready when the real rotation begins.</div>
   <div class="tabs" id="channelTabs">${tabs}</div>
   ${first ? `
