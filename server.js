@@ -2458,7 +2458,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   // genre templates score it. If a file can't be measured, Judge v1 covers
   // that one song so an upload never fails on the judging step.
   let judged = null;
-  try { judged = await judgeMeasuredFile(audioFile.path, genre, coverFile.path); } catch { judged = null; }
+  try { judged = await judgeMeasuredFile(audioFile.path, genre, coverFile.path, lyrics ? String(lyrics) : null); } catch { judged = null; }
   if (!judged) judged = judgeAudioFile(audioFile.path, coverFile.path);
   const catCols = CATEGORIES.map((c) => c.key).join(", ");
   const placeholders = CATEGORIES.map(() => "?").join(", ");
