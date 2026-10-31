@@ -147,11 +147,11 @@ header.site{padding:20px 2px 2px;text-align:center;position:relative}
 .crowd{position:absolute;bottom:44px;height:198px;width:auto;z-index:0;pointer-events:none;mix-blend-mode:screen;opacity:1;filter:saturate(1.08) contrast(1.04) brightness(1.03);-webkit-mask-image:linear-gradient(180deg,#000 85%,transparent 99%);mask-image:linear-gradient(180deg,#000 85%,transparent 99%)}
 .crowd.cl{left:-6px}
 .crowd.cr{right:-14px}
-.crowd.cc{left:50%;transform:translateX(-50%);height:246px;bottom:26px}
+.crowd.cc{left:50%;transform:translateX(-50%);height:232px;bottom:22px}
 header.site .wm,header.site .tagline,header.site nav.main{position:relative;z-index:2}
 header.site .hotline{position:relative;z-index:5}
-@media (min-width:901px){header.site{padding-top:34px}}
-@media (max-width:900px){.crowd{height:150px;bottom:40px}.crowd.cc{height:202px;bottom:30px}}
+@media (min-width:901px){header.site{padding-top:58px}}
+@media (max-width:900px){.crowd{height:150px;bottom:40px}.crowd.cc{height:190px;bottom:24px}}
 @media (max-width:560px){.crowd{height:74px;opacity:.95;bottom:110px}.crowd.cl{left:-10px}.crowd.cr{right:-10px}.wordmark .top{font-size:30px}.wordmark .twenty{font-size:34px}}
 @media (max-width:400px){.crowd{bottom:130px}}
 .wm{display:inline-block;text-align:center;position:relative;isolation:isolate}
@@ -182,8 +182,8 @@ header.site .hotline{position:relative;z-index:5}
    the mark stays narrow enough that the artist bunches flank it from
    OUTSIDE the letters instead of standing behind them. Placed after the
    base wordmark rules on purpose — later rules win. */
-@media (max-width:560px){header.site{padding-top:8px}.wordmark .top{font-size:48px}.wordmark .twenty{font-size:48px}.crowd{height:84px;opacity:.95;bottom:118px}.crowd.cl{left:-8px}.crowd.cr{right:-8px}.crowd.cc{height:158px;bottom:70px}}
-@media (max-width:400px){.wordmark .top{font-size:44px}.wordmark .twenty{font-size:44px}.crowd{height:80px;bottom:122px}.crowd.cl{left:-10px}.crowd.cr{right:-10px}.crowd.cc{height:150px;bottom:84px}}
+@media (max-width:560px){header.site{padding-top:26px}.wordmark .top{font-size:48px}.wordmark .twenty{font-size:48px}.crowd{height:80px;opacity:.95;bottom:108px}.crowd.cl{left:-8px}.crowd.cr{right:-8px}.crowd.cc{height:146px;bottom:58px}}
+@media (max-width:400px){.wordmark .top{font-size:44px}.wordmark .twenty{font-size:44px}.crowd{height:76px;bottom:106px}.crowd.cl{left:-10px}.crowd.cr{right:-10px}.crowd.cc{height:140px;bottom:68px}}
 .blaze{height:11px;width:100%;margin:7px auto 0;position:relative;
   background:
    radial-gradient(16px 11px at 16% 100%,rgba(255,45,0,.85),transparent 70%),
