@@ -496,7 +496,6 @@ function layout(title, active, body, opts = {}) {
     ["/djs", "djs", "DJs"],
     ["/how-it-works", "how", "How It Works"],
     ["/admin/outbox", "outbox", "Outbox"],
-    ["/admin/login", "admin", "Admin"],
   ].map(([href, key, label]) =>
     `<a href="${href}" class="${active === key ? "active" : ""}">${label}</a>`).join("");
   // Open Graph + Twitter cards: pages are fully server-rendered, so links
@@ -544,7 +543,8 @@ function layout(title, active, body, opts = {}) {
 ${body}
 <footer class="site">TOP 20 — the Stage plays only the Top 20, 24/7.<br>
 Fall off the chart and the rotation moves on. Check your rank on the Dashboard.<br>
-<a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">How it works →</a></footer>
+<a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">How it works →</a><br>
+<a href="/admin/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">Staff Login</a></footer>
 </div>
 <div class="installbar" id="installBar" role="dialog" aria-label="Install Top 20">
   <img src="/icons/icon-192x192.png" alt="">
