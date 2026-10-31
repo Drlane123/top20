@@ -2956,7 +2956,7 @@ app.get("/advertise", (req, res) => {
     <p class="note">Slots open with the Top 20 rollout. Watch this page — when it opens, this is where it happens.</p>
   </div>
   <p style="text-align:center"><a class="ghost" href="/">← Back to the Stage</a></p>`;
-  res.send(page("Advertise on Top 20", body, req.basePath || ""));
+  res.send(layout("Advertise on Top 20", "", body));
 });
 
 app.get("/admin/login", (req, res) => {
