@@ -120,6 +120,15 @@ if (CROWD) {
     res.end(CROWD.lady);
   });
 }
+// Pages always re-fetch fresh HTML (owner hit a stale cached page more
+// than once — new features like the DJ voice never reached his phone).
+// Media and data files keep their normal caching.
+app.use((req, res, next) => {
+  const p = req.path || "";
+  const isAsset = /^\/(ann|covers|audio|uploads|api)\//.test(p) || /\.(js|css|png|jpe?g|webp|mp3|mp4|ico|svg)$/i.test(p);
+  if (req.method === "GET" && !isAsset) res.set("Cache-Control", "no-store, must-revalidate");
+  next();
+});
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(PUBLIC_DIR, {
   setHeaders(res, filePath) {
