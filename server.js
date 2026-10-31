@@ -9,7 +9,7 @@ const { execFileSync } = require("node:child_process");
 const { openDb } = require("./db");
 const { GENRES, OVERALL, CATEGORIES, regionForState, localKey } = require("./config");
 const { judgeAudioFile } = require("./judge");
-const { recalc, latestChartDate, previousChartDate } = require("./charts");
+const { recalc, latestChartDate, previousChartDate, ensureCurrent, todayStr } = require("./charts");
 
 const PORT = process.env.PORT || 8077;
 const PUBLIC_DIR = path.join(__dirname, "public");
@@ -2590,4 +2590,16 @@ app.post("/admin/recalc", (req, res) => {
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`TOP 20 v1 listening on http://0.0.0.0:${PORT}`);
+  // The chart takes effect at midnight: deal today's chart on boot if the
+  // stored one is stale, then check hourly for the date rolling over.
+  const deal = () => {
+    try {
+      const dealt = ensureCurrent(db);
+      if (dealt > 0) console.log(`daily chart: dealt ${dealt} new day(s); current chart date ${todayStr()}`);
+    } catch (e) {
+      console.error("daily chart deal failed:", e.message);
+    }
+  };
+  deal();
+  setInterval(deal, 3600000);
 });

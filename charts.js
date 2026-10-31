@@ -136,6 +136,45 @@ function applyDjPicks(db, entries, date) {
   return [...rest, ...newGroup];
 }
 
+// Small deterministic PRNG (same family the seed uses) so a given
+// (song, date) pair always produces the same daily drift — the chart is
+// stable all day, identical for every viewer, and genuinely different
+// tomorrow.
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function dateSeed(dateStr) {
+  let h = 20261030;
+  for (const ch of String(dateStr)) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+  return h >>> 0;
+}
+
+// DAILY DRIFT — the living chart. Audience attention moves every day, so
+// each day's recalc deals every song a deterministic daily swing
+// (±DAILY_DRIFT chart points) keyed to the date. Craft scores never
+// move; only the day's engagement weather does. Fridays belong to the
+// DJ's Hot Picks: on a Friday the drift is muted so the panel's three
+// picks (seeded at unjittered ranks 22/25/28) still step into the bottom
+// of the Top 20 exactly the way applyDjPicks seats them.
+const DAILY_DRIFT = 6.5;
+const FRIDAY_DRIFT = 1.2;
+
+function isFriday(dateStr) {
+  return new Date(dateStr + "T12:00:00Z").getUTCDay() === 5;
+}
+
+function dailyDriftFn(dateStr) {
+  const amp = isFriday(dateStr) ? FRIDAY_DRIFT : DAILY_DRIFT;
+  const ds = dateSeed(dateStr);
+  return (songId) => (mulberry32((songId * 7919) ^ ds)() * 2 - 1) * amp;
+}
+
 // Recalculate today's charts. Compares Top 20 membership against the
 // previous chart date: every NEW Top 20 entry creates exactly one
 // 'chart_entry' notification (the simulated email). Songs that fall OUT
@@ -145,7 +184,7 @@ function recalc(db, date = todayStr()) {
   const prevTop = top20Keys(db, prevDate);
   const existingTodayTop = top20Keys(db, date); // guards same-day re-runs
 
-  const entries = applyDjPicks(db, computeRankings(db), date);
+  const entries = applyDjPicks(db, computeRankings(db, dailyDriftFn(date)), date);
   const insert = db.prepare(
     `INSERT INTO chart_entries (chart_date, level, genre, region_key, song_id, rank, chart_score, dj_pick)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
@@ -185,4 +224,24 @@ function recalc(db, date = todayStr()) {
   return { date, prevDate, notifications: created, entryCount: entries.length };
 }
 
-module.exports = { computeRankings, recalc, latestChartDate, previousChartDate, todayStr, LEVELS, CHART_GENRES };
+// Runtime day-rollover: if the newest stored chart is older than today,
+// deal today's chart (and any missed days in between, so movement arrows,
+// risers and days-charted always compare against a real yesterday).
+// Returns the number of days dealt. Safe to call on every boot.
+function ensureCurrent(db, today = todayStr()) {
+  let latest = latestChartDate(db);
+  if (!latest || latest >= today) return 0;
+  let dealt = 0;
+  let cursor = latest;
+  while (cursor < today) {
+    const next = new Date(new Date(cursor + "T12:00:00Z").getTime() + 86400000)
+      .toISOString().slice(0, 10);
+    recalc(db, next);
+    cursor = next;
+    dealt++;
+    if (dealt > 31) break; // sanity cap; a fresh seed is never behind
+  }
+  return dealt;
+}
+
+module.exports = { computeRankings, recalc, latestChartDate, previousChartDate, todayStr, ensureCurrent, dailyDriftFn, LEVELS, CHART_GENRES };
