@@ -1175,7 +1175,7 @@ app.get("/", (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">How it works</h2>
     <p class="sub"><b style="color:#fff">Part 1 — The Search.</b> The algorithm searches Facebook, Instagram, TikTok, YouTube, the music platforms where independents promote, and the open web — gathering everything it can find about you and your songs.</p>
-    <p class="sub"><b style="color:#fff">Part 2 — The Judging.</b> Every song uploaded here is scored by the 15-point scale evaluation, 1–10 on each point, fitted genre by genre — then the charts recalculate daily. And it has to be really you on the record — <b style="color:#fff">no AI music</b>: if a song turns out to be AI, it comes off the charts immediately.</p>
+    <p class="sub"><b style="color:#fff">Part 2 — The Judging.</b> Every song uploaded here is scored by the 15-point scale evaluation, 1–10 on each point, fitted genre by genre — then the charts recalculate daily. And the artist has to be real — <b style="color:#fff">no AI artists, no AI vocals</b> (a tool that helps you build the beat is fine). If a song turns out to be an AI artist, it comes off the charts immediately.</p>
     <p style="margin:10px 0 2px"><a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">See how it works →</a></p>
   </div>`;
   const stageRules = `
@@ -1810,7 +1810,7 @@ app.get("/upload", (req, res) => {
   }
   const body = `
   <h1>Upload your song</h1>
-  <p class="sub">Song uploads are <b style="color:#fff">FREE during the 6-month launch window</b>. Your song is judged on the 15 craft criteria the moment it lands, then ranked on your Local, Regional, National and Overall charts. Only songs uploaded to TOP 20 are ever judged or charted — nothing is imported from outside. <b style="color:#fff">Real artists only:</b> it has to be really you on the song — no AI-generated songs, no AI vocals. If a song is found to be AI at any time, it is pulled from the Top 20 and the Top 100 immediately.</p>
+  <p class="sub">Song uploads are <b style="color:#fff">FREE during the 6-month launch window</b>. Your song is judged on the 15 craft criteria the moment it lands, then ranked on your Local, Regional, National and Overall charts. Only songs uploaded to TOP 20 are ever judged or charted — nothing is imported from outside. <b style="color:#fff">Real artists only:</b> the voice on the song has to be really you — no AI artists, no AI vocals. A tool that helps you build a beat or polish the production is your business; an AI performer is not. If a song is found to have an AI artist at any time, it is pulled from the Top 20 and the Top 100 immediately.</p>
   <div class="panel">
     <h2 style="margin-top:0">First — your profile</h2>
     <p class="sub"><b style="color:#fff">No profile, no recognition</b> — you need a profile page and at least one song uploaded to get recognized. Your artist name, home city and state come from your profile.</p>
@@ -2272,7 +2272,7 @@ app.get("/how-it-works", (req, res) => {
       <li><b>Two live songs per artist, max</b> — those are the only songs that get judged. Remove one to put another up.</li>
       <li>A <b>profile page + at least one song uploaded</b> is how you get recognized.</li>
       <li><b>No labels, no pay</b> can move a song. The algorithm decides — with one exception: <b>DJ's Hot Picks</b>. Every Friday a panel of DJs picks 3 songs that are already hot, and those picks step into the Top 20, badged for all to see. After Friday, the algorithm treats them like everybody else.</li>
-      <li><b>Real artists only — no AI music.</b> It has to be really you on the song: your voice, your work, your hours. We can't grade AI music and we won't — it isn't fair to the real artists who put in the long hours. If we find out a song is AI — today, next week, whenever — it is pulled from the Top 20 and out of the Top 100 immediately.</li>
+      <li><b>Real artists only — no AI artists.</b> The voice and the artist have to be real: your vocals, your ability, your work, your hours. Using a tool to help build a beat or assist on a production detail is your business — that is not what this rule is about. But an AI singer, an AI performer — a song with no real artist behind it — we can't grade that and we won't; it isn't fair to the real artists. If we find out the artist is AI — today, next week, whenever — the song is pulled from the Top 20 and out of the Top 100 immediately.</li>
       <li>Audio must be <b>radio quality</b> — WAV, FLAC, or 320 kbps MP3, the same quality radio stations accept.</li>
       <li>Charts <b>recalculate daily</b> — the new chart lands at 12:00 midnight.</li>
       <li>Only the <b>Top 20 plays on the Stage</b>.</li>
