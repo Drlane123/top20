@@ -28,7 +28,9 @@ const app = express();
 // streamed with HTTP range support so phones can play/seek it.
 const HERO = (() => {
   try {
-    const parts = ["./hero-data-1", "./hero-data-2", "./hero-data-3", "./hero-data-4"].map((m) => require(m));
+    const parts = [];
+    for (let i = 1; i <= 8; i++) { try { parts.push(require("./hero-data-" + i)); } catch (e) { break; } }
+    if (!parts.length) throw new Error("no hero parts");
     return { mp4: Buffer.from(parts.join(""), "base64"), poster: Buffer.from(require("./hero-poster-data"), "base64") };
   } catch (e) { return null; }
 })();
@@ -1275,7 +1277,17 @@ app.get("/", (req, res) => {
   const tabs = channels.map((c, i) =>
     `<button type="button" data-ch="${i}" class="${i === 0 ? "active" : ""}">${esc(c.label)}</button>`).join("");
   const body = `
-  <div class="herovid"><video src="/hero.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video></div>
+  <div class="herovid" style="position:relative"><video id="heroVid" src="/hero.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video><button type="button" id="heroSound" aria-label="Turn the welcome video sound on or off" style="position:absolute;right:10px;bottom:10px;background:rgba(10,10,18,.72);border:1px solid rgba(255,190,60,.65);color:#ffd98a;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;letter-spacing:.4px;cursor:pointer">🔊 SOUND ON</button></div>
+  <script>
+  (function () {
+    var v = document.getElementById("heroVid"), b = document.getElementById("heroSound");
+    if (!v || !b) return;
+    b.addEventListener("click", function () {
+      if (v.muted) { v.muted = false; try { v.currentTime = 0; } catch (e) {} var p = v.play(); if (p && p.catch) p.catch(function () {}); b.textContent = "🔈 SOUND OFF"; }
+      else { v.muted = true; b.textContent = "🔊 SOUND ON"; }
+    });
+  })();
+  </script>
   <div id="rolloutBar" title="Tap to hear it" style="margin:12px 0 2px;padding:14px 14px 12px;border:1px solid rgba(255,190,60,.65);border-radius:12px;background:linear-gradient(180deg,rgba(14,24,52,.92),rgba(6,10,22,.94));text-align:center;cursor:pointer">
     <div style="font-family:Anton,sans-serif;letter-spacing:2.5px;font-size:15px;color:#ffd98a">⏳ THE TOP 20 ROLLOUT — COMING SOON 🔊</div>
     <div style="display:flex;justify-content:center;gap:10px;margin:10px 0 8px">
