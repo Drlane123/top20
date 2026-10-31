@@ -66,6 +66,12 @@ const CATALOG = [
   ["Dance/Techno/House", "Bassline Confidential", "DJ Solenne", "Los Angeles", "CA", 8.8],
   ["Dance/Techno/House", "4AM in Dallas", "Rio Delacroix", "Dallas", "TX", 7.1],
   ["Dance/Techno/House", "Glass Cathedral", "Iona Waves", "New York", "NY", 6.6],
+
+  ["Hip-Hop", "South Dallas Scripture", "Malik Turner", "Dallas", "TX", 8.7],
+  ["Hip-Hop", "Barbershop Confessions", "Rome Carter", "Fort Worth", "TX", 7.8],
+
+  ["R&B", "Midnight in Mesquite", "Elijah Grant", "Mesquite", "TX", 8.5],
+  ["R&B", "Slow Dance Weather", "Imani Cole", "Atlanta", "GA", 9.0],
 ];
 
 function emailFor(name) {
