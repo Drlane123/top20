@@ -1279,6 +1279,7 @@ app.get("/", (req, res) => {
     <img id="barThumb" src="${esc(first.cover)}" alt="">
     <div class="meta"><div class="t" id="barTitle">${esc(first.title)}</div><div class="a" id="barArtist">${esc(first.artist)}</div></div>
     <button type="button" class="playbtn" id="playBtn" aria-label="Play or pause">▶</button>
+    <button type="button" id="djBtn" aria-label="Toggle the DJ announcement voice" style="flex:0 0 auto;background:rgba(255,190,60,.12);border:1px solid rgba(255,190,60,.45);color:#ffd98a;border-radius:999px;padding:7px 11px;font-size:11.5px;font-weight:800;letter-spacing:.4px;cursor:pointer">🎙️ DJ VOICE ON</button>
     <audio id="stageAudio" preload="none"></audio>
   </div></div>
   <script>
@@ -1288,6 +1289,31 @@ app.get("/", (req, res) => {
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
   const $ = (id) => document.getElementById(id);
+  // Radio DJ voice (owner request): before a song plays on the Stage, the
+  // voice announces its number spot, title, artist and days charted.
+  let loadSeq = 0;
+  let djOn = true;
+  try { djOn = localStorage.getItem('djVoice') !== '0'; } catch (e) {}
+  function djLabel(){ const b = $('djBtn'); if (b) b.textContent = djOn ? '🎙️ DJ VOICE ON' : '🎙️ DJ VOICE OFF'; }
+  function djText(t){
+    const d = t.fresh ? 'a brand new entry — day one on the chart' : (t.days === 1 ? 'day one on the chart' : (t.days || 0) + ' days on the chart');
+    return 'Number ' + t.rank + '. ' + t.title + ', by ' + t.artist + '. ' + d + '.';
+  }
+  function djAnnounce(t, done){
+    if (!djOn || !t || !('speechSynthesis' in window)) { done(); return; }
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(djText(t));
+      u.rate = 0.98; u.pitch = 0.6; u.volume = 1;
+      const vs = speechSynthesis.getVoices().filter((v) => /^en([-_]|$)/i.test(v.lang));
+      const pick = vs.find((v) => /male|david|daniel|guy|christopher|george/i.test(v.name)) || vs[0];
+      if (pick) u.voice = pick;
+      let fired = false; const go = () => { if (!fired) { fired = true; done(); } };
+      u.onend = go; u.onerror = go;
+      setTimeout(go, 6000); // never hold the music hostage to a stuck voice
+      speechSynthesis.speak(u);
+    } catch (e) { done(); }
+  }
   const rings = [
     { el: 'ringA', now: 'ringNowA', from: 0, to: 10, front: 0, dir: 1, hover: false, ang: 0, mode: 'spin', hold: false, dragging: false, resumeT: null },
     { el: 'ringB', now: 'ringNowB', from: 10, to: 20, front: 0, dir: -1, hover: false, ang: 0, mode: 'spin', hold: false, dragging: false, resumeT: null },
@@ -1450,6 +1476,7 @@ app.get("/", (req, res) => {
   function stopShowcase(){ if (ringTimer) { clearInterval(ringTimer); ringTimer = null; } }
   function load(i, autoplay){
     const t = PLAYLISTS[ch][i]; if (!t) return;
+    if ('speechSynthesis' in window) { try { speechSynthesis.cancel(); } catch (e) {} }
     previewOn = false;
     idx = i;
     audio.src = t.audio;
@@ -1461,7 +1488,7 @@ app.get("/", (req, res) => {
     $('npPick').hidden = !t.pick;
     $('barThumb').src = t.cover; $('barTitle').textContent = t.title; $('barArtist').textContent = t.artist;
     syncRings();
-    if (autoplay) audio.play().catch(() => {});
+    if (autoplay) { const seq = ++loadSeq; djAnnounce(t, () => { if (seq === loadSeq) audio.play().catch(() => {}); }); }
   }
   document.querySelectorAll('#channelTabs button').forEach((b) => {
     b.addEventListener('click', () => {
@@ -1474,7 +1501,21 @@ app.get("/", (req, res) => {
       load(0, false);
     });
   });
-  $('playBtn').addEventListener('click', () => { if (audio.paused) audio.play().catch(() => {}); else audio.pause(); });
+  $('playBtn').addEventListener('click', () => {
+    if (!audio.paused) { audio.pause(); return; }
+    if (!previewOn && audio.currentTime === 0 && audio.src) {
+      const t = PLAYLISTS[ch][idx];
+      if (t) { const seq = ++loadSeq; djAnnounce(t, () => { if (seq === loadSeq) audio.play().catch(() => {}); }); return; }
+    }
+    audio.play().catch(() => {});
+  });
+  $('djBtn').addEventListener('click', () => {
+    djOn = !djOn;
+    try { localStorage.setItem('djVoice', djOn ? '1' : '0'); } catch (e) {}
+    if (!djOn && 'speechSynthesis' in window) { try { speechSynthesis.cancel(); } catch (e) {} }
+    djLabel();
+  });
+  djLabel();
   audio.addEventListener('play', () => {
     $('playBtn').textContent = '❚❚';
     if (audio.currentSrc !== lastCounted) {
