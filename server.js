@@ -1380,6 +1380,7 @@ app.get("/", (req, res) => {
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   const ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
+  const ANN_V = 2; // announcement voice generation (2 = the Take B radio voice) — bump on every re-record so phones fetch the new clips instead of playing a cached old voice
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -1489,7 +1490,7 @@ app.get("/", (req, res) => {
     const step = () => {
       if (fired || my !== djChain) return;
       if (i >= keys.length) { finish(); return; }
-      audio.src = '/ann/' + keys[i] + '.mp3'; i++;
+      audio.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++;
       const p = audio.play(); if (p && p.catch) p.catch(() => finish());
     };
     announcing = true;
