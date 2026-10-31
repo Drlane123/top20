@@ -168,14 +168,26 @@ function main() {
   const db = openDb();
   const rng = mulberry32(20261030);
 
-  // Covers (PIL) via manifest.
-  const manifest = CATALOG.map((c, i) => ({
-    file: path.join(COVERS_DIR, `song-${i + 1}.png`),
-    title: c[1], artist: c[2], genre: c[0],
-  }));
-  const manifestPath = path.join(ROOT, "tools", "covers-manifest.json");
-  fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-  execFileSync("python3", [path.join(ROOT, "tools", "gen_covers.py"), manifestPath], { stdio: "inherit" });
+  // Covers: generated album artwork ships with the app (cover-art.js,
+  // base64 webp per song). Fall back to the PIL gradient covers only if
+  // the artwork bundle is missing.
+  let art = null;
+  try { art = require("./cover-art.js"); } catch { art = null; }
+  if (art) {
+    CATALOG.forEach((c, i) => {
+      const b64 = art[String(i + 1)];
+      if (b64) fs.writeFileSync(path.join(COVERS_DIR, `song-${i + 1}.png`), Buffer.from(b64, "base64"));
+    });
+    console.log("covers: generated artwork written");
+  } else {
+    const manifest = CATALOG.map((c, i) => ({
+      file: path.join(COVERS_DIR, `song-${i + 1}.png`),
+      title: c[1], artist: c[2], genre: c[0],
+    }));
+    const manifestPath = path.join(ROOT, "tools", "covers-manifest.json");
+    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
+    execFileSync("python3", [path.join(ROOT, "tools", "gen_covers.py"), manifestPath], { stdio: "inherit" });
+  }
 
   // Artist avatars (PIL) via manifest — profile photos for the seed
   // artists who have one on file (see profileFor).
