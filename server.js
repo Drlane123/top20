@@ -1394,7 +1394,10 @@ app.get("/", (req, res) => {
   @keyframes pljblink { 0%,55% { opacity:1; } 56%,100% { opacity:.12; } }
   .plj-arrow { font-size:12px; color:#d8e6ff; text-shadow:0 0 6px rgba(216,230,255,.8); animation:pljbob 1.2s ease-in-out infinite; }
   @keyframes pljbob { 0%,100% { transform:translateY(-1.5px); } 50% { transform:translateY(2px); } }
-  </style><button type="button" class="plj" id="playlistJump" aria-label="Jump to the live playlist"><span class="plj-arrow">▼</span><span class="plj-dot"></span>PLAYLIST LIVE<span class="plj-arrow">▼</span></button></div>
+  .plj-push { display:inline-block; vertical-align:middle; margin-right:10px; font-weight:900; letter-spacing:2px; font-size:12.5px; color:#ffd98a; text-shadow:0 0 8px rgba(255,190,60,.5); }
+  .plj-push .arr { display:inline-block; color:#46ff7d; text-shadow:0 0 8px rgba(57,255,106,.7); animation:pljnudge 1.2s ease-in-out infinite; }
+  @keyframes pljnudge { 0%,100% { transform:translateX(0); } 50% { transform:translateX(4px); } }
+  </style><span class="plj-push">PUSH <span class="arr">➜</span></span><button type="button" class="plj" id="playlistJump" aria-label="Jump to the live playlist"><span class="plj-arrow">▼</span><span class="plj-dot"></span>PLAYLIST LIVE<span class="plj-arrow">▼</span></button></div>
   <div class="herovid" style="position:relative"><video id="heroVid" src="/hero.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline disablepictureinpicture preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video><button type="button" id="heroSound" aria-label="Turn the welcome video sound on or off" style="position:absolute;right:10px;bottom:10px;background:rgba(10,10,18,.72);border:1px solid rgba(255,190,60,.65);color:#ffd98a;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;letter-spacing:.4px;cursor:pointer">🔊 SOUND ON</button></div>
   <script>
   (function () {
