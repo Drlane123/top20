@@ -1276,8 +1276,8 @@ app.get("/", (req, res) => {
     `<button type="button" data-ch="${i}" class="${i === 0 ? "active" : ""}">${esc(c.label)}</button>`).join("");
   const body = `
   <div class="herovid"><video src="/hero.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video></div>
-  <div id="rolloutBar" style="margin:12px 0 2px;padding:14px 14px 12px;border:1px solid rgba(255,190,60,.65);border-radius:12px;background:linear-gradient(180deg,rgba(14,24,52,.92),rgba(6,10,22,.94));text-align:center">
-    <div style="font-family:Anton,sans-serif;letter-spacing:2.5px;font-size:15px;color:#ffd98a">⏳ THE TOP 20 ROLLOUT — COMING SOON</div>
+  <div id="rolloutBar" title="Tap to hear it" style="margin:12px 0 2px;padding:14px 14px 12px;border:1px solid rgba(255,190,60,.65);border-radius:12px;background:linear-gradient(180deg,rgba(14,24,52,.92),rgba(6,10,22,.94));text-align:center;cursor:pointer">
+    <div style="font-family:Anton,sans-serif;letter-spacing:2.5px;font-size:15px;color:#ffd98a">⏳ THE TOP 20 ROLLOUT — COMING SOON 🔊</div>
     <div style="display:flex;justify-content:center;gap:10px;margin:10px 0 8px">
       <div style="min-width:64px;padding:8px 4px;border-radius:10px;background:rgba(255,190,60,.10);border:1px solid rgba(255,190,60,.35)"><div id="cdD" style="font-family:Anton,sans-serif;font-size:30px;color:#fff;line-height:1">--</div><div style="font-size:10px;letter-spacing:2px;color:#ffd98a;margin-top:4px">DAYS</div></div>
       <div style="min-width:64px;padding:8px 4px;border-radius:10px;background:rgba(255,190,60,.10);border:1px solid rgba(255,190,60,.35)"><div id="cdH" style="font-family:Anton,sans-serif;font-size:30px;color:#fff;line-height:1">--</div><div style="font-size:10px;letter-spacing:2px;color:#ffd98a;margin-top:4px">HOURS</div></div>
@@ -1307,6 +1307,17 @@ app.get("/", (req, res) => {
       s.textContent = pad(Math.floor(left / 1000) % 60);
       setTimeout(tick, 1000);
     }
+    // Tap the rollout box and the DJ voice (Take B) reads the line under
+    // the clock out loud (owner request, Oct 31). Taps on the Upload link
+    // inside the box still navigate — they are left alone.
+    var rb = document.getElementById("rolloutBar");
+    var rAudio = null;
+    if (rb) rb.addEventListener("click", function (e) {
+      if (e.target && e.target.closest && e.target.closest("a")) return;
+      if (!rAudio) rAudio = new Audio("/ann/rollout.mp3?v=2");
+      try { rAudio.currentTime = 0; } catch (err) {}
+      var p = rAudio.play(); if (p && p.catch) p.catch(function () {});
+    });
     tick();
   })();
   </script>
