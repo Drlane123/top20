@@ -629,7 +629,30 @@ const PROFILE_FIELDS = [
   ["name", "Artist name"], ["city", "Home city"], ["state", "Home state"],
   ["genre", "Genre"], ["photo_path", "Photo"], ["bio", "Bio"],
   ["history", "History"], ["years_in_game", "Years in the game"], ["age", "Age"],
+  ["facebook", "Facebook"], ["instagram", "Instagram"], ["tiktok", "TikTok"], ["youtube", "YouTube"],
 ];
+
+// Social links: artists may paste a full link or just their handle.
+function socialUrl(platform, v) {
+  const s = String(v || "").trim();
+  if (!s) return "";
+  if (/^https?:\/\//i.test(s)) return s;
+  const dom = { facebook: "facebook.com", instagram: "instagram.com", tiktok: "tiktok.com", youtube: "youtube.com" }[platform];
+  const di = dom ? s.toLowerCase().indexOf(dom + "/") : -1;
+  const h = (di >= 0 ? s.slice(di + dom.length + 1) : s).replace(/^@/, "").replace(/\/+$/, "");
+  if (platform === "facebook") return "https://facebook.com/" + h;
+  if (platform === "instagram") return "https://instagram.com/" + h;
+  if (platform === "tiktok") return "https://tiktok.com/@" + h;
+  if (platform === "youtube") return "https://youtube.com/@" + h;
+  return s;
+}
+// The judging search finds the artist by their socials — Facebook,
+// Instagram and TikTok are required on the profile (owner, Oct 31 2026).
+function missingSocials(user) {
+  if (!user) return ["Facebook", "Instagram", "TikTok"];
+  return [["facebook", "Facebook"], ["instagram", "Instagram"], ["tiktok", "TikTok"]]
+    .filter(([k]) => !String(user[k] || "").trim()).map(([, label]) => label);
+}
 function profileCompleteness(user) {
   const filled = PROFILE_FIELDS.filter(([key]) => {
     const v = user[key];
@@ -1149,6 +1172,36 @@ app.get("/", (req, res) => {
     </a>`).join("")}
     <p class="note" style="margin-top:8px">This week's picks — ${fmtChartDate(pickDate)}. A new panel, new picks, every Friday.</p>
   </div>` : "";
+  // SPOTLIGHT OF THE WEEK (owner feature): the 16th Law in action — the
+  // owner names one artist worth recognizing. Recognition only: the
+  // spotlight never touches a score or a rank. Set from the admin area
+  // (admin_config 'spotlight'); hidden until the owner picks somebody.
+  let spotlightHtml = "";
+  try {
+    const srow = db.prepare("SELECT value FROM admin_config WHERE key = 'spotlight'").get();
+    const spot = srow && srow.value ? JSON.parse(srow.value) : null;
+    if (spot && spot.song_id) {
+      const s = db.prepare(`
+        SELECT s.id, s.title, s.cover_path, s.genre, u.name AS artist FROM songs s
+        JOIN users u ON u.id = s.artist_id WHERE s.id = ? AND s.status = 'live'`).get(spot.song_id);
+      if (s) {
+        const rk = db.prepare(`SELECT rank FROM chart_entries WHERE chart_date = ? AND level = 'national' AND genre = ? AND region_key = 'ALL' AND song_id = ?`).get(date, OVERALL, s.id);
+        const dc = daysCharted(s.id);
+        spotlightHtml = `
+  <div class="panel" style="border:1px solid rgba(255,190,60,.55);background:linear-gradient(180deg,rgba(255,170,40,.12),rgba(255,170,40,.04))">
+    <h2 style="margin-top:0;color:#ffd98a">⭐ SPOTLIGHT OF THE WEEK</h2>
+    <p class="sub">The <b style="color:#fff">16th Law</b> at work — beyond the 15 points, our staff watches for the gift: pure raw talent and the value an artist brings. Every week, one artist gets named <b style="color:#fff">worth recognizing</b>.</p>
+    <a class="row" href="/song/${s.id}">
+      <img class="thumb" src="${esc(s.cover_path)}" alt="">
+      <span class="meta"><span class="t">${esc(s.title)}</span><br><span class="a">${esc(s.artist)}</span></span>
+      <span class="nums">${rk ? `NOW <b>#${rk.rank}</b>` : `<b>${esc(s.genre)}</b>`}</span>
+    </a>
+    ${spot.note ? `<p class="sub" style="margin-top:10px;font-style:italic;color:#ffe9b0">“${esc(spot.note)}”</p>` : ""}
+    <p class="note" style="margin-top:8px">${dc.days ? `Day ${dc.days} on the chart · ` : ""}Named ${esc(fmtChartDate(spot.set_on))}. The spotlight is an honor — chart spots still ride on the scores.</p>
+  </div>`;
+      }
+    }
+  } catch (e) { spotlightHtml = ""; }
   const homeFirst = homeEntries.slice(0, 5);
   const homeRest = homeEntries.slice(5);
   const homeChartHtml = homeEntries.length ? `
@@ -1263,6 +1316,7 @@ app.get("/", (req, res) => {
     </div></div>
   </div></div>
   ${djPicksHtml}
+  ${spotlightHtml}
   <div class="homegrid">
   ${homeNewHtml}
   ${homeChartHtml}
@@ -1876,9 +1930,15 @@ app.get("/upload", (req, res) => {
   let profileStatus = "";
   if (checkEmail) {
     const u = db.prepare("SELECT * FROM users WHERE LOWER(email) = ?").get(checkEmail);
-    profileStatus = hasProfile(u)
-      ? `<p class="note" style="color:#9fe8b6">✔ Profile found: <b style="color:#fff">${esc(u.name)}</b> · ${esc(u.city)}, ${esc(u.state)} — your uploads will post under this profile.</p>`
-      : `<p class="note" style="color:#ffb3b3">No profile on file for ${esc(checkEmail)} yet. <a href="/profile?email=${encodeURIComponent(checkEmail)}" style="color:var(--accent);font-weight:700">Set up your profile first →</a></p>`;
+    if (hasProfile(u)) {
+      const miss = missingSocials(u);
+      profileStatus = `<p class="note" style="color:#9fe8b6">✔ Profile found: <b style="color:#fff">${esc(u.name)}</b> · ${esc(u.city)}, ${esc(u.state)} — your uploads will post under this profile.</p>` +
+        (miss.length
+          ? `<p class="note" style="color:#ffd98a">⚠ Your profile is missing your ${miss.join(", ")} — the judging system searches those platforms to locate you. <a href="/profile?email=${encodeURIComponent(checkEmail)}" style="color:var(--accent);font-weight:700">Add them here →</a></p>`
+          : `<p class="note" style="color:#9fe8b6">✔ Socials on file — the judging system can find you on Facebook, Instagram and TikTok.</p>`);
+    } else {
+      profileStatus = `<p class="note" style="color:#ffb3b3">No profile on file for ${esc(checkEmail)} yet. <a href="/profile?email=${encodeURIComponent(checkEmail)}" style="color:var(--accent);font-weight:700">Set up your profile first →</a></p>`;
+    }
   }
   const body = `
   <h1>Upload your song</h1>
@@ -2065,6 +2125,7 @@ const RULES_PANEL = `
     <div class="ne-banner">THE RULES OF TOP 20</div>
     <ul class="rules" style="margin-bottom:2px">
       <li>A <b>profile page + at least one song uploaded</b> is how you get recognized.</li>
+      <li><b>Add your Facebook, Instagram and TikTok</b> to your profile — the judging system searches them to locate you and your music. No socials on file, and the system can't find you.</li>
       <li><b>Two live songs max</b> — those are the only songs that get judged. Remove one to put another up.</li>
       <li>Every song needs its <b>cover — and the cover is judged too</b>, one of the 15 points.</li>
       <li>Every uploaded song is judged on the <b>same 15 points</b>, 1–10 each.</li>
@@ -2094,6 +2155,7 @@ app.get("/profile", (req, res) => {
   const user = findOrCreateShell(email);
   const comp = profileCompleteness(user);
   const body = `${intro}
+  ${req.query.err ? `<div class="panel" style="border-left:3px solid #ff9d9d"><p class="sub" style="margin:0;color:#ffb3b3">${esc(req.query.err)}</p></div>` : ""}
   <div class="panel">
     <p class="sub" style="margin:0">Profile for <b style="color:#fff">${esc(email)}</b> — ${comp.filled} of ${comp.total} fields complete.
     ${hasProfile(user) ? `<a href="/artist/${user.id}" style="color:var(--accent);font-weight:700;text-decoration:none">View your public profile →</a>` : "Add your artist name and home city to go public."}</p>
@@ -2105,6 +2167,13 @@ app.get("/profile", (req, res) => {
       <label>Home city<input name="city" required maxlength="60" value="${esc(user.city || "")}"></label>
       <label>Home state (2 letters)<input name="state" required maxlength="2" style="text-transform:uppercase" value="${esc(user.state || "")}"></label>
       <label>Your genre<select name="genre"><option value="">— choose —</option>${GENRES.map((g) => `<option value="${esc(g)}" ${user.genre === g ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></label>
+      <div style="border:1px solid rgba(255,190,60,.45);border-radius:12px;padding:12px 12px 4px;margin:14px 0;background:rgba(255,170,40,.05)">
+        <p class="sub" style="margin:0 0 6px"><b style="color:#ffd98a">Where the judging system finds you.</b> Before your songs are judged, the system searches the platforms below to locate you and your music. <b style="color:#fff">Facebook, Instagram and TikTok are required</b> — paste the full link or just your handle. No socials on file, and the system can't find you.</p>
+        <label>Facebook profile (required)<input name="facebook" required maxlength="160" placeholder="facebook.com/yourname or your page link" value="${esc(user.facebook || "")}"></label>
+        <label>Instagram (required)<input name="instagram" required maxlength="160" placeholder="@yourhandle or instagram.com/yourhandle" value="${esc(user.instagram || "")}"></label>
+        <label>TikTok (required)<input name="tiktok" required maxlength="160" placeholder="@yourhandle or tiktok.com/@yourhandle" value="${esc(user.tiktok || "")}"></label>
+        <label>YouTube channel (if you have one)<input name="youtube" maxlength="160" placeholder="youtube.com/@yourchannel" value="${esc(user.youtube || "")}"></label>
+      </div>
       <label>Profile photo (optional — leave blank and you get a styled initial avatar)<input name="photo" type="file" accept="image/*"></label>
       ${user.photo_path ? `<p class="note">Current photo: ${esc(user.photo_path)}</p>` : ""}
       <label>Bio<textarea name="bio" rows="3" maxlength="600">${esc(user.bio || "")}</textarea></label>
@@ -2130,9 +2199,22 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
   };
   const genre = GENRES.includes(req.body.genre) ? req.body.genre : user.genre;
   const photoPath = req.file ? `/uploads/photos/${req.file.filename}` : user.photo_path;
+  const socials = {
+    facebook: String(req.body.facebook || "").trim().slice(0, 160),
+    instagram: String(req.body.instagram || "").trim().slice(0, 160),
+    tiktok: String(req.body.tiktok || "").trim().slice(0, 160),
+    youtube: String(req.body.youtube || "").trim().slice(0, 160),
+  };
+  const missing = [["facebook", "Facebook"], ["instagram", "Instagram"], ["tiktok", "TikTok"]]
+    .filter(([k]) => !socials[k]).map(([, l]) => l);
+  if (missing.length) {
+    return res.redirect(`/profile?email=${encodeURIComponent(emailLc)}&err=${encodeURIComponent(
+      "Your profile didn't save — add your " + missing.join(", ") + ". The judging system searches those platforms to locate you and your music, so every artist has to have them on file.")}`);
+  }
   db.prepare(
     `UPDATE users SET name = ?, city = ?, state = ?, region = ?, genre = ?, bio = ?,
-       age = ?, years_in_game = ?, history = ?, photo_path = ? WHERE id = ?`
+       age = ?, years_in_game = ?, history = ?, photo_path = ?,
+       facebook = ?, instagram = ?, tiktok = ?, youtube = ? WHERE id = ?`
   ).run(
     String(req.body.name || "").trim().slice(0, 80),
     String(req.body.city || "").trim().slice(0, 60),
@@ -2144,6 +2226,7 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
     parseOptInt(req.body.years_in_game),
     String(req.body.history || "").trim().slice(0, 4000) || null,
     photoPath || null,
+    socials.facebook, socials.instagram, socials.tiktok, socials.youtube || null,
     user.id
   );
   res.redirect(`/artist/${user.id}`);
@@ -2211,6 +2294,12 @@ app.get("/artist/:id", (req, res) => {
       </div>
     </div>
     ${highlightsLine}
+    ${(() => {
+      const links = [["facebook", "Facebook"], ["instagram", "Instagram"], ["tiktok", "TikTok"], ["youtube", "YouTube"]]
+        .filter(([k]) => String(user[k] || "").trim())
+        .map(([k, l]) => `<a href="${esc(socialUrl(k, user[k]))}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;text-decoration:none">${l}</a>`);
+      return links.length ? `<p class="sub" style="margin-top:8px"><b style="color:#fff">Find them:</b> ${links.join(" · ")}</p>` : "";
+    })()}
   </div>
   ${user.bio ? `<div class="panel"><h2 style="margin-top:0">About</h2><p class="sub" style="white-space:pre-wrap">${esc(user.bio)}</p></div>` : ""}
   ${user.history ? `<div class="panel"><h2 style="margin-top:0">History</h2><p class="sub" style="white-space:pre-wrap">${esc(user.history)}</p></div>` : ""}
@@ -2343,6 +2432,7 @@ app.get("/how-it-works", (req, res) => {
       <li>Only songs <b>uploaded to TOP 20</b> are ever judged — if it isn't uploaded here, it isn't looked at.</li>
       <li><b>Two live songs per artist, max</b> — those are the only songs that get judged. Remove one to put another up.</li>
       <li>A <b>profile page + at least one song uploaded</b> is how you get recognized.</li>
+      <li><b>Add your Facebook, Instagram and TikTok</b> to your profile — the judging system searches them to locate you and your music. No socials on file, and the system can't find you.</li>
       <li><b>No labels, no pay</b> can move a song. The algorithm decides — with one exception: <b>DJ's Hot Picks</b>. Every Friday a panel of DJs picks 3 songs that are already hot, and those picks step into the Top 20, badged for all to see. After Friday, the algorithm treats them like everybody else.</li>
       <li><b>Real artists only — no AI artists.</b> The voice and the artist have to be real: your vocals, your ability, your work, your hours. A producer may use AI tools — that is not what this rule is about — but he still has to produce the song: prompting a machine to generate the whole instrumental, start to finish, is not producing. But an AI singer, an AI performer — a song with no real artist behind it — we can't grade that and we won't; it isn't fair to the real artists. If we find out the artist is AI — today, next week, whenever — the song is pulled from the Top 20 and out of the Top 100 immediately.</li>
       <li>Audio must be <b>radio quality</b> — WAV, FLAC, or 320 kbps MP3, the same quality radio stations accept.</li>
@@ -2934,6 +3024,23 @@ app.post("/admin/dj-password", requireAdmin, (req, res) => {
   return back("The DJ password is set. Give it to your DJs — they log in at the DJ Login link at the bottom of the site. Changing it logs every DJ out.");
 });
 
+// SPOTLIGHT OF THE WEEK — the owner names the artist the 16th Law says
+// is worth recognizing. Stored in admin_config; recognition only.
+app.post("/admin/spotlight", requireAdmin, (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const songId = Number(req.body.song_id);
+  if (!songId) {
+    db.prepare("DELETE FROM admin_config WHERE key = 'spotlight'").run();
+    return back("Spotlight cleared — the panel is hidden until you name the next artist.");
+  }
+  const song = db.prepare("SELECT id FROM songs WHERE id = ? AND status = 'live'").get(songId);
+  if (!song) return back("That song isn't live — the spotlight needs a song that's uploaded and live.");
+  const note = String(req.body.note || "").trim().slice(0, 280);
+  const rec = { song_id: songId, note, set_on: todayStr() };
+  db.prepare("INSERT INTO admin_config (key, value) VALUES ('spotlight', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(rec));
+  return back("Spotlight set — it's live on the home page now. Name the next one whenever the 16th Law moves you.");
+});
+
 // The placement tool: pick any song already uploaded and live, pick a
 // chart and a position, and the song is pinned there on every chart
 // from today until the placement ends or is removed. Scores are never
@@ -2997,6 +3104,21 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
         <button type="submit" style="padding:8px 16px;border-radius:8px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">Remove placement</button>
       </form>
     </div>`).join("") : `<p class="sub">No placements yet.</p>`}
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">⭐ Spotlight of the Week</h2>
+    <p class="sub">The 16th Law, in public: name the one artist you feel is <b style="color:#fff">worth recognizing</b> this week — the gift, the value they bring. Their song headlines a gold panel on the home page with your words under it. Recognition only — it never touches a score or a chart spot. Change it any week; clear it and the panel hides.</p>
+    <form method="post" action="/admin/spotlight">
+      <label class="sub">Artist's song<br>
+      <select name="song_id" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        <option value="">— clear the spotlight —</option>
+        ${songs.map((s) => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
+      </select></label>
+      <label class="sub">Your words — why this artist (shows on the home page)<br>
+      <input type="text" name="note" maxlength="280" placeholder="e.g. Raw gift. You hear it once and you know — this is the one to watch."
+        style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
+      <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Set the spotlight</button>
+    </form>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">🎧 DJ panel access</h2>

@@ -32,6 +32,10 @@ function openDb() {
       history TEXT,                         -- long-form artist history
       years_in_game INTEGER,                -- NULL = not stated
       genre TEXT,                           -- artist's primary genre
+      facebook TEXT,                        -- socials: the judging search locates the artist by these
+      instagram TEXT,
+      tiktok TEXT,
+      youtube TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -187,6 +191,10 @@ function openDb() {
   addUserCol("history", "history TEXT");
   addUserCol("years_in_game", "years_in_game INTEGER");
   addUserCol("genre", "genre TEXT");
+  addUserCol("facebook", "facebook TEXT");
+  addUserCol("instagram", "instagram TEXT");
+  addUserCol("tiktok", "tiktok TEXT");
+  addUserCol("youtube", "youtube TEXT");
   const scoreCols = db.prepare("PRAGMA table_info(judge_scores)").all().map((r) => r.name);
   if (!scoreCols.includes("cover_art")) {
     db.exec("ALTER TABLE judge_scores ADD COLUMN cover_art REAL NOT NULL DEFAULT 5");
