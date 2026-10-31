@@ -543,7 +543,7 @@ function layout(title, active, body, opts = {}) {
 ${body}
 <footer class="site">TOP 20 — the Stage plays only the Top 20, 24/7.<br>
 Fall off the chart and the rotation moves on. Check your rank on the Dashboard.<br>
-<a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">How it works →</a><br>
+<a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">How it works →</a> · <a href="/advertise" style="color:var(--accent);font-weight:700;text-decoration:none">Advertise →</a><br>
 <a href="/admin/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">Staff Login</a> · <a href="/dj/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">DJ Login</a></footer>
 </div>
 <div class="installbar" id="installBar" role="dialog" aria-label="Install Top 20">
@@ -1329,6 +1329,15 @@ app.get("/", (req, res) => {
     <a class="btn btn-blue cta-btn" href="/profile">Create Profile</a>
   </div>
   ${stageRules}
+  <div id="adBreak" hidden style="margin:12px 0 2px;border:1px solid rgba(255,190,60,.55);border-radius:14px;background:#05070d;padding:10px 12px;text-align:center">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px">
+      <span style="color:#ffd98a;font-weight:800;letter-spacing:1.5px;font-size:12px">📣 ADVERTISEMENT</span>
+      <span id="adCount" style="color:#bcd;font-size:12px"></span>
+    </div>
+    <img id="adImg" alt="Advertisement" style="display:none;width:100%;max-height:340px;object-fit:contain;border-radius:10px;background:#000">
+    <video id="adVid" playsinline style="display:none;width:100%;max-height:340px;border-radius:10px;background:#000"></video>
+    <p class="note" style="margin:8px 0 0">Back to the countdown right after this.</p>
+  </div>
   <div class="playerbar"><div class="panel">
     <img id="barThumb" src="${esc(first.cover)}" alt="">
     <div class="meta"><div class="t" id="barTitle">${esc(first.title)}</div><div class="a" id="barArtist">${esc(first.artist)}</div></div>
@@ -1339,6 +1348,7 @@ app.get("/", (req, res) => {
   <script>
   const PLAYLISTS = ${JSON.stringify(channels.map((c) => c.list)).replace(/</g, "\\u003c")};
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
+  const ADS = ${JSON.stringify((() => { try { return db.prepare("SELECT kind, file_path, link_url, seconds FROM ads WHERE active = 1 ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds })); } catch (e) { return []; } })())};
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -1352,6 +1362,58 @@ app.get("/", (req, res) => {
   function djText(t){
     const d = t.fresh ? 'A brand new entry — day one on the chart.' : (t.days === 1 ? 'Day one on the chart.' : (t.days || 0) + ' days on the chart.');
     return 'The number ' + t.rank + ' song on Top 20 is "' + t.title + '" by ' + t.artist + '. ' + d + " Let's keep it popping!";
+  }
+  // Stage ad slots (owner feature): after every 5 songs in the rotation,
+  // one active ad plays (image for its seconds, video to its end — hard
+  // capped at 30s). When the ad finishes, the rotation resumes with the
+  // next song and its on-screen countdown keeps running as normal.
+  const AD_EVERY = 5;
+  let songsSinceAd = 0, adIdx = 0, adBusy = false, adSeq = 0, adCleanup = null;
+  function stopAdVisual(){
+    const box = $('adBreak'), vid = $('adVid'), img = $('adImg');
+    if (vid) { try { vid.pause(); vid.removeAttribute('src'); vid.load(); } catch (e) {} vid.style.display = 'none'; }
+    if (img) { img.removeAttribute('src'); img.style.display = 'none'; }
+    if (box) box.hidden = true;
+  }
+  function playAd(done){
+    if (!ADS.length) { done(); return; }
+    const ad = ADS[adIdx % ADS.length]; adIdx++;
+    const my = ++adSeq;
+    adBusy = true;
+    const box = $('adBreak'), img = $('adImg'), vid = $('adVid'), cnt = $('adCount');
+    box.hidden = false;
+    let finished = false, timer = null, hard = null;
+    const finish = () => {
+      if (finished) return; finished = true;
+      if (timer) clearInterval(timer);
+      if (hard) clearTimeout(hard);
+      stopAdVisual();
+      adBusy = false; adCleanup = null;
+      if (my === adSeq) done();
+    };
+    adCleanup = () => { if (timer) clearInterval(timer); if (hard) clearTimeout(hard); finished = true; stopAdVisual(); adBusy = false; adCleanup = null; };
+    box.onclick = () => { if (ad.link) window.open(ad.link, '_blank', 'noopener'); };
+    if (ad.kind === 'video') {
+      img.style.display = 'none'; vid.style.display = 'block';
+      vid.src = ad.src; vid.muted = false;
+      cnt.textContent = 'Ad · video';
+      vid.ontimeupdate = () => {
+        const d = vid.duration || 0, c = vid.currentTime || 0;
+        if (c >= 30) { finish(); return; }
+        if (d > 0) cnt.textContent = 'Ad · ' + Math.max(0, Math.ceil(Math.min(d, 30) - c)) + 's left';
+      };
+      vid.onended = finish; vid.onerror = finish;
+      vid.play().then(() => {}).catch(() => { vid.muted = true; vid.play().catch(() => finish()); });
+      hard = setTimeout(finish, 32000);
+    } else {
+      vid.style.display = 'none'; img.style.display = 'block';
+      img.src = ad.src;
+      let remain = Math.max(3, Math.min(30, ad.seconds || 8));
+      cnt.textContent = 'Ad · ' + remain + 's left';
+      timer = setInterval(() => { remain -= 1; if (remain <= 0) { finish(); return; } cnt.textContent = 'Ad · ' + remain + 's left'; }, 1000);
+      hard = setTimeout(finish, (remain + 1) * 1000);
+    }
+    box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
   function djAnnounce(t, done){
     if (!djOn || !t || !('speechSynthesis' in window)) { done(); return; }
@@ -1531,6 +1593,7 @@ app.get("/", (req, res) => {
   function load(i, autoplay){
     const t = PLAYLISTS[ch][i]; if (!t) return;
     if ('speechSynthesis' in window) { try { speechSynthesis.cancel(); } catch (e) {} }
+    if (adBusy) { adSeq++; if (adCleanup) adCleanup(); }
     previewOn = false;
     idx = i;
     audio.src = t.audio;
@@ -1579,7 +1642,14 @@ app.get("/", (req, res) => {
     }
   });
   audio.addEventListener('pause', () => { $('playBtn').textContent = '▶'; });
-  audio.addEventListener('ended', () => { if (previewOn) { previewOn = false; return; } load((idx + 1) % PLAYLISTS[ch].length, true); });
+  audio.addEventListener('ended', () => {
+    if (previewOn) { previewOn = false; return; }
+    if (adBusy) return;
+    const next = (idx + 1) % PLAYLISTS[ch].length;
+    songsSinceAd++;
+    if (ADS.length && songsSinceAd >= AD_EVERY) { songsSinceAd = 0; playAd(() => load(next, true)); }
+    else load(next, true);
+  });
   // Drag or scroll a spinner by hand — the playing ring always swings back
   // to the song that's playing; the other ring goes back to spinning.
   rings.forEach((r) => {
@@ -2800,6 +2870,92 @@ function noteLoginFail(ip) {
   loginFails.set(ip, r);
 }
 
+/* --------------------------- Stage ads (owner) --------------------------- */
+
+const AD_UP = path.join(PUBLIC_DIR, "uploads", "ads");
+fs.mkdirSync(AD_UP, { recursive: true });
+const AD_IMAGE_EXTS = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+const AD_VIDEO_EXTS = [".mp4", ".webm", ".mov"];
+const adUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, AD_UP),
+    filename: (req, file, cb) => {
+      const ext = (path.extname(file.originalname) || "").toLowerCase().replace(/[^.a-z0-9]/g, "") || ".bin";
+      cb(null, `ad-${Date.now()}-${crypto.randomBytes(3).toString("hex")}${ext}`);
+    },
+  }),
+  limits: { fileSize: 40 * 1024 * 1024 },
+});
+
+function probeDurationSec(absPath) {
+  try {
+    const out = execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", absPath], { encoding: "utf8" });
+    return parseFloat((JSON.parse(out).format || {}).duration) || 0;
+  } catch { return 0; }
+}
+
+app.post("/admin/ads", requireAdmin, (req, res) => {
+  adUpload.single("adfile")(req, res, (err) => {
+    const back = (m) => res.redirect("/admin/placements?admsg=" + encodeURIComponent(m));
+    if (err || !req.file) return back("Pick an image or video file for the ad first.");
+    const ext = (path.extname(req.file.filename) || "").toLowerCase();
+    const web = `/uploads/ads/${req.file.filename}`;
+    const title = String(req.body.title || "").trim().slice(0, 80) || req.file.originalname;
+    let link = String(req.body.link_url || "").trim().slice(0, 300);
+    if (link && !/^https?:\/\//i.test(link)) link = "";
+    if (AD_IMAGE_EXTS.includes(ext)) {
+      const seconds = Math.max(3, Math.min(30, parseInt(req.body.seconds, 10) || 8));
+      db.prepare("INSERT INTO ads (kind, file_path, link_url, title, seconds) VALUES ('image', ?, ?, ?, ?)").run(web, link || null, title, seconds);
+      return back(`Image ad "${title}" is in the rotation (${seconds}s between songs).`);
+    }
+    if (AD_VIDEO_EXTS.includes(ext)) {
+      const dur = probeDurationSec(req.file.path);
+      if (dur > 30.5) {
+        fs.unlink(req.file.path, () => {});
+        return back(`That video runs ${Math.round(dur)} seconds — ads cap at 30 seconds. Trim it and upload again.`);
+      }
+      db.prepare("INSERT INTO ads (kind, file_path, link_url, title, seconds) VALUES ('video', ?, ?, ?, ?)").run(web, link || null, title, Math.ceil(dur) || 0);
+      return back(`Video ad "${title}" is in the rotation${dur ? ` (${Math.round(dur)}s)` : ""}.`);
+    }
+    fs.unlink(req.file.path, () => {});
+    return back("That file type won't run as an ad — use JPG/PNG/WebP for images or MP4/WebM/MOV for video.");
+  });
+});
+
+app.post("/admin/ads/:id/toggle", requireAdmin, (req, res) => {
+  db.prepare("UPDATE ads SET active = 1 - active WHERE id = ?").run(req.params.id);
+  res.redirect("/admin/placements");
+});
+
+app.post("/admin/ads/:id/delete", requireAdmin, (req, res) => {
+  const ad = db.prepare("SELECT * FROM ads WHERE id = ?").get(req.params.id);
+  if (ad) {
+    db.prepare("DELETE FROM ads WHERE id = ?").run(ad.id);
+    const abs = path.join(PUBLIC_DIR, ad.file_path.replace(/^\//, ""));
+    fs.unlink(abs, () => {});
+  }
+  res.redirect("/admin/placements");
+});
+
+app.get("/advertise", (req, res) => {
+  const body = `
+  <h1>Advertise on Top 20</h1>
+  <p class="sub">The Stage runs 24/7 — the charts, in rotation, in front of independent artists and the fans who ride for them.</p>
+  <div class="panel" style="border-color:rgba(255,190,60,.65)">
+    <h2>📣 AD SLOTS — COMING SOON</h2>
+    <p>Advertisement slots inside the Stage rotation are on the way:</p>
+    <ul class="rules">
+      <li>Your ad plays <b>inside the Stage rotation, between songs</b> — not buried on a side page.</li>
+      <li><b>Image ads</b>, or <b>video ads up to 30 seconds</b>.</li>
+      <li>Your ad can link straight to your store, your page or your event.</li>
+      <li>Local businesses and independent brands get first shot when slots open.</li>
+    </ul>
+    <p class="note">Slots open with the Top 20 rollout. Watch this page — when it opens, this is where it happens.</p>
+  </div>
+  <p style="text-align:center"><a class="ghost" href="/">← Back to the Stage</a></p>`;
+  res.send(page("Advertise on Top 20", body, req.basePath || ""));
+});
+
 app.get("/admin/login", (req, res) => {
   if (isAdmin(req)) return res.redirect("/admin/placements");
   const ip = req.ip || "x";
@@ -3063,8 +3219,10 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
     : p.level === "regional" ? `Regional ${p.genre} (${p.region_key})` : `Local ${p.genre} (${p.region_key})`;
   const statusOf = (p) => p.ends_on && latest && p.ends_on < latest ? "ended"
     : latest && p.starts_on > latest ? "starts at midnight tonight" : "on the chart now";
+  const adsList = db.prepare("SELECT * FROM ads ORDER BY id DESC").all();
   const body = `
   <h1>Chart placements</h1>
+  ${req.query.admsg ? `<p class="note" style="color:#ffd98a">${esc(req.query.admsg)}</p>` : ""}
   <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. You can enter a placement any time — it goes onto the chart at the next 12 AM chart change, same as every entry, and holds through each midnight recalculation until it ends or you remove it (removals also land at midnight). A song's evaluation scores are never changed — this sets chart position only.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
   <div class="panel">
@@ -3120,6 +3278,25 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
       <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Set the spotlight</button>
     </form>
   </div>
+  <form class="panel" method="post" action="/admin/ads" enctype="multipart/form-data" style="border-color:rgba(255,120,190,.55)">
+    <h2>📣 Stage ads</h2>
+    <p class="sub" style="margin-top:0">Ads play <b style="color:#fff">inside the Stage rotation, between songs</b> — one ad after every 5 songs. Upload an <b style="color:#fff">image</b> or a <b style="color:#fff">video no longer than 30 seconds</b>. When the ad ends, the rotation picks right back up and the next song's countdown keeps running. Ads never touch scores or ranks.</p>
+    <div class="field"><label for="adfile">Ad file — image or video (max 30 seconds)</label><input id="adfile" type="file" name="adfile" accept="image/*,video/mp4,video/webm,video/quicktime" required></div>
+    <div class="grid">
+      <div class="field"><label for="adtitle">Title (your label for it)</label><input id="adtitle" name="title" maxlength="80" placeholder="e.g. Mesquite BBQ Weekend"></div>
+      <div class="field"><label for="adseconds">Image ads: seconds on screen</label><select id="adseconds" name="seconds"><option value="5">5 seconds</option><option value="8" selected>8 seconds</option><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="20">20 seconds</option><option value="30">30 seconds</option></select></div>
+    </div>
+    <div class="field"><label for="adlink">Tap/click takes people here (optional)</label><input id="adlink" name="link_url" maxlength="300" placeholder="https://..."></div>
+    <button class="btn primary">Upload ad</button>
+  </form>
+  ${adsList.length ? `<div class="panel"><h2>Ads on file (${adsList.length})</h2>${adsList.map((a) => `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.kind === 'video' ? '🎬' : '🖼️'} <b style="color:#fff">${esc(a.title || a.file_path.split('/').pop())}</b> <span class="note">${a.kind === 'video' ? 'video' : 'image · ' + a.seconds + 's'} · ${a.active ? '<b style="color:#9fe8b6">IN ROTATION</b>' : 'off'}</span></span>
+      <span style="display:flex;gap:6px;flex:none">
+        <form method="post" action="/admin/ads/${a.id}/toggle"><button class="mini">${a.active ? 'Pause' : 'Run it'}</button></form>
+        <form method="post" action="/admin/ads/${a.id}/delete" onsubmit="return confirm('Delete this ad for good?')"><button class="mini">Delete</button></form>
+      </span>
+    </div>`).join('')}</div>` : `<div class="panel"><p class="note" style="margin:0">No ads yet — upload the first one above and it joins the rotation.</p></div>`}
   <div class="panel">
     <h2 style="margin-top:0">🎧 DJ panel access</h2>
     <p class="sub">Your DJs get their OWN login that opens <b style="color:#fff">only</b> the weekly DJ's Hot Picks panel — they pick the 3 songs for Friday there. They never see placements or anything else in the admin. Set the DJ password here and hand it to your DJs; they log in with the <b style="color:#fff">DJ Login</b> link at the bottom of any page. Changing the password logs every DJ out.</p>

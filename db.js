@@ -149,6 +149,21 @@ function openDb() {
       UNIQUE (song_id, pick_date)
     );
 
+    -- STAGE ADS (owner feature, Oct 31 2026): advertisement slots inside
+    -- the Stage rotation. The owner uploads image or video ads (video
+    -- capped at 30 seconds); active ads rotate into the playlist between
+    -- songs. Ads never touch scores, ranks or judging.
+    CREATE TABLE IF NOT EXISTS ads (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,                    -- 'image' | 'video'
+      file_path TEXT NOT NULL,
+      link_url TEXT,
+      title TEXT,
+      seconds INTEGER NOT NULL DEFAULT 8,    -- image ads: seconds on screen
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- ADMIN PLACEMENTS (owner feature, Oct 31 2026): the owner can pin
     -- any song that is already uploaded and live into a chosen chart at
     -- a chosen rank, any time, for as long as the placement is active.
