@@ -1901,9 +1901,11 @@ app.get("/", (req, res) => {
       load(0, false);
     });
   });
+  let userPausedStage = false; // the visitor's own pause is never overridden (radio autostart below)
   $('playBtn').addEventListener('click', () => {
     if (window.__muteHero) window.__muteHero();
-    if (!audio.paused) { audio.pause(); return; }
+    if (!audio.paused) { audio.pause(); userPausedStage = true; return; }
+    userPausedStage = false;
     if (!previewOn && audio.currentTime === 0 && audio.src) {
       const t = PLAYLISTS[ch][idx];
       if (t) { const seq = ++loadSeq; djAnnounce(t, () => { if (seq === loadSeq) audio.play().catch(() => {}); }); return; }
@@ -1917,6 +1919,30 @@ app.get("/", (req, res) => {
     djLabel();
   });
   djLabel();
+  // Radio dial (owner, Oct 31): the moment the Stage — the now-playing
+  // panel and the spindles — scrolls into view, the current song comes
+  // ON by itself, DJ announcement first, exactly like turning a radio
+  // dial. Phones allow sound only after the visitor's first touch, and
+  // scrolling is a touch, so the dial arms on the first touch anywhere.
+  // A visitor who pressed pause themselves is never overridden.
+  let stageArmed = false, stageInView = false;
+  function tryRadioStart(){
+    if (!stageArmed || !stageInView || userPausedStage) return;
+    if (document.hidden) return;
+    if (!audio.paused || announcing || adBusy || previewOn) return;
+    $('playBtn').click();
+  }
+  ['pointerdown', 'touchstart', 'keydown'].forEach((ev) => document.addEventListener(ev, function () {
+    stageArmed = true; tryRadioStart();
+  }, { capture: true, passive: true }));
+  if ('IntersectionObserver' in window) {
+    const rio = new IntersectionObserver((entries) => {
+      stageInView = !!(entries[0] && entries[0].isIntersecting);
+      if (stageInView) tryRadioStart();
+    }, { threshold: 0.25 });
+    const sg = document.querySelector('.stagegrid');
+    if (sg) rio.observe(sg);
+  }
   audio.addEventListener('play', () => {
     $('playBtn').textContent = '❚❚';
     if (!announcing && audio.currentSrc !== lastCounted) {
