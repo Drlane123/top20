@@ -136,6 +136,41 @@ function applyDjPicks(db, entries, date) {
   return [...rest, ...newGroup];
 }
 
+// ADMIN PLACEMENTS — the owner's placement tool (Oct 31 2026). After
+// scores and DJ picks settle the order, any ACTIVE placement pins its
+// song at the chosen rank inside its chart group, shifting the songs
+// below it down one. Placements apply on every recalc inside their
+// date window, so a pin survives the daily midnight recalculation
+// until it expires or the owner removes it. A placement changes chart
+// ORDER only — chart_score and every evaluation number stay exactly
+// what the system computed. Each applied entry is flagged admin_pick.
+function applyAdminPlacements(db, entries, date) {
+  let placements = [];
+  try {
+    placements = db.prepare(
+      `SELECT * FROM admin_placements
+       WHERE removed_at IS NULL AND starts_on <= ? AND (ends_on IS NULL OR ends_on >= ?)
+       ORDER BY id`
+    ).all(date, date);
+  } catch (e) { placements = []; }
+  const out = entries.map((e) => ({ ...e, admin_pick: e.admin_pick || 0 }));
+  if (!placements.length) return out;
+  for (const p of placements) {
+    const isGroup = (e) => e.level === p.level && e.genre === p.genre && e.region_key === p.region_key;
+    const group = out.filter(isGroup).sort((a, b) => a.rank - b.rank);
+    const idx = group.findIndex((e) => e.song_id === p.song_id);
+    if (idx === -1) continue; // song doesn't compete in that chart
+    const [entry] = group.splice(idx, 1);
+    const target = Math.max(1, Math.min(p.rank, group.length + 1));
+    group.splice(target - 1, 0, entry);
+    group.forEach((e, i) => {
+      e.rank = i + 1;
+      if (e.song_id === p.song_id) e.admin_pick = 1;
+    });
+  }
+  return out;
+}
+
 // Small deterministic PRNG (same family the seed uses) so a given
 // (song, date) pair always produces the same daily drift — the chart is
 // stable all day, identical for every viewer, and genuinely different
@@ -184,10 +219,10 @@ function recalc(db, date = todayStr()) {
   const prevTop = top20Keys(db, prevDate);
   const existingTodayTop = top20Keys(db, date); // guards same-day re-runs
 
-  const entries = applyDjPicks(db, computeRankings(db, dailyDriftFn(date)), date);
+  const entries = applyAdminPlacements(db, applyDjPicks(db, computeRankings(db, dailyDriftFn(date)), date), date);
   const insert = db.prepare(
-    `INSERT INTO chart_entries (chart_date, level, genre, region_key, song_id, rank, chart_score, dj_pick)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    `INSERT INTO chart_entries (chart_date, level, genre, region_key, song_id, rank, chart_score, dj_pick, admin_pick)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   );
   const artistOf = db.prepare("SELECT artist_id FROM songs WHERE id = ?");
   const alreadyNotified = db.prepare(
@@ -204,7 +239,7 @@ function recalc(db, date = todayStr()) {
   try {
     db.prepare("DELETE FROM chart_entries WHERE chart_date = ?").run(date);
     for (const e of entries) {
-      insert.run(date, e.level, e.genre, e.region_key, e.song_id, e.rank, e.chart_score, e.dj_pick || 0);
+      insert.run(date, e.level, e.genre, e.region_key, e.song_id, e.rank, e.chart_score, e.dj_pick || 0, e.admin_pick || 0);
       if (e.rank > 20) continue;
       const key = `${e.level}|${e.genre}|${e.region_key}|${e.song_id}`;
       if (prevTop.has(key) || existingTodayTop.has(key)) continue;

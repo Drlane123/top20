@@ -2568,6 +2568,164 @@ app.post("/djs/:id/vote", (req, res) => {
   }
 });
 
+/* --------------------------- Admin (owner only) --------------------------- */
+// Password-gated owner area. The password lives ONLY in the server's
+// ADMIN_PASSWORD environment variable (set by the owner in the host
+// dashboard) — it is never in the code and never in the database. The
+// login cookie is an HMAC of a fixed string keyed by that password, so
+// changing the password instantly logs everyone out.
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+function adminToken() {
+  return crypto.createHmac("sha256", ADMIN_PASSWORD).update("top20-admin-v1").digest("hex");
+}
+function isAdmin(req) {
+  if (!ADMIN_PASSWORD) return false;
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === "t20_admin") {
+      const got = Buffer.from(v.join("="));
+      const want = Buffer.from(adminToken());
+      return got.length === want.length && crypto.timingSafeEqual(got, want);
+    }
+  }
+  return false;
+}
+function requireAdmin(req, res, next) {
+  if (isAdmin(req)) return next();
+  return res.redirect("/admin/login");
+}
+
+app.get("/admin/login", (req, res) => {
+  if (isAdmin(req)) return res.redirect("/admin/placements");
+  const body = ADMIN_PASSWORD ? `
+  <h1>Owner login</h1>
+  <div class="panel">
+    <form method="post" action="/admin/login">
+      <p class="sub" style="margin-top:0">This area is for the site owner only.</p>
+      ${req.query.err ? `<p class="note" style="color:#ff9d9d">That password didn't match. Try again.</p>` : ""}
+      <label class="sub">Admin password<br>
+      <input type="password" name="password" autocomplete="current-password" required
+        style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
+      <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Log in</button>
+    </form>
+  </div>` : `
+  <h1>Owner login</h1>
+  <div class="panel"><p class="sub">The admin password hasn't been set on the server yet, so this area is locked. Once the owner sets it in the hosting dashboard, this page becomes the login.</p></div>`;
+  res.send(layout("Owner login", "", body));
+});
+
+app.post("/admin/login", (req, res) => {
+  const given = Buffer.from(String(req.body.password || ""));
+  const want = Buffer.from(ADMIN_PASSWORD);
+  const ok = ADMIN_PASSWORD && given.length === want.length && crypto.timingSafeEqual(given, want);
+  if (!ok) return res.redirect("/admin/login?err=1");
+  res.cookie("t20_admin", adminToken(), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 30 * 24 * 3600 * 1000 });
+  return res.redirect("/admin/placements");
+});
+
+app.post("/admin/logout", (req, res) => {
+  res.clearCookie("t20_admin", { path: "/" });
+  res.redirect("/");
+});
+
+// The placement tool: pick any song already uploaded and live, pick a
+// chart and a position, and the song is pinned there on every chart
+// from today until the placement ends or is removed. Scores are never
+// touched — this moves chart order only (charts.js applyAdminPlacements).
+app.get("/admin/placements", requireAdmin, (req, res) => {
+  const songs = db.prepare(`
+    SELECT s.id, s.title, s.genre, u.name AS artist FROM songs s
+    JOIN users u ON u.id = s.artist_id WHERE s.status = 'live' ORDER BY s.title`).all();
+  const latest = latestChartDate(db);
+  const chartRows = latest ? db.prepare(`
+    SELECT DISTINCT level, genre, region_key FROM chart_entries WHERE chart_date = ?
+    ORDER BY CASE level WHEN 'national' THEN 0 WHEN 'regional' THEN 1 ELSE 2 END, genre, region_key`).all(latest) : [];
+  const chartLabel = (c) => c.level === "national" ? `National · ${c.genre}`
+    : c.level === "regional" ? `Regional · ${c.genre} · ${c.region_key}` : `Local · ${c.genre} · ${c.region_key}`;
+  const active = db.prepare(`
+    SELECT p.*, s.title, u.name AS artist FROM admin_placements p
+    JOIN songs s ON s.id = p.song_id JOIN users u ON u.id = s.artist_id
+    WHERE p.removed_at IS NULL ORDER BY p.id DESC`).all();
+  const chartName = (p) => p.level === "national" ? `National ${p.genre}`
+    : p.level === "regional" ? `Regional ${p.genre} (${p.region_key})` : `Local ${p.genre} (${p.region_key})`;
+  const today = todayStr();
+  const statusOf = (p) => p.ends_on && p.ends_on < today ? "ended"
+    : p.starts_on > today ? "scheduled" : "active now";
+  const body = `
+  <h1>Chart placements</h1>
+  <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. The placement holds through the daily midnight recalculation until it ends or you remove it. A song's evaluation scores are never changed — this sets chart position only.</p>
+  ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
+  <div class="panel">
+    <h2 style="margin-top:0">Place a song</h2>
+    <form method="post" action="/admin/placements">
+      <label class="sub">Song<br>
+      <select name="song_id" required style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        ${songs.map((s) => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
+      </select></label>
+      <label class="sub">Chart<br>
+      <select name="chart" required style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        ${chartRows.map((c) => `<option value="${esc(c.level)}|${esc(c.genre)}|${esc(c.region_key)}">${esc(chartLabel(c))}</option>`).join("")}
+      </select></label>
+      <label class="sub">Position (1 = #1)<br>
+      <input type="number" name="rank" min="1" max="100" value="20" required
+        style="width:120px;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
+      <label class="sub">How long<br>
+      <select name="duration" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        <option value="open">Until I remove it</option>
+        <option value="7">7 days</option>
+        <option value="30">30 days</option>
+      </select></label>
+      <label class="sub">Private note (who / why — only you see this)<br>
+      <input type="text" name="note" maxlength="200" placeholder="e.g. Pushed the site at his show in Dallas"
+        style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
+      <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Place it</button>
+    </form>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">Placements on record</h2>
+    ${active.length ? active.map((p) => `
+    <div style="border-bottom:1px solid #22304f;padding:10px 0">
+      <p class="sub" style="margin:0"><b style="color:#fff">${esc(p.title)}</b> — ${esc(p.artist)}<br>
+      ${esc(chartName(p))} at <b style="color:#fff">#${p.rank}</b> · ${p.starts_on} → ${p.ends_on || "until removed"} · <b style="color:#fff">${statusOf(p)}</b>
+      ${p.note ? `<br>Note: ${esc(p.note)}` : ""}</p>
+      <form method="post" action="/admin/placements/${p.id}/remove" style="margin-top:8px">
+        <button type="submit" style="padding:8px 16px;border-radius:8px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">Remove placement</button>
+      </form>
+    </div>`).join("") : `<p class="sub">No placements yet.</p>`}
+    <form method="post" action="/admin/logout" style="margin-top:14px">
+      <button type="submit" style="padding:8px 16px;border-radius:8px;border:1px solid #3a4a6b;background:transparent;color:#bcd;font-weight:700;cursor:pointer">Log out</button>
+    </form>
+  </div>`;
+  res.send(layout("Chart placements", "", body));
+});
+
+app.post("/admin/placements", requireAdmin, (req, res) => {
+  const songId = Number(req.body.song_id);
+  const [level, genre, region_key] = String(req.body.chart || "").split("|");
+  const rank = Math.max(1, Math.min(100, Number(req.body.rank) || 20));
+  const song = db.prepare("SELECT id, title FROM songs WHERE id = ? AND status = 'live'").get(songId);
+  const chartOk = latestChartDate(db) && db.prepare(
+    "SELECT id FROM chart_entries WHERE chart_date = ? AND level = ? AND genre = ? AND region_key = ? LIMIT 1"
+  ).get(latestChartDate(db), level, genre, region_key);
+  if (!song || !chartOk) return res.redirect("/admin/placements?msg=" + encodeURIComponent("That song or chart isn't available — the song has to be uploaded and live first."));
+  const today = todayStr();
+  let ends_on = null;
+  const days = Number(req.body.duration);
+  if (days === 7 || days === 30) {
+    ends_on = new Date(new Date(today + "T12:00:00Z").getTime() + (days - 1) * 86400000).toISOString().slice(0, 10);
+  }
+  db.prepare(`INSERT INTO admin_placements (song_id, level, genre, region_key, rank, starts_on, ends_on, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(songId, level, genre, region_key, rank, today, ends_on, String(req.body.note || "").slice(0, 200) || null);
+  recalc(db); // today's chart reflects the placement immediately
+  return res.redirect("/admin/placements?msg=" + encodeURIComponent(`Placed "${song.title}" at #${rank}. It will hold there through the daily recalculation until ${ends_on || "you remove it"}.`));
+});
+
+app.post("/admin/placements/:id/remove", requireAdmin, (req, res) => {
+  db.prepare("UPDATE admin_placements SET removed_at = datetime('now') WHERE id = ? AND removed_at IS NULL").run(Number(req.params.id));
+  recalc(db);
+  return res.redirect("/admin/placements?msg=" + encodeURIComponent("Placement removed. The chart is back to pure score order for that song."));
+});
+
 /* --------------------------------- Outbox --------------------------------- */
 
 app.get("/admin/outbox", (req, res) => {

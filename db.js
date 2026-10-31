@@ -144,6 +144,27 @@ function openDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (song_id, pick_date)
     );
+
+    -- ADMIN PLACEMENTS (owner feature, Oct 31 2026): the owner can pin
+    -- any song that is already uploaded and live into a chosen chart at
+    -- a chosen rank, any time, for as long as the placement is active.
+    -- Placements move chart ORDER only: the song's evaluation scores and
+    -- chart_score are never altered. Every placement is written down
+    -- here (including removals, via removed_at) so the owner always has
+    -- a complete record of what was placed, where, and for how long.
+    CREATE TABLE IF NOT EXISTS admin_placements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      song_id INTEGER NOT NULL REFERENCES songs(id),
+      level TEXT NOT NULL CHECK (level IN ('local','regional','national')),
+      genre TEXT NOT NULL,
+      region_key TEXT NOT NULL,
+      rank INTEGER NOT NULL,                -- the pinned chart position
+      starts_on TEXT NOT NULL,              -- first chart date it applies
+      ends_on TEXT,                         -- last chart date (NULL = until removed)
+      note TEXT,                            -- owner's private note (who/why)
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      removed_at TEXT                       -- set when the owner removes it
+    );
   `);
 
   // Migrations for a DB created by an earlier build (seed rebuilds from
@@ -165,6 +186,9 @@ function openDb() {
   const ceCols = db.prepare("PRAGMA table_info(chart_entries)").all().map((r) => r.name);
   if (!ceCols.includes("dj_pick")) {
     db.exec("ALTER TABLE chart_entries ADD COLUMN dj_pick INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!ceCols.includes("admin_pick")) {
+    db.exec("ALTER TABLE chart_entries ADD COLUMN admin_pick INTEGER NOT NULL DEFAULT 0");
   }
   // Status vocabulary moved from 'active' to 'live' (Phase 2).
   db.exec("UPDATE songs SET status = 'live' WHERE status = 'active'");
