@@ -486,7 +486,7 @@ audio{width:100%;margin-top:10px}
 .flexbtns .btn{width:100%}
 `;
 
-const DEFAULT_OG_DESC = "TOP 20 — the first-of-its-kind chart algorithm for independent artists. Every uploaded song is judged on 15 points of craft and ranked daily. Only songs uploaded to TOP 20 are ever judged.";
+const DEFAULT_OG_DESC = "TOP 20 — the first-of-its-kind chart algorithm for independent artists. Every uploaded song is judged by the 15-point scale evaluation and ranked daily. Only songs uploaded to TOP 20 are ever judged.";
 
 function layout(title, active, body, opts = {}) {
   const nav = [
@@ -1174,16 +1174,18 @@ app.get("/", (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">How it works</h2>
     <p class="sub"><b style="color:#fff">Part 1 — The Search.</b> The algorithm searches Facebook, Instagram, TikTok, YouTube, the music platforms where independents promote, and the open web — gathering everything it can find about you and your songs.</p>
-    <p class="sub"><b style="color:#fff">Part 2 — The Judging.</b> Every song uploaded here is scored on 15 points of craft, 1–10 each, fitted genre by genre — then the charts recalculate daily.</p>
+    <p class="sub"><b style="color:#fff">Part 2 — The Judging.</b> Every song uploaded here is scored by the 15-point scale evaluation, 1–10 on each point, fitted genre by genre — then the charts recalculate daily.</p>
     <p style="margin:10px 0 2px"><a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">See how it works →</a></p>
   </div>`;
   const stageRules = `
   <div class="panel">
     <h2 style="margin-top:0">How the Stage runs</h2>
     <p class="sub">The rotation plays the Top 20 in order, 1 through 20, 24 hours a day.</p>
-    <p class="sub">You're being critiqued 24 hours a day — the algorithm never sleeps.</p>
+    <p class="sub">Your music is being evaluated 24 hours a day — the algorithm never sleeps.</p>
     <p class="sub">New entries come into play at 12:00 midnight, every night — that's when the new chart takes effect and knocked-off songs leave the rotation.</p>
     <p class="sub"><b style="color:#fff">A great song holds its spot.</b> New entries can hit at midnight any night, but nobody loses a Top 20 spot for not uploading — a song only moves when hotter songs out-score it. So put your hottest material up here and keep doing what you're doing — that's what got you into the Top 20 in the first place. And a song that slides out of the 20 doesn't disappear — it stays in the big Top 100, ready to climb back.</p>
+    <p class="sub">Same rule in the Top 100: a song only leaves the hundred when a hotter new entry out-scores it — every song faces the same evaluation. The 15-point scale evaluation measures every song on these 15 points: Mix Quality · Mastering &amp; Sound Quality · Hook Strength · Melody · Lyrical Quality · Song Structure · Vocal Delivery &amp; Performance · Production &amp; Instrumentation · Groove &amp; Rhythm · Emotional Impact · Dynamics &amp; Energy · Originality &amp; Identity · Replay Value · Radio &amp; Commercial Readiness · Cover Art &amp; Presentation. And even a song that falls out of the Top 100 still stays in the system — it's just not one of the Hot 100 right now.</p>
+    <p class="sub"><b style="color:#fff">Give it time to be judged.</b> The system takes 24 to 48 hours to run a song through the full 15-point scale evaluation — it has to collect the data on you and your song first. So if you don't see your song in the Top 100 today or tomorrow, that doesn't mean anything — just wait. And if a week or so goes by and it still hasn't cracked the hundred, your song may just not be strong enough to break through yet — but don't pull it down. Leave it up, keep doing what you're doing, and keep giving your song its opportunity — the algorithm is checking 24 hours a day, and songs move when the numbers say so.</p>
   </div>`;
 
   const tabs = channels.map((c, i) =>
@@ -2235,7 +2237,7 @@ app.get("/how-it-works", (req, res) => {
   <p class="sub" style="text-align:center">No labels. No payola. No hand-picks. Just your record, judged on its craft and measured against every other record uploaded here.</p>
   <div class="panel">
     <h2 style="margin-top:0">Part 1 — The Search</h2>
-    <p class="sub">The algorithm searches Facebook, Instagram, TikTok, YouTube, the music platforms where independents promote, and the open web — gathering everything it can find about you and your songs: the posts, the buzz, the conversation around your music. You're being critiqued 24 hours a day — the algorithm never sleeps.</p>
+    <p class="sub">The algorithm searches Facebook, Instagram, TikTok, YouTube, the music platforms where independents promote, and the open web — gathering everything it can find about you and your songs: the posts, the buzz, the conversation around your music. Your music is being evaluated 24 hours a day — the algorithm never sleeps.</p>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">Part 2 — The Judging</h2>
@@ -2248,6 +2250,8 @@ app.get("/how-it-works", (req, res) => {
     <h2 style="margin-top:0">The Stage</h2>
     <p class="sub">The rotation plays the Top 20 in order, 1 through 20, 24 hours a day. New entries come into play at 12:00 midnight, every night — that's when the new chart takes effect and knocked-off songs leave the rotation.</p>
     <p class="sub"><b style="color:#fff">A great song holds its spot.</b> New entries can hit at midnight any night, but nobody loses a Top 20 spot for not uploading — a song only moves when hotter songs out-score it. So put your hottest material up here and keep doing what you're doing — that's what got you into the Top 20 in the first place. And a song that slides out of the 20 doesn't disappear — it stays in the big Top 100, ready to climb back.</p>
+    <p class="sub">Same rule in the Top 100: a song only leaves the hundred when a hotter new entry out-scores it — every song faces the same evaluation. The 15-point scale evaluation measures every song on these 15 points: Mix Quality · Mastering &amp; Sound Quality · Hook Strength · Melody · Lyrical Quality · Song Structure · Vocal Delivery &amp; Performance · Production &amp; Instrumentation · Groove &amp; Rhythm · Emotional Impact · Dynamics &amp; Energy · Originality &amp; Identity · Replay Value · Radio &amp; Commercial Readiness · Cover Art &amp; Presentation. And even a song that falls out of the Top 100 still stays in the system — it's just not one of the Hot 100 right now.</p>
+    <p class="sub"><b style="color:#fff">Give it time to be judged.</b> The system takes 24 to 48 hours to run a song through the full 15-point scale evaluation — it has to collect the data on you and your song first. So if you don't see your song in the Top 100 today or tomorrow, that doesn't mean anything — just wait. And if a week or so goes by and it still hasn't cracked the hundred, your song may just not be strong enough to break through yet — but don't pull it down. Leave it up, keep doing what you're doing, and keep giving your song its opportunity — the algorithm is checking 24 hours a day, and songs move when the numbers say so.</p>
   </div>
   <div class="ne">
     <div class="ne-banner">THE RULES</div>
@@ -2270,7 +2274,7 @@ app.get("/how-it-works", (req, res) => {
   res.send(layout("How It Works", "how", body, {
     meta: {
       title: "How It Works — TOP 20",
-      description: "The first-of-its-kind algorithm for independent artists: a 24/7 search across Facebook, Instagram, TikTok, YouTube and the web, then every uploaded song judged on 15 points of craft and ranked daily.",
+      description: "The first-of-its-kind algorithm for independent artists: a 24/7 search across Facebook, Instagram, TikTok, YouTube and the web, then every uploaded song judged by the 15-point scale evaluation and ranked daily.",
     },
   }));
 });
