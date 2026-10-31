@@ -72,7 +72,24 @@ function scoreLyricsText(text) {
   };
 }
 
-function judgeMeasured(m, genre, coverAbsPath, lyricsText) {
+// Radio's clean-language law (Dale, A&R/music-director doctrine): a record
+// with profanity is not radio ready, and a profane TITLE gets no radio
+// approval at all — a DJ can't even say the name on air. Pure text
+// scanning of the words the artist sends in; nothing listens.
+const PROFANITY_HARD = new Set(("fuck fucking fucked fucker fuckers motherfucker motherfuckers shit shitting bullshit bitch bitches nigga niggas nigger niggers dick dicks pussy cunt cock cocks whore whores slut sluts hoe hoes tits titty faggot").split(" "));
+const PROFANITY_MILD = new Set(("damn damned hell ass bastard bastards piss pissed").split(" "));
+function scanProfanity(text) {
+  const toks = String(text || "").toLowerCase().replace(/[^a-z0-9' ]/g, " ").split(/\s+/).filter(Boolean);
+  const hard = new Set(), mild = new Set();
+  let hardHits = 0, mildHits = 0;
+  for (const t of toks) {
+    if (PROFANITY_HARD.has(t)) { hard.add(t); hardHits++; }
+    else if (PROFANITY_MILD.has(t)) { mild.add(t); mildHits++; }
+  }
+  return { hardHits, hardWords: [...hard], mildHits, mildWords: [...mild] };
+}
+
+function judgeMeasured(m, genre, coverAbsPath, lyricsText, titleText) {
   const T = TEMPLATE_FOR[genre];
   const g = genre; // the song's own genre name, used in its notes
   const S = {}; // raw (unrounded) sub-scores
@@ -241,10 +258,31 @@ function judgeMeasured(m, genre, coverAbsPath, lyricsText) {
   notes.replay = out.replay >= 7
     ? `Hook at ${m.hook.startSec}s, groove locked at ${Math.round(m.tempoStrength * 100)}% — when it ends, the shape of it makes you run it back.`
     : `One pass doesn't yet demand a second — the hook and groove reads aren't strong enough together. Strengthen the moment people would rewind for.`;
-  out.radio_readiness = round5(0.45 * out.mastering + 0.30 * out.mix + 0.25 * arrival);
-  notes.radio_readiness = out.radio_readiness >= 7
-    ? `Radio-legal and radio-shaped: ${fmt(m.lufs)} LUFS, true peak ${fmt(m.truePeak)}, hook by ${m.hook.startSec}s. This can sit next to signed records and belong.`
-    : `Not at radio standard yet — the loudness, balance and hook timing measure short of the ${g} marks above. Fix the mastering and the hook arrival first.`;
+  // ---- Radio Readiness — judged the music-director way (Dale): a song is
+  // radio ready when its MIX measures close to the radio formats — Pop,
+  // R&B and Hip-Hop — no matter what chart it sits on, and when the record
+  // is clean: profanity in the words caps it, profanity in the TITLE gets
+  // no radio approval at all.
+  const formatMatch = (T) => (bandScore(m.lufs, T.lufs, 0.5) + bandScore(m.drProxy, T.dr, 0.5) + bandScore(m.lowEndDb, T.low, 0.5) + bandScore(m.topEndDb, T.top, 0.5)) / 4;
+  const radioFam = [TEMPLATES.pop, TEMPLATES.rb, TEMPLATES.hiphop].map((T) => ({ name: T.label, score: formatMatch(T) })).sort((a, b) => b.score - a.score);
+  const famMean = radioFam.reduce((a, f) => a + f.score, 0) / radioFam.length;
+  let radioBase = round5(0.6 * radioFam[0].score + 0.4 * famMean);
+  if (m.truePeak > -0.3) radioBase = Math.min(radioBase, 7); // broadcast ceiling
+  const titleScan = scanProfanity(titleText);
+  const lyricScan = lyricsText ? scanProfanity(lyricsText) : null;
+  const titleProfane = titleScan.hardHits + titleScan.mildHits > 0;
+  if (titleProfane) {
+    out.radio_readiness = 1;
+    notes.radio_readiness = `No radio approval — the title itself carries profanity ("${[...titleScan.hardWords, ...titleScan.mildWords][0]}"). A DJ can't even say this record's name on air, so it doesn't get judged for radio at all, no matter how the mix measures. Retitle it clean and the radio read opens up.`;
+  } else if (lyricScan && lyricScan.hardHits > 0) {
+    out.radio_readiness = Math.min(radioBase, 3);
+    notes.radio_readiness = `Not radio ready — the lyrics sent in carry ${lyricScan.hardHits} explicit hit${lyricScan.hardHits > 1 ? "s" : ""} (${lyricScan.hardWords.slice(0, 3).join(", ")}${lyricScan.hardWords.length > 3 ? "…" : ""}). Radio can't play it as-is no matter how the mix measures — and the mix itself sits closest to the ${radioFam[0].name} radio profile. Upload a clean edit and this point is judged on the sound.`;
+  } else {
+    out.radio_readiness = lyricScan && lyricScan.mildHits > 0 ? Math.min(radioBase, 7.5) : radioBase;
+    notes.radio_readiness = out.radio_readiness >= 7
+      ? `Radio shaped the way music directors hear it — the mix measures closest to the ${radioFam[0].name} radio profile (${fmt(m.lufs)} LUFS integrated, low end ${fmt(m.lowEndDb)} dB, top ${fmt(m.topEndDb)}), with ${radioFam[1].name} not far behind${lyricScan ? ", and the words sent in check clean" : ""}. This can sit next to signed records and belong.`
+      : `Not at radio standard yet — measured against the radio formats, the mix sits closest to ${radioFam[0].name} but still off the mark (${fmt(m.lufs)} LUFS, low end ${fmt(m.lowEndDb)} dB vs the radio bands, top ${fmt(m.topEndDb)}). Radio ready is a sound: match the Pop / R&B / Hip-Hop profiles above${lyricScan ? "" : " — and send the lyrics in with the upload so the clean-language check can run too"}.`;
+  }
 
   // ---- Cover art (point 15): the existing real inspection of the image file.
   const scores = {};
@@ -277,11 +315,11 @@ function judgeMeasured(m, genre, coverAbsPath, lyricsText) {
 
 // Measured judging of one uploaded file. Returns null when the file can't
 // be measured — the caller falls back to Judge v1 for that song.
-async function judgeMeasuredFile(absPath, genre, coverAbsPath = null, lyricsText = null) {
+async function judgeMeasuredFile(absPath, genre, coverAbsPath = null, lyricsText = null, titleText = null) {
   if (!TEMPLATE_FOR[genre]) return null;
   const m = await analyzeAudio(absPath);
   if (!m || m.lufs == null) return null;
-  return judgeMeasured(m, genre, coverAbsPath, lyricsText);
+  return judgeMeasured(m, genre, coverAbsPath, lyricsText, titleText);
 }
 
-module.exports = { judgeMeasuredFile, judgeMeasured, scoreLyricsText, TEMPLATES, TEMPLATE_FOR };
+module.exports = { judgeMeasuredFile, judgeMeasured, scoreLyricsText, scanProfanity, TEMPLATES, TEMPLATE_FOR };
