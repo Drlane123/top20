@@ -1296,8 +1296,8 @@ app.get("/", (req, res) => {
   try { djOn = localStorage.getItem('djVoice') !== '0'; } catch (e) {}
   function djLabel(){ const b = $('djBtn'); if (b) b.textContent = djOn ? '🎙️ DJ VOICE ON' : '🎙️ DJ VOICE OFF'; }
   function djText(t){
-    const d = t.fresh ? 'a brand new entry — day one on the chart' : (t.days === 1 ? 'day one on the chart' : (t.days || 0) + ' days on the chart');
-    return 'Number ' + t.rank + '. ' + t.title + ', by ' + t.artist + '. ' + d + '.';
+    const d = t.fresh ? 'A brand new entry — day one on the chart.' : (t.days === 1 ? 'Day one on the chart.' : (t.days || 0) + ' days on the chart.');
+    return 'Our number ' + t.rank + ' song on Top 20 is "' + t.title + '" by ' + t.artist + '. ' + d;
   }
   function djAnnounce(t, done){
     if (!djOn || !t || !('speechSynthesis' in window)) { done(); return; }
