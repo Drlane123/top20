@@ -223,7 +223,7 @@ body::after{content:"";position:fixed;inset:0;z-index:80;pointer-events:none;
   background:linear-gradient(180deg,rgba(255,255,255,.02),transparent 18%)}
 .app{max-width:430px;margin:0 auto;min-height:100vh;padding:0 14px 34px;
   background:radial-gradient(720px 360px at 50% -40px,rgba(64,110,255,.05),transparent 62%);
-  border-left:1px solid;border-right:1px solid;
+  border-left:1px solid;border-right:1px solid;border-top:1px solid;
   border-image:linear-gradient(180deg,#f8fafc 0%,#7e8ea6 28%,#eef3fa 50%,#5f6b7d 76%,#dfe7f2 100%) 1;
   box-shadow:0 0 70px rgba(120,160,255,.03)}
 a{color:var(--ink)}
