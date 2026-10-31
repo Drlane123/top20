@@ -47,6 +47,21 @@ const HERO = (() => {
     return { mp4: Buffer.from(parts.join(""), "base64"), poster: Buffer.from(require("./hero-poster-data"), "base64") };
   } catch (e) { return null; }
 })();
+// HERO2 — the stripped-and-rebuilt welcome video (Oct 31, owner's cure
+// for the doubled soundtrack): fresh re-encode, clean timestamps, and
+// served at a NEW address with no-store. The old /hero.mp4 kept a
+// 24-hour cache header while its file was swapped three times in a day;
+// the owner's phone cached pieces of different versions at one address
+// and stitched them into a promo that repeated over itself — same spot
+// every time, surviving restarts, invisible to any fresh browser.
+const HERO2 = (() => {
+  try {
+    const parts = [];
+    for (let i = 1; i <= 8; i++) { try { parts.push(require("./hero2-data-" + i)); } catch (e) { break; } }
+    if (!parts.length) throw new Error("no hero2 parts");
+    return { mp4: Buffer.from(parts.join(""), "base64") };
+  } catch (e) { return null; }
+})();
 // Stage DJ announcement clips: the owner's chosen recorded voice (Take 3),
 // shipped base64-embedded like the hero video. Keys: rank-1..20,
 // title-<songId>, days-fresh, days-one, days-2..60, closer.
@@ -72,7 +87,7 @@ if (HERO) {
     const total = HERO.mp4.length;
     res.setHeader("Content-Type", "video/mp4");
     res.setHeader("Accept-Ranges", "bytes");
-    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Cache-Control", "no-store");
     const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range || "");
     if (m) {
       let start = m[1] ? parseInt(m[1], 10) : 0;
@@ -92,6 +107,28 @@ if (HERO) {
     res.setHeader("Content-Type", "image/jpeg");
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.end(HERO.poster);
+  });
+}
+if (HERO2) {
+  app.get("/hero2.mp4", (req, res) => {
+    const total = HERO2.mp4.length;
+    res.setHeader("Content-Type", "video/mp4");
+    res.setHeader("Accept-Ranges", "bytes");
+    res.setHeader("Cache-Control", "no-store");
+    const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range || "");
+    if (m) {
+      let start = m[1] ? parseInt(m[1], 10) : 0;
+      let end = m[2] ? parseInt(m[2], 10) : total - 1;
+      if (isNaN(start) || start < 0) start = 0;
+      if (isNaN(end) || end >= total) end = total - 1;
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+      res.setHeader("Content-Length", end - start + 1);
+      res.end(HERO2.mp4.subarray(start, end + 1));
+    } else {
+      res.setHeader("Content-Length", total);
+      res.end(HERO2.mp4);
+    }
   });
 }
 // Header artist crowd (owner request): two generated artist lineups that
@@ -1351,7 +1388,7 @@ app.get("/", (req, res) => {
   .plj-arrow { font-size:12px; color:#d8e6ff; text-shadow:0 0 6px rgba(216,230,255,.8); animation:pljbob 1.2s ease-in-out infinite; }
   @keyframes pljbob { 0%,100% { transform:translateY(-1.5px); } 50% { transform:translateY(2px); } }
   </style><button type="button" class="plj" id="playlistJump" aria-label="Jump to the live playlist"><span class="plj-arrow">▼</span><span class="plj-dot"></span>PLAYLIST LIVE<span class="plj-arrow">▼</span></button></div>
-  <div class="herovid" style="position:relative"><video id="heroVid" src="/hero.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video><button type="button" id="heroSound" aria-label="Turn the welcome video sound on or off" style="position:absolute;right:10px;bottom:10px;background:rgba(10,10,18,.72);border:1px solid rgba(255,190,60,.65);color:#ffd98a;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;letter-spacing:.4px;cursor:pointer">🔊 SOUND ON</button></div>
+  <div class="herovid" style="position:relative"><video id="heroVid" src="/hero2.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video><button type="button" id="heroSound" aria-label="Turn the welcome video sound on or off" style="position:absolute;right:10px;bottom:10px;background:rgba(10,10,18,.72);border:1px solid rgba(255,190,60,.65);color:#ffd98a;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;letter-spacing:.4px;cursor:pointer">🔊 SOUND ON</button></div>
   <script>
   (function () {
     var v = document.getElementById("heroVid"), b = document.getElementById("heroSound");
