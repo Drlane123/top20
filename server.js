@@ -636,6 +636,30 @@ if ('serviceWorker' in navigator) {
   window.addEventListener('appinstalled', function () { bar.classList.remove('show'); });
 })();
 </script>
+<script>
+// One audible player across ALL open copies of the site (owner hit
+// "stacked" sound with the site open in several tabs — each tab's Stage
+// or video kept playing over the others). Any tab that starts audible
+// playback claims the sound via localStorage; every other tab hears the
+// claim (storage event) and goes quiet: Stage stopped, hero muted, any
+// other player paused. Muted autoplay (the hero loop) never claims.
+(function () {
+  var KEY = "t20-audio-claim";
+  var TAB = Math.random().toString(36).slice(2) + Date.now().toString(36);
+  function claim() { try { localStorage.setItem(KEY, JSON.stringify({ tab: TAB, at: Date.now() })); } catch (e) {} }
+  function audible(el) { return el && (el.tagName === "AUDIO" || el.tagName === "VIDEO") && !el.muted && el.volume !== 0; }
+  document.addEventListener("play", function (e) { if (audible(e.target)) claim(); }, true);
+  document.addEventListener("volumechange", function (e) { var el = e.target; if (audible(el) && !el.paused) claim(); }, true);
+  window.addEventListener("storage", function (e) {
+    if (e.key !== KEY || !e.newValue) return;
+    var c = null; try { c = JSON.parse(e.newValue); } catch (err) {}
+    if (!c || c.tab === TAB) return;
+    if (window.__stopStage) window.__stopStage();
+    if (window.__muteHero) window.__muteHero();
+    document.querySelectorAll("audio,video").forEach(function (el) { if (el.id !== "heroVid") { try { el.pause(); } catch (err) {} } });
+  });
+})();
+</script>
 </body></html>`;
 }
 
