@@ -153,12 +153,23 @@ function analyzePcm(x) {
   let prevMag = null, fluxSum = 0, fluxCount = 0;
   const fluxCurve = [];
   const domFreqs = [];
+  const secAcc = []; // per-second band magnitudes -> section fingerprints
+  const binHz = SR / N;
   const re = new Float64Array(N), im = new Float64Array(N);
   for (let f = 0; f < frames; f++) {
     const off = f * HOP;
     for (let i = 0; i < N; i++) { re[i] = x[off + i] * win[i]; im[i] = 0; }
     const mags = fftMag(re, im);
     for (let i = 0; i < mags.length; i++) acc[i] += mags[i];
+    { // file this frame's band magnitudes under its second
+      const sec = Math.floor(off / SR);
+      if (!secAcc[sec]) secAcc[sec] = new Float64Array(BANDS.length);
+      BANDS.forEach(([name, lo, hi], bi) => {
+        const a = Math.max(1, Math.floor(lo / binHz)), b = Math.min(N / 2, Math.ceil(hi / binHz));
+        let s = 0; for (let i = a; i < b; i++) s += mags[i];
+        secAcc[sec][bi] += s;
+      });
+    }
     if (prevMag) {
       let fl = 0;
       for (let i = 2; i < mags.length; i++) { const d = mags[i] - prevMag[i]; if (d > 0) fl += d; }
@@ -171,7 +182,6 @@ function analyzePcm(x) {
     for (let i = lo; i <= hi; i++) if (mags[i] > bv) { bv = mags[i]; bi = i; }
     if (bi > 0 && bv > 0.02) domFreqs.push((bi * SR) / N);
   }
-  const binHz = SR / N;
   const bandRaw = {};
   for (const [name, lo, hi] of BANDS) {
     const a = Math.max(1, Math.floor(lo / binHz)), b = Math.min(N / 2, Math.ceil(hi / binHz));
@@ -228,6 +238,66 @@ function analyzePcm(x) {
     if (lo > 0 && hi > lo) melodicRange = Math.round(12 * Math.log2(hi / lo) * 10) / 10;
   }
 
+  // ---- Sections: hook vs verse fingerprints (owner request, part two) ----
+  // Every second carries a spectral fingerprint (its 7 band shares). Loud
+  // seconds group into hook blocks, body seconds into verse blocks. Reads:
+  // hookMatch (do the hooks match each other), verseMatch (verses too),
+  // blend (hook and verse — same record?), prominence (hook over verse, dB).
+  function profileOf(list) {
+    const v = new Float64Array(BANDS.length); let n = 0;
+    for (const s of list) {
+      const a = secAcc[s]; if (!a) continue;
+      let tot = 0; for (let i = 0; i < a.length; i++) tot += a[i];
+      if (tot <= 0) continue;
+      for (let i = 0; i < a.length; i++) v[i] += a[i] / tot;
+      n++;
+    }
+    if (!n) return null;
+    for (let i = 0; i < v.length; i++) v[i] /= n;
+    return v;
+  }
+  function cosine(a, b) {
+    if (!a || !b) return null;
+    let d = 0, na = 0, nb = 0;
+    for (let i = 0; i < a.length; i++) { d += a[i] * b[i]; na += a[i] * a[i]; nb += b[i] * b[i]; }
+    return na > 0 && nb > 0 ? d / Math.sqrt(na * nb) : null;
+  }
+  function blocksOf(flags, minLen) {
+    const blocks = []; let cur = [], gap = 0;
+    flags.forEach((f, s) => {
+      if (f) { if (gap && cur.length) for (let g = gap; g >= 1; g--) cur.push(s - g); gap = 0; cur.push(s); }
+      else if (cur.length) { gap++; if (gap > 2) { blocks.push(cur); cur = []; gap = 0; } }
+    });
+    if (cur.length) blocks.push(cur);
+    return blocks.filter((b) => b.length >= minLen);
+  }
+  const hookThresh = medianWin + Math.max(0.8, 0.55 * (hookLevel - medianWin));
+  const hookFlags = [], verseFlags = [];
+  for (let s = 0; s < secs; s++) {
+    hookFlags.push(energy[s] >= hookThresh);
+    verseFlags.push(energy[s] >= floorRef && energy[s] < hookThresh - 0.4);
+  }
+  const hookBlocks = blocksOf(hookFlags, 3);
+  const verseBlocks = blocksOf(verseFlags, 4);
+  function matchOf(blocks) {
+    if (blocks.length < 2) return null;
+    const first = profileOf(blocks[0]); if (!first) return null;
+    const sims = blocks.slice(1).map((b) => cosine(first, profileOf(b))).filter((v) => v != null);
+    return sims.length ? Math.round((sims.reduce((a, b) => a + b, 0) / sims.length) * 1000) / 1000 : null;
+  }
+  const allHookSecs = hookBlocks.flat(), allVerseSecs = verseBlocks.flat();
+  const hookProf = profileOf(allHookSecs), verseProf = profileOf(allVerseSecs);
+  const verseLevel = allVerseSecs.length ? allVerseSecs.reduce((a, s) => a + energy[s], 0) / allVerseSecs.length : null;
+  const blendCos = hookProf && verseProf ? cosine(hookProf, verseProf) : null;
+  const sections = {
+    hookMatch: matchOf(hookBlocks),
+    verseMatch: matchOf(verseBlocks),
+    blend: blendCos != null ? Math.round(blendCos * 1000) / 1000 : null,
+    prominenceDb: verseLevel != null ? Math.round((hookLevel - verseLevel) * 10) / 10 : null,
+    hookBlocks: hookBlocks.length, verseBlocks: verseBlocks.length,
+  };
+
+
   return {
     durationSec: Math.round(durSec * 10) / 10,
     crestDb: Math.round(crestDb * 10) / 10,
@@ -237,6 +307,7 @@ function analyzePcm(x) {
     hook: { startSec: hookStart, levelDb: Math.round(hookLevel * 10) / 10, repeats: hookRepeats, liftDb: Math.round(hookLift * 10) / 10 },
     bands, lowEndDb: lowEnd, topEndDb: topEnd,
     tempoStrength, bpm, vocalShare: vShare, melodicRangeSemis: melodicRange,
+    sections,
   };
 }
 

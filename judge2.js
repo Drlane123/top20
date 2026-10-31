@@ -89,10 +89,21 @@ function judgeMeasured(m, genre, coverAbsPath) {
   const arrRelScore = arrRel <= 0.15 ? 10 : arrRel <= 0.3 ? 8.5 : arrRel <= 0.45 ? 7 : arrRel <= 0.6 ? 5.5 : 4;
   const arrival = 0.6 * arrAbs + 0.4 * arrRelScore;
   const liftMap = m.hook.liftDb >= 2 ? 9.5 : m.hook.liftDb >= 1 ? 8 : m.hook.liftDb >= 0.3 ? 6.5 : 4.5;
-  out.structure = round5(0.30 * introScore + 0.35 * arrival + 0.35 * (0.5 * liftMap + 0.5 * breath));
+  // Section reads (part two): hook-to-hook and verse-to-verse fingerprint
+  // match, hook/verse blend, and how far the hook stands over the verse.
+  const sec = m.sections || {};
+  const matchMap = (v) => v == null ? null : v >= 0.99 ? 10 : v >= 0.97 ? 9 : v >= 0.95 ? 7.5 : v >= 0.92 ? 6 : v >= 0.88 ? 5 : 4;
+  const hookMatchScore = matchMap(sec.hookMatch);
+  const verseMatchScore = matchMap(sec.verseMatch);
+  const promMap = sec.prominenceDb == null ? null : sec.prominenceDb >= 2.5 ? 9.5 : sec.prominenceDb >= 1.5 ? 8 : sec.prominenceDb >= 0.8 ? 6.5 : 4.5;
+  const effLift = promMap == null ? liftMap : 0.6 * promMap + 0.4 * liftMap;
+  const matchParts = [hookMatchScore, verseMatchScore].filter((v) => v != null);
+  const consistency = matchParts.length ? matchParts.reduce((a, b) => a + b, 0) / matchParts.length : 7;
+  const blendScore = sec.blend == null ? 7 : sec.blend > 0.995 ? 6.5 : sec.blend >= 0.8 ? 9 : sec.blend >= 0.7 ? 7 : 4.5;
+  out.structure = round5(0.22 * introScore + 0.28 * arrival + 0.22 * (0.5 * effLift + 0.5 * breath) + 0.28 * (0.6 * consistency + 0.4 * blendScore));
   notes.structure = out.structure >= 7
-    ? `Built right — the body is moving by second ${m.leadQuietSec}, the hook lands at ${m.hook.startSec}s and stands ${fmt(m.hook.liftDb)} dB above the verse level. Nothing overstays.`
-    : `The shape needs work — ${m.leadQuietSec > 12 ? `the song takes ${m.leadQuietSec}s to get going and ` : ""}the hook doesn't arrive until ${m.hook.startSec}s and only lifts ${fmt(m.hook.liftDb)} dB over the body. Get to the payoff sooner and make it bigger.`;
+    ? `Built right — the body is moving by second ${m.leadQuietSec}, the hook lands at ${m.hook.startSec}s${sec.prominenceDb != null ? ` standing ${fmt(sec.prominenceDb)} dB over the verse` : ""}${sec.verseMatch != null ? `, the verses match each other at ${Math.round(sec.verseMatch * 100)}%` : ""}${sec.blend != null ? `, and hook and verse blend at ${Math.round(sec.blend * 100)}% — one record, sections working together` : ""}.`
+    : `The shape needs work — ${m.leadQuietSec > 12 ? `the song takes ${m.leadQuietSec}s to get going and ` : ""}the hook arrives at ${m.hook.startSec}s${sec.prominenceDb != null ? ` with only ${fmt(sec.prominenceDb)} dB over the verse` : ""}${sec.verseMatch != null && sec.verseMatch < 0.92 ? `, and the verses don't match each other (${Math.round(sec.verseMatch * 100)}%)` : ""}${sec.blend != null && sec.blend < 0.7 ? `; hook and verse barely blend (${Math.round(sec.blend * 100)}%) — they sound like different records` : ""}.`;
 
   const winCount = Math.max(1, Math.floor(m.durationSec / 8));
   const repRatio = m.hook.repeats / winCount;
@@ -100,7 +111,7 @@ function judgeMeasured(m, genre, coverAbsPath) {
   // Repeats only count when the hook actually stands above the body —
   // a level that never changes has nothing repeating, just sameness.
   if (m.hook.liftDb < 1) repScore = Math.min(repScore, 5);
-  out.hook = round5(0.35 * arrival + 0.35 * repScore + 0.30 * liftMap);
+  out.hook = round5(0.28 * arrival + 0.22 * repScore + 0.20 * effLift + 0.30 * (hookMatchScore == null ? 7 : hookMatchScore));
   // Flatline rule: a song whose level never moves has no structure, hook
   // or vocal performance to judge — cap the shape-based points.
   const flatline = m.drProxy < 1 && m.hook.liftDb < 0.5;
@@ -109,8 +120,8 @@ function judgeMeasured(m, genre, coverAbsPath) {
     out.structure = Math.min(out.structure, 5.5);
   }
   notes.hook = out.hook >= 7
-    ? `The hook lands at ${m.hook.startSec}s, lifts ${fmt(m.hook.liftDb)} dB over the verses, and its level comes back ${m.hook.repeats} times — that's the part a listener walks away singing.`
-    : `The hook is late or light — it arrives at ${m.hook.startSec}s with ${fmt(m.hook.liftDb)} dB of lift and ${m.hook.repeats} returns at full level. Earlier, bigger, and more often is what makes a hook stick.`;
+    ? `The hook lands at ${m.hook.startSec}s, lifts ${fmt(m.hook.liftDb)} dB over the verses, and its level comes back ${m.hook.repeats} times${sec.hookMatch != null ? ` — and the hooks match each other at ${Math.round(sec.hookMatch * 100)}%, so every chorus hits the same way` : ""}. That's the part a listener walks away singing.`
+    : `The hook is late or light — it arrives at ${m.hook.startSec}s with ${fmt(m.hook.liftDb)} dB of lift and ${m.hook.repeats} returns at full level${sec.hookMatch != null && sec.hookMatch < 0.92 ? `, and the hooks don't match each other (${Math.round(sec.hookMatch * 100)}%) — every chorus should hit like the same chorus` : ""}. Earlier, bigger, and more often is what makes a hook stick.`;
 
   // ---- Vocals (presence of the voice band + how it cuts through)
   const vs = m.vocalShare;
