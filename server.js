@@ -12,6 +12,9 @@ const { judgeAudioFile } = require("./judge");
 const { recalc, latestChartDate, previousChartDate, ensureCurrent, todayStr } = require("./charts");
 
 const PORT = process.env.PORT || 8077;
+// Build identity for the stale-page self-heal: Render sets
+// RENDER_GIT_COMMIT per deploy; locally this stays "dev" (no checks).
+const BUILD = process.env.RENDER_GIT_COMMIT || "dev";
 const PUBLIC_DIR = path.join(__dirname, "public");
 const AUDIO_UP = path.join(PUBLIC_DIR, "uploads", "audio");
 const COVER_UP = path.join(PUBLIC_DIR, "uploads", "covers");
@@ -24,6 +27,13 @@ const db = openDb();
 const app = express();
 
 // Hero welcome video: the binary ships base64-embedded (hero-data.js)
+// Build probe for the stale-page self-heal (see layout): an open page
+// asks here whether the site has been rebuilt since it loaded.
+app.get("/version", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.json({ build: BUILD });
+});
+
 // because the repo pipeline is text-only. Decoded once at boot, then
 // streamed with HTTP range support so phones can play/seek it.
 // (Seal commit Oct 31: forces a clean rebuild from the complete hero v5
@@ -637,6 +647,7 @@ if ('serviceWorker' in navigator) {
 })();
 </script>
 <script>
+window.__BUILD = "${BUILD}";
 // One audible player across ALL open copies of the site (owner hit
 // "stacked" sound with the site open in several tabs — each tab's Stage
 // or video kept playing over the others). Any tab that starts audible
@@ -658,6 +669,22 @@ if ('serviceWorker' in navigator) {
     if (window.__muteHero) window.__muteHero();
     document.querySelectorAll("audio,video").forEach(function (el) { if (el.id !== "heroVid") { try { el.pause(); } catch (err) {} } });
   });
+  // Self-heal a stale open page: if the site was rebuilt while this
+  // page sat open (an hours-old page kept stacking sound because the
+  // fixes had not been written when it loaded), reload ONCE when the
+  // page comes back into view on the newer build.
+  function checkBuild() {
+    var mine = window.__BUILD || "";
+    if (!mine || mine === "dev") return;
+    fetch("/version", { cache: "no-store" }).then(function (r) { return r.json(); }).then(function (j) {
+      if (!j || !j.build || j.build === mine) return;
+      var key = "t20-healed-" + j.build;
+      try { if (sessionStorage.getItem(key)) return; sessionStorage.setItem(key, "1"); } catch (e) {}
+      location.reload();
+    }).catch(function () {});
+  }
+  document.addEventListener("visibilitychange", function () { if (!document.hidden) checkBuild(); });
+  checkBuild();
   // When the site is left — tab switched, app switched, page closed —
   // EVERYTHING stops (owner: a leftover media player kept playing
   // outside the website). Nothing on this site is meant to play in the
