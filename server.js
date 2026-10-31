@@ -32,6 +32,26 @@ const HERO = (() => {
     return { mp4: Buffer.from(parts.join(""), "base64"), poster: Buffer.from(require("./hero-poster-data"), "base64") };
   } catch (e) { return null; }
 })();
+// Stage DJ announcement clips: the owner's chosen recorded voice (Take 3),
+// shipped base64-embedded like the hero video. Keys: rank-1..20,
+// title-<songId>, days-fresh, days-one, days-2..60, closer.
+const ANN = (() => {
+  const raw = {};
+  for (const m of ["./announce-data-1", "./announce-data-2"]) {
+    try { Object.assign(raw, require(m)); } catch (e) {}
+  }
+  const bufs = {};
+  for (const k of Object.keys(raw)) { try { bufs[k] = Buffer.from(raw[k], "base64"); } catch (e) {} }
+  return bufs;
+})();
+app.get("/ann/:file", (req, res) => {
+  const key = String(req.params.file || "").replace(/\.mp3$/i, "").replace(/[^a-z0-9-]/gi, "");
+  const b = ANN[key];
+  if (!b) return res.status(404).end();
+  res.setHeader("Content-Type", "audio/mpeg");
+  res.setHeader("Cache-Control", "public, max-age=604800");
+  res.send(b);
+});
 if (HERO) {
   app.get("/hero.mp4", (req, res) => {
     const total = HERO.mp4.length;
@@ -1344,11 +1364,13 @@ app.get("/", (req, res) => {
     <button type="button" class="playbtn" id="playBtn" aria-label="Play or pause">▶</button>
     <button type="button" id="djBtn" aria-label="Toggle the DJ announcement voice" style="flex:0 0 auto;background:rgba(255,190,60,.12);border:1px solid rgba(255,190,60,.45);color:#ffd98a;border-radius:999px;padding:7px 11px;font-size:11.5px;font-weight:800;letter-spacing:.4px;cursor:pointer">🎙️ DJ VOICE ON</button>
     <audio id="stageAudio" preload="none"></audio>
+    <audio id="djAudio" preload="auto"></audio>
   </div></div>
   <script>
   const PLAYLISTS = ${JSON.stringify(channels.map((c) => c.list)).replace(/</g, "\\u003c")};
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
+  const ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -1361,7 +1383,7 @@ app.get("/", (req, res) => {
   function djLabel(){ const b = $('djBtn'); if (b) b.textContent = djOn ? '🎙️ DJ VOICE ON' : '🎙️ DJ VOICE OFF'; }
   function djText(t){
     const d = t.fresh ? 'A brand new entry — day one on the chart.' : (t.days === 1 ? 'Day one on the chart.' : (t.days || 0) + ' days on the chart.');
-    return 'The number ' + t.rank + ' song on Top 20 is "' + t.title + '" by ' + t.artist + '. ' + d + " Let's keep it popping!";
+    return 'The number ' + t.rank + ' song on Top 20 is "' + t.title + '" by ' + t.artist + '. ' + d + " Hot Top 20 — non-stop!";
   }
   // Stage ad slots (owner feature): after every 5 songs in the rotation,
   // one active ad plays (image for its seconds, video to its end — hard
@@ -1416,7 +1438,7 @@ app.get("/", (req, res) => {
     }
     box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
-  function djAnnounce(t, done){
+  function djSpeak(t, done){
     if (!djOn || !t || !('speechSynthesis' in window)) { done(); return; }
     try {
       speechSynthesis.cancel();
@@ -1430,6 +1452,32 @@ app.get("/", (req, res) => {
       setTimeout(go, 6000); // never hold the music hostage to a stuck voice
       speechSynthesis.speak(u);
     } catch (e) { done(); }
+  }
+  // Recorded DJ announcements (the owner's chosen voice): rank clip +
+  // "title by artist" clip + days clip + the "Hot Top 20 — non-stop!"
+  // closer, played in order before the song. If any clip is missing (a
+  // brand-new song, a chart run past 60 days), the phone voice reads it.
+  const djAudioEl = $('djAudio');
+  let djChain = 0;
+  function djStop(){ djChain++; if (djAudioEl) { try { djAudioEl.pause(); djAudioEl.removeAttribute('src'); djAudioEl.load(); } catch (e) {} } }
+  function djAnnounce(t, done){
+    if (!djOn || !t) { done(); return; }
+    const daysKey = t.fresh ? 'days-fresh' : (t.days === 1 ? 'days-one' : (t.days >= 2 && t.days <= 60 ? 'days-' + t.days : null));
+    const keys = ['rank-' + t.rank, 'title-' + t.id, daysKey, 'closer'];
+    if (!djAudioEl || keys.some((k) => !k || ANN_KEYS.indexOf(k) === -1)) { djSpeak(t, done); return; }
+    const my = ++djChain;
+    let i = 0, fired = false;
+    const go = () => { if (!fired) { fired = true; done(); } };
+    const hard = setTimeout(() => { if (my === djChain) go(); }, 12000);
+    const step = () => {
+      if (fired || my !== djChain) { clearTimeout(hard); return; }
+      if (i >= keys.length) { clearTimeout(hard); go(); return; }
+      djAudioEl.src = '/ann/' + keys[i] + '.mp3'; i++;
+      const p = djAudioEl.play(); if (p && p.catch) p.catch(() => { clearTimeout(hard); go(); });
+    };
+    djAudioEl.onended = step;
+    djAudioEl.onerror = () => { clearTimeout(hard); go(); };
+    step();
   }
   const rings = [
     { el: 'ringA', now: 'ringNowA', from: 0, to: 10, front: 0, dir: 1, hover: false, ang: 0, mode: 'spin', hold: false, dragging: false, resumeT: null },
@@ -1594,6 +1642,7 @@ app.get("/", (req, res) => {
   function load(i, autoplay){
     const t = PLAYLISTS[ch][i]; if (!t) return;
     if ('speechSynthesis' in window) { try { speechSynthesis.cancel(); } catch (e) {} }
+    djStop();
     if (adBusy) { adSeq++; if (adCleanup) adCleanup(); }
     previewOn = false;
     idx = i;
