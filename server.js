@@ -26,6 +26,9 @@ const app = express();
 // Hero welcome video: the binary ships base64-embedded (hero-data.js)
 // because the repo pipeline is text-only. Decoded once at boot, then
 // streamed with HTTP range support so phones can play/seek it.
+// (Seal commit Oct 31: forces a clean rebuild from the complete hero v5
+// part set — an intermediate deploy had mixed v5 parts 1-4 with the old
+// part 5 and served a scrambled, unplayable video file.)
 const HERO = (() => {
   try {
     const parts = [];
