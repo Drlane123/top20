@@ -1348,7 +1348,7 @@ app.get("/", (req, res) => {
   <script>
   const PLAYLISTS = ${JSON.stringify(channels.map((c) => c.list)).replace(/</g, "\\u003c")};
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
-  const ADS = ${JSON.stringify((() => { try { return db.prepare("SELECT kind, file_path, link_url, seconds FROM ads WHERE active = 1 ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds })); } catch (e) { return []; } })())};
+  const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -1376,8 +1376,9 @@ app.get("/", (req, res) => {
     if (box) box.hidden = true;
   }
   function playAd(done){
-    if (!ADS.length) { done(); return; }
-    const ad = ADS[adIdx % ADS.length]; adIdx++;
+    const pool = (typeof ADS_BY_CH !== 'undefined' && ADS_BY_CH[ch]) || [];
+    if (!pool.length) { done(); return; }
+    const ad = pool[adIdx % pool.length]; adIdx++;
     const my = ++adSeq;
     adBusy = true;
     const box = $('adBreak'), img = $('adImg'), vid = $('adVid'), cnt = $('adCount');
@@ -1647,7 +1648,7 @@ app.get("/", (req, res) => {
     if (adBusy) return;
     const next = (idx + 1) % PLAYLISTS[ch].length;
     songsSinceAd++;
-    if (ADS.length && songsSinceAd >= AD_EVERY) { songsSinceAd = 0; playAd(() => load(next, true)); }
+    if (((typeof ADS_BY_CH !== 'undefined' && ADS_BY_CH[ch]) || []).length && songsSinceAd >= AD_EVERY) { songsSinceAd = 0; playAd(() => load(next, true)); }
     else load(next, true);
   });
   // Drag or scroll a spinner by hand — the playing ring always swings back
@@ -2901,12 +2902,13 @@ app.post("/admin/ads", requireAdmin, (req, res) => {
     const ext = (path.extname(req.file.filename) || "").toLowerCase();
     const web = `/uploads/ads/${req.file.filename}`;
     const title = String(req.body.title || "").trim().slice(0, 80) || req.file.originalname;
+    const genre = [...GENRES, "All"].includes(req.body.genre) ? req.body.genre : "All";
     let link = String(req.body.link_url || "").trim().slice(0, 300);
     if (link && !/^https?:\/\//i.test(link)) link = "";
     if (AD_IMAGE_EXTS.includes(ext)) {
       const seconds = Math.max(3, Math.min(30, parseInt(req.body.seconds, 10) || 8));
-      db.prepare("INSERT INTO ads (kind, file_path, link_url, title, seconds) VALUES ('image', ?, ?, ?, ?)").run(web, link || null, title, seconds);
-      return back(`Image ad "${title}" is in the rotation (${seconds}s between songs).`);
+      db.prepare("INSERT INTO ads (kind, file_path, link_url, title, seconds, genre) VALUES ('image', ?, ?, ?, ?, ?)").run(web, link || null, title, seconds, genre);
+      return back(`Image ad "${title}" is in the rotation on ${genre === "All" ? "all channels" : "the " + genre + " channel"} (${seconds}s between songs).`);
     }
     if (AD_VIDEO_EXTS.includes(ext)) {
       const dur = probeDurationSec(req.file.path);
@@ -2914,8 +2916,8 @@ app.post("/admin/ads", requireAdmin, (req, res) => {
         fs.unlink(req.file.path, () => {});
         return back(`That video runs ${Math.round(dur)} seconds — ads cap at 30 seconds. Trim it and upload again.`);
       }
-      db.prepare("INSERT INTO ads (kind, file_path, link_url, title, seconds) VALUES ('video', ?, ?, ?, ?)").run(web, link || null, title, Math.ceil(dur) || 0);
-      return back(`Video ad "${title}" is in the rotation${dur ? ` (${Math.round(dur)}s)` : ""}.`);
+      db.prepare("INSERT INTO ads (kind, file_path, link_url, title, seconds, genre) VALUES ('video', ?, ?, ?, ?, ?)").run(web, link || null, title, Math.ceil(dur) || 0, genre);
+      return back(`Video ad "${title}" is in the rotation on ${genre === "All" ? "all channels" : "the " + genre + " channel"}${dur ? ` (${Math.round(dur)}s)` : ""}.`);
     }
     fs.unlink(req.file.path, () => {});
     return back("That file type won't run as an ad — use JPG/PNG/WebP for images or MP4/WebM/MOV for video.");
@@ -2947,6 +2949,7 @@ app.get("/advertise", (req, res) => {
     <ul class="rules">
       <li>Your ad plays <b>inside the Stage rotation, between songs</b> — not buried on a side page.</li>
       <li><b>Image ads</b>, or <b>video ads up to 30 seconds</b>.</li>
+      <li><b>Pick your channel</b> — R&B, Southern Soul, Hip-Hop, Trap, Country, Pop, Dance — or run it on every channel at once.</li>
       <li>Your ad can link straight to your store, your page or your event.</li>
       <li>Local businesses and independent brands get first shot when slots open.</li>
     </ul>
@@ -3280,18 +3283,19 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
   </div>
   <form class="panel" method="post" action="/admin/ads" enctype="multipart/form-data" style="border-color:rgba(255,120,190,.55)">
     <h2>📣 Stage ads</h2>
-    <p class="sub" style="margin-top:0">Ads play <b style="color:#fff">inside the Stage rotation, between songs</b> — one ad after every 5 songs. Upload an <b style="color:#fff">image</b> or a <b style="color:#fff">video no longer than 30 seconds</b>. When the ad ends, the rotation picks right back up and the next song's countdown keeps running. Ads never touch scores or ranks.</p>
+    <p class="sub" style="margin-top:0">Ads play <b style="color:#fff">inside the Stage rotation, between songs</b> — one ad after every 5 songs, <b style="color:#fff">on the channel you pick</b>: a Pop ad runs on the Pop stage, a Hip-Hop ad on the Hip-Hop stage. "All channels" runs everywhere, and the Main Stage rotates every ad. Upload an <b style="color:#fff">image</b> or a <b style="color:#fff">video no longer than 30 seconds</b>. When the ad ends, the rotation picks right back up and the next song's countdown keeps running. Ads never touch scores or ranks.</p>
     <div class="field"><label for="adfile">Ad file — image or video (max 30 seconds)</label><input id="adfile" type="file" name="adfile" accept="image/*,video/mp4,video/webm,video/quicktime" required></div>
     <div class="grid">
       <div class="field"><label for="adtitle">Title (your label for it)</label><input id="adtitle" name="title" maxlength="80" placeholder="e.g. Mesquite BBQ Weekend"></div>
       <div class="field"><label for="adseconds">Image ads: seconds on screen</label><select id="adseconds" name="seconds"><option value="5">5 seconds</option><option value="8" selected>8 seconds</option><option value="10">10 seconds</option><option value="15">15 seconds</option><option value="20">20 seconds</option><option value="30">30 seconds</option></select></div>
+      <div class="field"><label for="adgenre">Run this ad on</label><select id="adgenre" name="genre"><option value="All">All channels (incl. Main Stage)</option>${GENRES.map((g) => `<option value="${esc(g)}">${esc(g)} only</option>`).join("")}</select></div>
     </div>
     <div class="field"><label for="adlink">Tap/click takes people here (optional)</label><input id="adlink" name="link_url" maxlength="300" placeholder="https://..."></div>
     <button class="btn primary">Upload ad</button>
   </form>
   ${adsList.length ? `<div class="panel"><h2>Ads on file (${adsList.length})</h2>${adsList.map((a) => `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
-      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.kind === 'video' ? '🎬' : '🖼️'} <b style="color:#fff">${esc(a.title || a.file_path.split('/').pop())}</b> <span class="note">${a.kind === 'video' ? 'video' : 'image · ' + a.seconds + 's'} · ${a.active ? '<b style="color:#9fe8b6">IN ROTATION</b>' : 'off'}</span></span>
+      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${a.kind === 'video' ? '🎬' : '🖼️'} <b style="color:#fff">${esc(a.title || a.file_path.split('/').pop())}</b> <span class="note">${a.kind === 'video' ? 'video' : 'image · ' + a.seconds + 's'} · 🎯 ${!a.genre || a.genre === 'All' ? 'All channels' : a.genre} · ${a.active ? '<b style="color:#9fe8b6">IN ROTATION</b>' : 'off'}</span></span>
       <span style="display:flex;gap:6px;flex:none">
         <form method="post" action="/admin/ads/${a.id}/toggle"><button class="mini">${a.active ? 'Pause' : 'Run it'}</button></form>
         <form method="post" action="/admin/ads/${a.id}/delete" onsubmit="return confirm('Delete this ad for good?')"><button class="mini">Delete</button></form>

@@ -160,6 +160,7 @@ function openDb() {
       link_url TEXT,
       title TEXT,
       seconds INTEGER NOT NULL DEFAULT 8,    -- image ads: seconds on screen
+      genre TEXT NOT NULL DEFAULT 'All',     -- channel targeting: a GENRES value, or 'All'
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -196,6 +197,10 @@ function openDb() {
 
   // Migrations for a DB created by an earlier build (seed rebuilds from
   // scratch, but a live DB should survive a code update too).
+  const adCols = db.prepare("PRAGMA table_info(ads)").all().map((r) => r.name);
+  if (adCols.length && !adCols.includes("genre")) {
+    db.exec("ALTER TABLE ads ADD COLUMN genre TEXT NOT NULL DEFAULT 'All'");
+  }
   const userCols = db.prepare("PRAGMA table_info(users)").all().map((r) => r.name);
   const addUserCol = (name, ddl) => {
     if (!userCols.includes(name)) db.exec(`ALTER TABLE users ADD COLUMN ${ddl}`);
