@@ -1282,8 +1282,11 @@ app.get("/", (req, res) => {
   (function () {
     var v = document.getElementById("heroVid"), b = document.getElementById("heroSound");
     if (!v || !b) return;
+    // One sound at a time on this page: the Stage player and the welcome
+    // video both carry the DJ's voice — if both play, he sounds stacked.
+    window.__muteHero = function () { if (!v.muted) { v.muted = true; b.textContent = "🔊 SOUND ON"; } };
     b.addEventListener("click", function () {
-      if (v.muted) { v.muted = false; try { v.currentTime = 0; } catch (e) {} var p = v.play(); if (p && p.catch) p.catch(function () {}); b.textContent = "🔈 SOUND OFF"; }
+      if (v.muted) { if (window.__stopStage) window.__stopStage(); v.muted = false; try { v.currentTime = 0; } catch (e) {} var p = v.play(); if (p && p.catch) p.catch(function () {}); b.textContent = "🔈 SOUND OFF"; }
       else { v.muted = true; b.textContent = "🔊 SOUND ON"; }
     });
   })();
@@ -1521,6 +1524,9 @@ app.get("/", (req, res) => {
     audio.onerror = () => { if (announcing && my === djChain) finish(); };
     step();
   }
+  // The welcome video's SOUND ON button calls this: stop the Stage dead
+  // (pending announcements invalidated) so the two never play at once.
+  window.__stopStage = function(){ loadSeq++; djStop(); try { audio.pause(); } catch (e) {} };
   const rings = [
     { el: 'ringA', now: 'ringNowA', from: 0, to: 10, front: 0, dir: 1, hover: false, ang: 0, mode: 'spin', hold: false, dragging: false, resumeT: null },
     { el: 'ringB', now: 'ringNowB', from: 10, to: 20, front: 0, dir: -1, hover: false, ang: 0, mode: 'spin', hold: false, dragging: false, resumeT: null },
@@ -1702,7 +1708,7 @@ app.get("/", (req, res) => {
     $('npPick').hidden = !t.pick;
     $('barThumb').src = t.cover; $('barTitle').textContent = t.title; $('barArtist').textContent = t.artist;
     syncRings();
-    if (autoplay) { const seq = ++loadSeq; djAnnounce(t, () => { if (seq === loadSeq) audio.play().catch(() => {}); }); }
+    if (autoplay) { if (window.__muteHero) window.__muteHero(); const seq = ++loadSeq; djAnnounce(t, () => { if (seq === loadSeq) audio.play().catch(() => {}); }); }
   }
   document.querySelectorAll('#channelTabs button').forEach((b) => {
     b.addEventListener('click', () => {
@@ -1716,6 +1722,7 @@ app.get("/", (req, res) => {
     });
   });
   $('playBtn').addEventListener('click', () => {
+    if (window.__muteHero) window.__muteHero();
     if (!audio.paused) { audio.pause(); return; }
     if (!previewOn && audio.currentTime === 0 && audio.src) {
       const t = PLAYLISTS[ch][idx];
