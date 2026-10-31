@@ -1315,6 +1315,15 @@ app.get("/", (req, res) => {
   const tabs = channels.map((c, i) =>
     `<button type="button" data-ch="${i}" class="${i === 0 ? "active" : ""}">${esc(c.label)}</button>`).join("");
   const body = `
+  <div class="plj-wrap"><style>
+  .plj-wrap { text-align:center; margin:12px 0 2px; }
+  .plj { display:inline-flex; align-items:center; gap:11px; font-family:inherit; font-weight:900; letter-spacing:2.5px; font-size:15px; color:#46ff7d; background:linear-gradient(180deg,#1c2635,#090e16); border:none; border-radius:999px; padding:12px 24px; cursor:pointer; box-shadow:0 0 0 2px rgba(216,230,255,.9), 0 0 20px rgba(57,255,106,.35), inset 0 1px 0 rgba(255,255,255,.4), inset 0 -8px 14px rgba(0,0,0,.55); text-shadow:0 0 8px rgba(57,255,106,.65); }
+  .plj:active { transform:scale(.97); }
+  .plj-dot { width:10px; height:10px; border-radius:50%; background:#39ff6a; box-shadow:0 0 12px #39ff6a; animation:pljblink 1.05s steps(1) infinite; }
+  @keyframes pljblink { 0%,55% { opacity:1; } 56%,100% { opacity:.12; } }
+  .plj-arrow { font-size:12px; color:#d8e6ff; text-shadow:0 0 6px rgba(216,230,255,.8); animation:pljbob 1.2s ease-in-out infinite; }
+  @keyframes pljbob { 0%,100% { transform:translateY(-1.5px); } 50% { transform:translateY(2px); } }
+  </style><button type="button" class="plj" id="playlistJump" aria-label="Jump to the live playlist"><span class="plj-arrow">▼</span><span class="plj-dot"></span>PLAYLIST LIVE<span class="plj-arrow">▼</span></button></div>
   <div class="herovid" style="position:relative"><video id="heroVid" src="/hero.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video><button type="button" id="heroSound" aria-label="Turn the welcome video sound on or off" style="position:absolute;right:10px;bottom:10px;background:rgba(10,10,18,.72);border:1px solid rgba(255,190,60,.65);color:#ffd98a;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;letter-spacing:.4px;cursor:pointer">🔊 SOUND ON</button></div>
   <script>
   (function () {
@@ -1374,6 +1383,19 @@ app.get("/", (req, res) => {
     // unless its sound was on) — the Stage stays as the visitor left it.
     document.addEventListener("visibilitychange", function () {
       if (!document.hidden && v.paused) { var p3 = v.play(); if (p3 && p3.catch) p3.catch(function () {}); }
+    });
+    // PLAYLIST LIVE jump button (above the video): one tap glides down
+    // to the Stage, the video's sound cuts off, and the current song
+    // starts if the playlist isn't already playing.
+    var pj = document.getElementById("playlistJump");
+    if (pj) pj.addEventListener("click", function () {
+      scrolledMute = false;
+      if (!v.muted) { v.muted = true; b.textContent = "🔊 SOUND ON"; }
+      var tgt = document.getElementById("channelTabs");
+      if (tgt) tgt.scrollIntoView({ behavior: "smooth", block: "start" });
+      var busy = false;
+      try { busy = !!(window.__stageAudible && window.__stageAudible()); } catch (e) {}
+      if (!busy) { var pb = document.getElementById("playBtn"); if (pb) pb.click(); }
     });
   })();
   </script>
