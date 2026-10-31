@@ -9,6 +9,7 @@ const { execFileSync } = require("node:child_process");
 const { openDb } = require("./db");
 const { GENRES, OVERALL, CATEGORIES, regionForState, localKey } = require("./config");
 const { judgeAudioFile } = require("./judge");
+const { judgeMeasuredFile } = require("./judge2");
 const { recalc, latestChartDate, previousChartDate, ensureCurrent, todayStr } = require("./charts");
 
 const PORT = process.env.PORT || 8077;
@@ -2413,7 +2414,7 @@ function isRadioQuality(q) {
   return false;
 }
 
-app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cover", maxCount: 1 }]), (req, res) => {
+app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cover", maxCount: 1 }]), async (req, res) => {
   const audioFile = req.files?.audio?.[0];
   const coverFile = req.files?.cover?.[0];
   const cleanup = () => {
@@ -2453,7 +2454,12 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   ).run(user.id, title.trim(), genre, audioWeb, coverWeb, lyrics ? String(lyrics) : null, user.email);
   const songId = Number(songInfo.lastInsertRowid);
 
-  const judged = judgeAudioFile(audioFile.path, coverFile.path);
+  // Judge v2 (measured): the spectrum analyzer reads the real file and the
+  // genre templates score it. If a file can't be measured, Judge v1 covers
+  // that one song so an upload never fails on the judging step.
+  let judged = null;
+  try { judged = await judgeMeasuredFile(audioFile.path, genre, coverFile.path); } catch { judged = null; }
+  if (!judged) judged = judgeAudioFile(audioFile.path, coverFile.path);
   const catCols = CATEGORIES.map((c) => c.key).join(", ");
   const placeholders = CATEGORIES.map(() => "?").join(", ");
   db.prepare(
