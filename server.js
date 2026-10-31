@@ -730,6 +730,10 @@ window.__BUILD = "${BUILD}";
     if (window.__stopStage) window.__stopStage();
     if (window.__muteHero) window.__muteHero();
     document.querySelectorAll("audio,video").forEach(function (el) { try { el.pause(); } catch (err) {} });
+    // Kill any floating picture-in-picture window too — that little
+    // corner player WAS the doubled soundtrack: the video popped out
+    // of the page and kept playing over the page's own copy.
+    try { if (document.pictureInPictureElement && document.exitPictureInPicture) document.exitPictureInPicture().catch(function () {}); } catch (err) {}
   }
   document.addEventListener("visibilitychange", function () { if (document.hidden) stopEverything(); });
   window.addEventListener("pagehide", stopEverything);
@@ -1161,7 +1165,7 @@ function videoKindLabel(v) {
 function videoDisplayHtml(v) {
   return `<div class="panel">
     <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">${videoKindLabel(v)}</div>
-    <video controls preload="metadata" playsinline src="${esc(v.video_path)}" style="width:100%;border-radius:12px;margin-top:10px;background:#000"></video>
+    <video controls preload="metadata" playsinline disablepictureinpicture src="${esc(v.video_path)}" style="width:100%;border-radius:12px;margin-top:10px;background:#000"></video>
   </div>`;
 }
 
@@ -1177,7 +1181,7 @@ function videoPanelHtml(user, from) {
   <p class="sub">One video. Make it count — the music video for your song, or sit down and tell the story of it. Your video lives on your profile page and on that song's page.</p>`;
   if (v) {
     inner += `<div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">${videoKindLabel(v)}</div>
-    <video controls preload="metadata" playsinline src="${esc(v.video_path)}" style="width:100%;border-radius:12px;margin-top:8px;background:#000"></video>
+    <video controls preload="metadata" playsinline disablepictureinpicture src="${esc(v.video_path)}" style="width:100%;border-radius:12px;margin-top:8px;background:#000"></video>
     <p class="note">Uploading a new video below replaces this one.</p>`;
   }
   if (!liveSongs.length) {
@@ -1388,7 +1392,7 @@ app.get("/", (req, res) => {
   .plj-arrow { font-size:12px; color:#d8e6ff; text-shadow:0 0 6px rgba(216,230,255,.8); animation:pljbob 1.2s ease-in-out infinite; }
   @keyframes pljbob { 0%,100% { transform:translateY(-1.5px); } 50% { transform:translateY(2px); } }
   </style><button type="button" class="plj" id="playlistJump" aria-label="Jump to the live playlist"><span class="plj-arrow">▼</span><span class="plj-dot"></span>PLAYLIST LIVE<span class="plj-arrow">▼</span></button></div>
-  <div class="herovid" style="position:relative"><video id="heroVid" src="/hero.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video><button type="button" id="heroSound" aria-label="Turn the welcome video sound on or off" style="position:absolute;right:10px;bottom:10px;background:rgba(10,10,18,.72);border:1px solid rgba(255,190,60,.65);color:#ffd98a;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;letter-spacing:.4px;cursor:pointer">🔊 SOUND ON</button></div>
+  <div class="herovid" style="position:relative"><video id="heroVid" src="/hero.mp4" poster="/hero-poster.jpg" autoplay muted loop playsinline disablepictureinpicture preload="auto" aria-label="Top 20 welcome video — artists performing on stage"></video><button type="button" id="heroSound" aria-label="Turn the welcome video sound on or off" style="position:absolute;right:10px;bottom:10px;background:rgba(10,10,18,.72);border:1px solid rgba(255,190,60,.65);color:#ffd98a;border-radius:999px;padding:8px 14px;font-size:12.5px;font-weight:800;letter-spacing:.4px;cursor:pointer">🔊 SOUND ON</button></div>
   <script>
   (function () {
     var v = document.getElementById("heroVid"), b = document.getElementById("heroSound");
@@ -1562,7 +1566,7 @@ app.get("/", (req, res) => {
       <span id="adCount" style="color:#bcd;font-size:12px"></span>
     </div>
     <img id="adImg" alt="Advertisement" style="display:none;width:100%;max-height:340px;object-fit:contain;border-radius:10px;background:#000">
-    <video id="adVid" playsinline style="display:none;width:100%;max-height:340px;border-radius:10px;background:#000"></video>
+    <video id="adVid" playsinline disablepictureinpicture style="display:none;width:100%;max-height:340px;border-radius:10px;background:#000"></video>
     <p class="note" style="margin:8px 0 0">Back to the countdown right after this.</p>
   </div>
   <div class="playerbar"><div class="panel">
