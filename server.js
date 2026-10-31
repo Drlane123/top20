@@ -1206,7 +1206,7 @@ app.get("/", (req, res) => {
   </div>
   <script>
   (function () {
-    var target = new Date("2026-11-30T06:00:00Z").getTime(); // Nov 30, 2026, 12:00 AM Central
+    var target = new Date("2026-12-15T06:00:00Z").getTime(); // Dec 15, 2026, 12:00 AM Central (45-day rollout countdown, owner Oct 31)
     function pad(n) { return (n < 10 ? "0" : "") + n; }
     function tick() {
       var left = target - Date.now();
@@ -1228,7 +1228,7 @@ app.get("/", (req, res) => {
     tick();
   })();
   </script>
-  <div style="margin:12px 0 2px;padding:10px 14px;border:1px solid rgba(255,190,60,.55);border-radius:12px;background:linear-gradient(180deg,rgba(255,170,40,.14),rgba(255,170,40,.05));color:#ffd98a;font-size:13.5px;line-height:1.45;text-align:center">🎧 <b style="color:#fff">STAGE SHOWCASE</b> — these covers are on display for show right now. <b style="color:#fff">The Top 20 starts airing within 30 days of launch.</b> Artists — get your song uploaded and judged now, and be ready when the real rotation begins.</div>
+  <div style="margin:12px 0 2px;padding:10px 14px;border:1px solid rgba(255,190,60,.55);border-radius:12px;background:linear-gradient(180deg,rgba(255,170,40,.14),rgba(255,170,40,.05));color:#ffd98a;font-size:13.5px;line-height:1.45;text-align:center">🎧 <b style="color:#fff">STAGE SHOWCASE</b> — these covers are on display for show right now. <b style="color:#fff">The Top 20 starts airing within 45 days of launch.</b> Artists — get your song uploaded and judged now, and be ready when the real rotation begins.</div>
   <div class="tabs" id="channelTabs">${tabs}</div>
   ${first ? `
   <div class="stagegrid">
