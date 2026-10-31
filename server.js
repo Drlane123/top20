@@ -39,6 +39,9 @@ app.get("/version", (req, res) => {
 // (Seal commit Oct 31: forces a clean rebuild from the complete hero v5
 // part set — an intermediate deploy had mixed v5 parts 1-4 with the old
 // part 5 and served a scrambled, unplayable video file.)
+// (Second seal, Oct 31 evening: the new-soundtrack swap stitched again —
+// an intermediate deploy mixed new parts 1-2 with silent-cut parts 3-5.
+// The owner called this failure mode himself: the pieces are the risk.)
 const HERO = (() => {
   try {
     const parts = [];
