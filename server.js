@@ -1364,7 +1364,7 @@ app.get("/", (req, res) => {
     <button type="button" class="playbtn" id="playBtn" aria-label="Play or pause">▶</button>
     <button type="button" id="djBtn" aria-label="Toggle the DJ announcement voice" style="flex:0 0 auto;background:rgba(255,190,60,.12);border:1px solid rgba(255,190,60,.45);color:#ffd98a;border-radius:999px;padding:7px 11px;font-size:11.5px;font-weight:800;letter-spacing:.4px;cursor:pointer">🎙️ DJ VOICE ON</button>
     <audio id="stageAudio" preload="none"></audio>
-    <audio id="djAudio" preload="auto"></audio>
+
   </div></div>
   <script>
   const PLAYLISTS = ${JSON.stringify(channels.map((c) => c.list)).replace(/</g, "\\u003c")};
@@ -1455,28 +1455,37 @@ app.get("/", (req, res) => {
   }
   // Recorded DJ announcements (the owner's chosen voice): rank clip +
   // "title by artist" clip + days clip + the "Hot Top 20 — non-stop!"
-  // closer, played in order before the song. If any clip is missing (a
-  // brand-new song, a chart run past 60 days), the phone voice reads it.
-  const djAudioEl = $('djAudio');
-  let djChain = 0;
-  function djStop(){ djChain++; if (djAudioEl) { try { djAudioEl.pause(); djAudioEl.removeAttribute('src'); djAudioEl.load(); } catch (e) {} } }
+  // closer, played in order before the song ON THE STAGE PLAYER ITSELF.
+  // (A separate DJ audio element got blocked by phone autoplay rules at
+  // automatic song changes — the tap that starts it is long past — which
+  // left the DJ silent; the player element the listener started with a
+  // tap stays allowed.) If any clip is missing (a brand-new song, a
+  // chart run past 60 days), the phone voice reads it instead.
+  let djChain = 0, announcing = false, annStep = null;
+  function djStop(){ djChain++; announcing = false; annStep = null; }
   function djAnnounce(t, done){
     if (!djOn || !t) { done(); return; }
     const daysKey = t.fresh ? 'days-fresh' : (t.days === 1 ? 'days-one' : (t.days >= 2 && t.days <= 60 ? 'days-' + t.days : null));
     const keys = ['rank-' + t.rank, 'title-' + t.id, daysKey, 'closer'];
-    if (!djAudioEl || keys.some((k) => !k || ANN_KEYS.indexOf(k) === -1)) { djSpeak(t, done); return; }
+    if (keys.some((k) => !k || ANN_KEYS.indexOf(k) === -1)) { djSpeak(t, done); return; }
     const my = ++djChain;
     let i = 0, fired = false;
-    const go = () => { if (!fired) { fired = true; done(); } };
-    const hard = setTimeout(() => { if (my === djChain) go(); }, 12000);
+    const hard = setTimeout(() => { if (my === djChain) finish(); }, 12000);
+    function finish(){
+      if (fired) return; fired = true;
+      clearTimeout(hard);
+      if (my === djChain) { announcing = false; annStep = null; audio.onerror = null; audio.src = t.audio; }
+      done();
+    }
     const step = () => {
-      if (fired || my !== djChain) { clearTimeout(hard); return; }
-      if (i >= keys.length) { clearTimeout(hard); go(); return; }
-      djAudioEl.src = '/ann/' + keys[i] + '.mp3'; i++;
-      const p = djAudioEl.play(); if (p && p.catch) p.catch(() => { clearTimeout(hard); go(); });
+      if (fired || my !== djChain) return;
+      if (i >= keys.length) { finish(); return; }
+      audio.src = '/ann/' + keys[i] + '.mp3'; i++;
+      const p = audio.play(); if (p && p.catch) p.catch(() => finish());
     };
-    djAudioEl.onended = step;
-    djAudioEl.onerror = () => { clearTimeout(hard); go(); };
+    announcing = true;
+    annStep = step;
+    audio.onerror = () => { if (announcing && my === djChain) finish(); };
     step();
   }
   const rings = [
@@ -1621,6 +1630,11 @@ app.get("/", (req, res) => {
     if (previewOn) { const ua = $('upNextA'), ub = $('upNextB'); if (ua) ua.hidden = true; if (ub) ub.hidden = true; anc = null; }
     if (anc) {
       const t = anc.list[anc.local];
+      if (announcing) {
+        $(anc.r.now).innerHTML = '🎙️ <b>DJ announcing:</b> #' + t.rank + ' — ' + t.title + ' · ' + t.artist;
+        const ua2 = $('upNextA'), ub2 = $('upNextB'); if (ua2) ua2.hidden = true; if (ub2) ub2.hidden = true;
+        return;
+      }
       const dur = audio.duration || 0, cur = audio.currentTime || 0;
       const pct = dur ? Math.min(100, Math.round(cur / dur * 100)) : 0;
       $(anc.r.now).innerHTML = (audio.paused ? 'Loaded: ' : '&#9654; Playing: ') + '<b>#' + t.rank + ' — ' + t.title + '</b> · ' + t.artist +
@@ -1685,7 +1699,7 @@ app.get("/", (req, res) => {
   djLabel();
   audio.addEventListener('play', () => {
     $('playBtn').textContent = '❚❚';
-    if (audio.currentSrc !== lastCounted) {
+    if (!announcing && audio.currentSrc !== lastCounted) {
       lastCounted = audio.currentSrc;
       const t = PLAYLISTS[ch][idx];
       if (t) fetch('/api/play/' + t.id, { method: 'POST' }).catch(() => {});
@@ -1693,6 +1707,7 @@ app.get("/", (req, res) => {
   });
   audio.addEventListener('pause', () => { $('playBtn').textContent = '▶'; });
   audio.addEventListener('ended', () => {
+    if (announcing && annStep) { annStep(); return; }
     if (previewOn) { previewOn = false; return; }
     if (adBusy) return;
     const next = (idx + 1) % PLAYLISTS[ch].length;
