@@ -658,6 +658,17 @@ if ('serviceWorker' in navigator) {
     if (window.__muteHero) window.__muteHero();
     document.querySelectorAll("audio,video").forEach(function (el) { if (el.id !== "heroVid") { try { el.pause(); } catch (err) {} } });
   });
+  // When the site is left — tab switched, app switched, page closed —
+  // EVERYTHING stops (owner: a leftover media player kept playing
+  // outside the website). Nothing on this site is meant to play in the
+  // background.
+  function stopEverything() {
+    if (window.__stopStage) window.__stopStage();
+    if (window.__muteHero) window.__muteHero();
+    document.querySelectorAll("audio,video").forEach(function (el) { try { el.pause(); } catch (err) {} });
+  }
+  document.addEventListener("visibilitychange", function () { if (document.hidden) stopEverything(); });
+  window.addEventListener("pagehide", stopEverything);
 })();
 </script>
 </body></html>`;
@@ -1312,9 +1323,57 @@ app.get("/", (req, res) => {
     // One sound at a time on this page: the Stage player and the welcome
     // video both carry the DJ's voice — if both play, he sounds stacked.
     window.__muteHero = function () { if (!v.muted) { v.muted = true; b.textContent = "🔊 SOUND ON"; } };
+    // Sound model (owner): phones forbid any website from playing sound
+    // before the visitor's first touch, so the video's sound turns ON at
+    // that first touch anywhere on the page — no button hunt — unless
+    // the visitor has turned it off, a choice the site remembers.
+    var choseOff = false;
+    try { choseOff = localStorage.getItem("heroSound") === "off"; } catch (e) {}
+    function soundOn() {
+      if (window.__stopStage) window.__stopStage();
+      v.muted = false;
+      try { v.currentTime = 0; } catch (e) {}
+      var p = v.play(); if (p && p.catch) p.catch(function () {});
+      b.textContent = "🔈 SOUND OFF";
+    }
+    function soundOff() { v.muted = true; b.textContent = "🔊 SOUND ON"; }
     b.addEventListener("click", function () {
-      if (v.muted) { if (window.__stopStage) window.__stopStage(); v.muted = false; try { v.currentTime = 0; } catch (e) {} var p = v.play(); if (p && p.catch) p.catch(function () {}); b.textContent = "🔈 SOUND OFF"; }
-      else { v.muted = true; b.textContent = "🔊 SOUND ON"; }
+      if (v.muted) { try { localStorage.removeItem("heroSound"); } catch (e) {} choseOff = false; soundOn(); }
+      else { try { localStorage.setItem("heroSound", "off"); } catch (e) {} choseOff = true; soundOff(); }
+    });
+    if (!choseOff) {
+      var arm = function (e) {
+        var t = e.target;
+        if (t && t.closest && t.closest("button, a, input, select, textarea, audio, video")) return;
+        document.removeEventListener("pointerdown", arm, true);
+        if (v.muted) soundOn();
+      };
+      document.addEventListener("pointerdown", arm, true);
+    }
+    // The video's sound zone is the top of the page (owner): scroll down
+    // past the video and its sound cuts off by itself — the video keeps
+    // playing on mute and the Stage owns the sound below. Scroll back up
+    // and, if the Stage isn't playing and the visitor hasn't chosen off,
+    // the sound rejoins the video right where it is.
+    var scrolledMute = false;
+    if ('IntersectionObserver' in window) {
+      var io = new IntersectionObserver(function (entries) {
+        var en = entries[0]; if (!en) return;
+        if (!en.isIntersecting) {
+          if (!v.muted) { v.muted = true; b.textContent = "🔊 SOUND ON"; scrolledMute = true; }
+        } else if (scrolledMute) {
+          scrolledMute = false;
+          var stageBusy = false;
+          try { stageBusy = !!(window.__stageAudible && window.__stageAudible()); } catch (e) {}
+          if (!choseOff && !stageBusy && v.muted) { v.muted = false; var p2 = v.play(); if (p2 && p2.catch) p2.catch(function () {}); b.textContent = "🔈 SOUND OFF"; }
+        }
+      }, { threshold: 0.12 });
+      io.observe(v);
+    }
+    // Coming back to the tab: the video itself resumes (still muted
+    // unless its sound was on) — the Stage stays as the visitor left it.
+    document.addEventListener("visibilitychange", function () {
+      if (!document.hidden && v.paused) { var p3 = v.play(); if (p3 && p3.catch) p3.catch(function () {}); }
     });
   })();
   </script>
@@ -1554,6 +1613,7 @@ app.get("/", (req, res) => {
   // The welcome video's SOUND ON button calls this: stop the Stage dead
   // (pending announcements invalidated) so the two never play at once.
   window.__stopStage = function(){ loadSeq++; djStop(); try { audio.pause(); } catch (e) {} };
+  window.__stageAudible = function(){ return !audio.paused; };
   const rings = [
     { el: 'ringA', now: 'ringNowA', from: 0, to: 10, front: 0, dir: 1, hover: false, ang: 0, mode: 'spin', hold: false, dragging: false, resumeT: null },
     { el: 'ringB', now: 'ringNowB', from: 10, to: 20, front: 0, dir: -1, hover: false, ang: 0, mode: 'spin', hold: false, dragging: false, resumeT: null },
