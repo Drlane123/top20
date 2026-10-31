@@ -544,7 +544,7 @@ ${body}
 <footer class="site">TOP 20 — the Stage plays only the Top 20, 24/7.<br>
 Fall off the chart and the rotation moves on. Check your rank on the Dashboard.<br>
 <a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">How it works →</a><br>
-<a href="/admin/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">Staff Login</a></footer>
+<a href="/admin/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">Staff Login</a> · <a href="/dj/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">DJ Login</a></footer>
 </div>
 <div class="installbar" id="installBar" role="dialog" aria-label="Install Top 20">
   <img src="/icons/icon-192x192.png" alt="">
@@ -2758,6 +2758,182 @@ app.post("/admin/logout", (req, res) => {
   res.redirect("/");
 });
 
+/* --------------------- DJ panel (weekly Hot Picks) --------------------- */
+// A SEPARATE login for the DJ panel only (owner request, Oct 31 2026):
+// one shared DJ password that the owner creates/sets inside his admin
+// area and hands to his DJs. The DJ session opens ONLY the picks panel
+// below — never placements, never the admin code. Same storage pattern
+// as the owner code: only a salted SHA-256 fingerprint is kept (a
+// starter fingerprint is baked in; the owner's saved password in
+// admin_config wins), and the session cookie is an HMAC keyed by the
+// active fingerprint, so changing the password logs every DJ out.
+const DJ_PASSWORD_STARTER = { salt: "9f2c41aa07b3d5e8", hash: "823810b1a960791d9dac2aa4a8c714c492c999bbc791ae94e95dbdc5f390325c" };
+function activeDjRecord() {
+  try {
+    const row = db.prepare("SELECT value FROM admin_config WHERE key = 'dj_password'").get();
+    if (row && row.value) return JSON.parse(row.value);
+  } catch (e) { /* table may not exist on a pre-update DB */ }
+  return DJ_PASSWORD_STARTER;
+}
+function verifyDjPassword(pw) {
+  const s = String(pw || "");
+  if (s.length < 6 || s.length > 64) return false;
+  const rec = activeDjRecord();
+  const got = Buffer.from(hashAdminCode(rec.salt, s));
+  const want = Buffer.from(rec.hash);
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+function djToken() {
+  return crypto.createHmac("sha256", activeDjRecord().hash).update("top20-dj-v1").digest("hex");
+}
+function isDj(req) {
+  if (isAdmin(req)) return true; // the owner can always open the panel
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === "t20_dj") {
+      const got = Buffer.from(v.join("="));
+      const want = Buffer.from(djToken());
+      return got.length === want.length && crypto.timingSafeEqual(got, want);
+    }
+  }
+  return false;
+}
+function requireDj(req, res, next) {
+  if (isDj(req)) return next();
+  return res.redirect("/dj/login");
+}
+const djLoginFails = new Map();
+function djLoginLocked(ip) {
+  const r = djLoginFails.get(ip);
+  return r && r.until && r.until > Date.now();
+}
+function noteDjLoginFail(ip) {
+  const r = djLoginFails.get(ip) || { fails: 0, until: 0 };
+  r.fails += 1;
+  if (r.fails >= 5) { r.until = Date.now() + 15 * 60 * 1000; r.fails = 0; }
+  djLoginFails.set(ip, r);
+}
+// Picks are entered for the NEXT Friday whose chart hasn't been dealt
+// yet (charts land at midnight, so on Friday itself the panel already
+// targets the following Friday).
+function nextFridayStr() {
+  const today = todayStr();
+  const dow = new Date(today + "T12:00:00Z").getUTCDay();
+  let delta = (5 - dow + 7) % 7;
+  if (delta === 0) delta = 7;
+  return new Date(new Date(today + "T12:00:00Z").getTime() + delta * 86400000).toISOString().slice(0, 10);
+}
+function prettyDate(s) {
+  return new Date(s + "T12:00:00Z").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric", timeZone: "UTC" });
+}
+
+app.get("/dj/login", (req, res) => {
+  if (isDj(req)) return res.redirect("/dj");
+  const ip = req.ip || "x";
+  const body = `
+  <h1>🎧 DJ panel login</h1>
+  <div class="panel">
+    <form method="post" action="/dj/login">
+      <p class="sub" style="margin-top:0">For the Top 20 DJ panel. This password opens the weekly DJ's Hot Picks panel only — enter the password the owner gave you.</p>
+      ${req.query.err ? `<p class="note" style="color:#ff9d9d">That password didn't match. Try again.</p>` : ""}
+      ${djLoginLocked(ip) ? `<p class="note" style="color:#ff9d9d">Too many wrong tries — the door is locked for a few minutes.</p>` : ""}
+      <label class="sub">DJ password<br>
+      <input type="password" name="password" autocomplete="current-password" required
+        style="width:100%;padding:14px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;font-size:18px;text-align:center"></label>
+      <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Log in</button>
+    </form>
+  </div>`;
+  res.send(layout("DJ panel login", "", body));
+});
+
+app.post("/dj/login", (req, res) => {
+  const ip = req.ip || "x";
+  if (djLoginLocked(ip)) return res.redirect("/dj/login?err=1");
+  if (!verifyDjPassword(req.body.password)) { noteDjLoginFail(ip); return res.redirect("/dj/login?err=1"); }
+  djLoginFails.delete(ip);
+  res.cookie("t20_dj", djToken(), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 30 * 24 * 3600 * 1000 });
+  return res.redirect("/dj");
+});
+
+app.post("/dj/logout", (req, res) => {
+  res.clearCookie("t20_dj", { path: "/" });
+  res.redirect("/");
+});
+
+app.get("/dj", requireDj, (req, res) => {
+  const target = nextFridayStr();
+  const songs = db.prepare(`
+    SELECT s.id, s.title, s.genre, u.name AS artist FROM songs s
+    JOIN users u ON u.id = s.artist_id WHERE s.status = 'live' ORDER BY s.title`).all();
+  const saved = db.prepare("SELECT song_id FROM dj_picks WHERE pick_date = ? ORDER BY id").all(target).map((r) => r.song_id);
+  const current = db.prepare(`
+    SELECT p.pick_date, s.title, u.name AS artist FROM dj_picks p
+    JOIN songs s ON s.id = p.song_id JOIN users u ON u.id = s.artist_id
+    WHERE p.pick_date = (SELECT MAX(pick_date) FROM dj_picks WHERE pick_date <= ?)
+    ORDER BY p.id`).all(todayStr());
+  const sel = (slot) => `
+      <select name="pick${slot}" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        <option value="">— no pick —</option>
+        ${songs.map((s) => `<option value="${s.id}" ${saved[slot - 1] === s.id ? "selected" : ""}>${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
+      </select>`;
+  const body = `
+  <h1>🎧 DJ's Hot Picks — panel</h1>
+  <p class="sub">Every Friday the panel picks up to <b style="color:#fff">3 songs</b> that are already hot. Those picks step into the <b style="color:#fff">National Overall Top 20</b> when Friday's chart lands at midnight, wearing the gold 🎧 DJ Pick badge. From the next day the algorithm treats a pick like any other song. Picks can be changed any time before that Friday midnight.</p>
+  ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
+  <div class="panel">
+    <h2 style="margin-top:0">Picks for ${esc(prettyDate(target))}</h2>
+    <form method="post" action="/dj/picks">
+      <label class="sub">Pick 1<br>${sel(1)}</label>
+      <label class="sub">Pick 2<br>${sel(2)}</label>
+      <label class="sub">Pick 3<br>${sel(3)}</label>
+      <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Save the picks</button>
+    </form>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">On the chart now</h2>
+    ${current.length ? `<p class="sub" style="margin:0">The live picks (entered for ${esc(prettyDate(current[0].pick_date))}):</p>
+    ${current.map((c, i) => `<p class="sub" style="margin:6px 0 0"><b style="color:#fff">${i + 1}. ${esc(c.title)}</b> — ${esc(c.artist)}</p>`).join("")}` : `<p class="sub" style="margin:0">No picks are live right now.</p>`}
+  </div>
+  <form method="post" action="/dj/logout">
+    <button type="submit" style="padding:8px 16px;border-radius:8px;border:1px solid #3a4a6b;background:transparent;color:#bcd;font-weight:700;cursor:pointer">Log out</button>
+  </form>`;
+  res.send(layout("DJ's Hot Picks panel", "", body));
+});
+
+app.post("/dj/picks", requireDj, (req, res) => {
+  const target = nextFridayStr();
+  const ids = [];
+  for (const k of ["pick1", "pick2", "pick3"]) {
+    const n = Number(req.body[k]);
+    if (n > 0 && !ids.includes(n)) ids.push(n);
+  }
+  const live = ids.filter((id) => db.prepare("SELECT id FROM songs WHERE id = ? AND status = 'live'").get(id));
+  db.exec("BEGIN IMMEDIATE");
+  try {
+    db.prepare("DELETE FROM dj_picks WHERE pick_date = ?").run(target);
+    const ins = db.prepare("INSERT INTO dj_picks (song_id, pick_date) VALUES (?, ?)");
+    for (const id of live) ins.run(id, target);
+    db.exec("COMMIT");
+  } catch (e) { db.exec("ROLLBACK"); throw e; }
+  const msg = live.length
+    ? `Saved ${live.length} pick${live.length === 1 ? "" : "s"} for ${prettyDate(target)}. They step into the National Overall Top 20 when that chart lands at midnight.`
+    : `Picks cleared for ${prettyDate(target)} — no DJ picks will step in that Friday.`;
+  return res.redirect("/dj?msg=" + encodeURIComponent(msg));
+});
+
+// The owner creates/changes the DJ password from inside his admin area
+// and hands it to his DJs. Changing it logs every DJ out.
+app.post("/admin/dj-password", requireAdmin, (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const n1 = String(req.body.dj_password || ""), n2 = String(req.body.dj_password2 || "");
+  if (n1.length < 6) return back("The DJ password needs at least 6 characters.");
+  if (n1 !== n2) return back("The DJ password didn't match itself — type it the same way twice.");
+  const salt = crypto.randomBytes(8).toString("hex");
+  const rec = { salt, hash: hashAdminCode(salt, n1) };
+  db.prepare("INSERT INTO admin_config (key, value) VALUES ('dj_password', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(rec));
+  return back("The DJ password is set. Give it to your DJs — they log in at the DJ Login link at the bottom of the site. Changing it logs every DJ out.");
+});
+
 // The placement tool: pick any song already uploaded and live, pick a
 // chart and a position, and the song is pinned there on every chart
 // from today until the placement ends or is removed. Scores are never
@@ -2821,6 +2997,18 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
         <button type="submit" style="padding:8px 16px;border-radius:8px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">Remove placement</button>
       </form>
     </div>`).join("") : `<p class="sub">No placements yet.</p>`}
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">🎧 DJ panel access</h2>
+    <p class="sub">Your DJs get their OWN login that opens <b style="color:#fff">only</b> the weekly DJ's Hot Picks panel — they pick the 3 songs for Friday there. They never see placements or anything else in the admin. Set the DJ password here and hand it to your DJs; they log in with the <b style="color:#fff">DJ Login</b> link at the bottom of any page. Changing the password logs every DJ out.</p>
+    <form method="post" action="/admin/dj-password">
+      <label class="sub">New DJ password (6+ characters)<br>
+      <input type="password" name="dj_password" required style="width:240px;padding:12px;margin:6px 0 10px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
+      <label class="sub">New DJ password again<br>
+      <input type="password" name="dj_password2" required style="width:240px;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
+      <button type="submit" style="padding:10px 20px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Set the DJ password</button>
+    </form>
+    <p class="sub" style="margin:12px 0 0"><a href="/dj" style="color:var(--accent);font-weight:700;text-decoration:none">Open the DJ panel →</a></p>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">Your admin code</h2>
