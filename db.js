@@ -152,6 +152,14 @@ function openDb() {
     -- chart_score are never altered. Every placement is written down
     -- here (including removals, via removed_at) so the owner always has
     -- a complete record of what was placed, where, and for how long.
+    -- Owner admin code override: when the owner changes his 8-digit
+    -- admin code from inside the site, the new salted hash lands here
+    -- and wins over the starter code baked into server.js.
+    CREATE TABLE IF NOT EXISTS admin_config (
+      key TEXT PRIMARY KEY,
+      value TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS admin_placements (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       song_id INTEGER NOT NULL REFERENCES songs(id),

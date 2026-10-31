@@ -498,6 +498,7 @@ function layout(title, active, body, opts = {}) {
     ["/djs", "djs", "DJs"],
     ["/how-it-works", "how", "How It Works"],
     ["/admin/outbox", "outbox", "Outbox"],
+    ["/admin/login", "admin", "Admin"],
   ].map(([href, key, label]) =>
     `<a href="${href}" class="${active === key ? "active" : ""}">${label}</a>`).join("");
   // Open Graph + Twitter cards: pages are fully server-rendered, so links
@@ -2569,17 +2570,36 @@ app.post("/djs/:id/vote", (req, res) => {
 });
 
 /* --------------------------- Admin (owner only) --------------------------- */
-// Password-gated owner area. The password lives ONLY in the server's
-// ADMIN_PASSWORD environment variable (set by the owner in the host
-// dashboard) — it is never in the code and never in the database. The
-// login cookie is an HMAC of a fixed string keyed by that password, so
-// changing the password instantly logs everyone out.
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "";
+// Owner access is an 8-DIGIT CODE entered on the website itself, like
+// the owner's Da Muzik Box DAW — no hosting-dashboard password. Only a
+// salted SHA-256 fingerprint of the code is ever stored (a starter
+// fingerprint is baked in below; when the owner changes his code from
+// inside the admin area, the new fingerprint is saved in admin_config
+// and wins). The login cookie is an HMAC keyed by the active
+// fingerprint, so changing the code logs every old session out. Five
+// wrong tries lock the door for 15 minutes.
+const ADMIN_CODE_STARTER = { salt: "762e16443a1fd814", hash: "3db3a7fd6e0079100b83aaf09d8417e79f16b38e4d03ffeae762fdd35e92a060" };
+function activeCodeRecord() {
+  try {
+    const row = db.prepare("SELECT value FROM admin_config WHERE key = 'admin_code'").get();
+    if (row && row.value) return JSON.parse(row.value);
+  } catch (e) { /* table may not exist on a pre-update DB */ }
+  return ADMIN_CODE_STARTER;
+}
+function hashAdminCode(salt, code) {
+  return crypto.createHash("sha256").update(salt + ":" + code).digest("hex");
+}
+function verifyAdminCode(code) {
+  if (!/^\d{8}$/.test(String(code || ""))) return false;
+  const rec = activeCodeRecord();
+  const got = Buffer.from(hashAdminCode(rec.salt, String(code)));
+  const want = Buffer.from(rec.hash);
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
 function adminToken() {
-  return crypto.createHmac("sha256", ADMIN_PASSWORD).update("top20-admin-v1").digest("hex");
+  return crypto.createHmac("sha256", activeCodeRecord().hash).update("top20-admin-v1").digest("hex");
 }
 function isAdmin(req) {
-  if (!ADMIN_PASSWORD) return false;
   for (const part of String(req.headers.cookie || "").split(";")) {
     const [k, ...v] = part.trim().split("=");
     if (k === "t20_admin") {
@@ -2594,33 +2614,59 @@ function requireAdmin(req, res, next) {
   if (isAdmin(req)) return next();
   return res.redirect("/admin/login");
 }
+const loginFails = new Map(); // ip -> { fails, until }
+function loginLocked(ip) {
+  const r = loginFails.get(ip);
+  return r && r.until && r.until > Date.now();
+}
+function noteLoginFail(ip) {
+  const r = loginFails.get(ip) || { fails: 0, until: 0 };
+  r.fails += 1;
+  if (r.fails >= 5) { r.until = Date.now() + 15 * 60 * 1000; r.fails = 0; }
+  loginFails.set(ip, r);
+}
 
 app.get("/admin/login", (req, res) => {
   if (isAdmin(req)) return res.redirect("/admin/placements");
-  const body = ADMIN_PASSWORD ? `
+  const ip = req.ip || "x";
+  const body = `
   <h1>Owner login</h1>
   <div class="panel">
     <form method="post" action="/admin/login">
-      <p class="sub" style="margin-top:0">This area is for the site owner only.</p>
-      ${req.query.err ? `<p class="note" style="color:#ff9d9d">That password didn't match. Try again.</p>` : ""}
-      <label class="sub">Admin password<br>
-      <input type="password" name="password" autocomplete="current-password" required
-        style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
+      <p class="sub" style="margin-top:0">This area is for the site owner only. Enter your 8-digit admin code.</p>
+      ${req.query.err ? `<p class="note" style="color:#ff9d9d">That code didn't match. Try again.</p>` : ""}
+      ${loginLocked(ip) ? `<p class="note" style="color:#ff9d9d">Too many wrong tries — the door is locked for a few minutes.</p>` : ""}
+      <label class="sub">Admin code<br>
+      <input type="password" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" pattern="[0-9]*" required
+        style="width:100%;padding:14px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;font-size:22px;letter-spacing:6px;text-align:center"></label>
       <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Log in</button>
     </form>
-  </div>` : `
-  <h1>Owner login</h1>
-  <div class="panel"><p class="sub">The admin password hasn't been set on the server yet, so this area is locked. Once the owner sets it in the hosting dashboard, this page becomes the login.</p></div>`;
-  res.send(layout("Owner login", "", body));
+  </div>`;
+  res.send(layout("Owner login", "admin", body));
 });
 
 app.post("/admin/login", (req, res) => {
-  const given = Buffer.from(String(req.body.password || ""));
-  const want = Buffer.from(ADMIN_PASSWORD);
-  const ok = ADMIN_PASSWORD && given.length === want.length && crypto.timingSafeEqual(given, want);
-  if (!ok) return res.redirect("/admin/login?err=1");
+  const ip = req.ip || "x";
+  if (loginLocked(ip)) return res.redirect("/admin/login?err=1");
+  if (!verifyAdminCode(req.body.code)) { noteLoginFail(ip); return res.redirect("/admin/login?err=1"); }
+  loginFails.delete(ip);
   res.cookie("t20_admin", adminToken(), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 30 * 24 * 3600 * 1000 });
   return res.redirect("/admin/placements");
+});
+
+// The owner changes his own code from inside the site — the new code
+// never travels through chat, email, or a hosting dashboard.
+app.post("/admin/code", requireAdmin, (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  if (!verifyAdminCode(req.body.current_code)) return back("That current code didn't match — code not changed.");
+  const n1 = String(req.body.new_code || ""), n2 = String(req.body.new_code2 || "");
+  if (!/^\d{8}$/.test(n1)) return back("The new code has to be exactly 8 digits.");
+  if (n1 !== n2) return back("The new code didn't match itself — type it the same way twice.");
+  const salt = crypto.randomBytes(8).toString("hex");
+  const rec = { salt, hash: hashAdminCode(salt, n1) };
+  db.prepare("INSERT INTO admin_config (key, value) VALUES ('admin_code', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(rec));
+  res.cookie("t20_admin", adminToken(), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 30 * 24 * 3600 * 1000 });
+  return back("Your admin code is changed. Use the new code from now on — and keep it somewhere safe.");
 });
 
 app.post("/admin/logout", (req, res) => {
@@ -2691,6 +2737,19 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
         <button type="submit" style="padding:8px 16px;border-radius:8px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">Remove placement</button>
       </form>
     </div>`).join("") : `<p class="sub">No placements yet.</p>`}
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">Your admin code</h2>
+    <p class="sub">Change the 8-digit code you log in with. You'll type your current code once, then the new code twice. If the site ever gets a big rebuild, the code can reset to the starter code you were given — change it again here any time.</p>
+    <form method="post" action="/admin/code">
+      <label class="sub">Current code<br>
+      <input type="password" name="current_code" inputmode="numeric" maxlength="8" required style="width:180px;padding:12px;margin:6px 0 10px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;letter-spacing:4px"></label><br>
+      <label class="sub">New code (8 digits)<br>
+      <input type="password" name="new_code" inputmode="numeric" maxlength="8" required style="width:180px;padding:12px;margin:6px 0 10px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;letter-spacing:4px"></label><br>
+      <label class="sub">New code again<br>
+      <input type="password" name="new_code2" inputmode="numeric" maxlength="8" required style="width:180px;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;letter-spacing:4px"></label><br>
+      <button type="submit" style="padding:10px 20px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Change my code</button>
+    </form>
     <form method="post" action="/admin/logout" style="margin-top:14px">
       <button type="submit" style="padding:8px 16px;border-radius:8px;border:1px solid #3a4a6b;background:transparent;color:#bcd;font-weight:700;cursor:pointer">Log out</button>
     </form>
