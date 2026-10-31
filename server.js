@@ -543,7 +543,7 @@ function layout(title, active, body, opts = {}) {
 ${body}
 <footer class="site">TOP 20 — the Stage plays only the Top 20, 24/7.<br>
 Fall off the chart and the rotation moves on. Check your rank on the Dashboard.<br>
-<a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">How it works →</a> · <a href="/advertise" style="color:var(--accent);font-weight:700;text-decoration:none">Advertise →</a><br>
+<a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">How it works →</a> · <a href="/advertise" style="color:var(--accent);font-weight:700;text-decoration:none">Advertise →</a> · <a href="/terms" style="color:var(--accent);font-weight:700;text-decoration:none">Terms →</a><br>
 <a href="/admin/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">Staff Login</a> · <a href="/dj/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">DJ Login</a></footer>
 </div>
 <div class="installbar" id="installBar" role="dialog" aria-label="Install Top 20">
@@ -2036,6 +2036,22 @@ app.get("/upload", (req, res) => {
       <p class="note">No cover, no upload, no judging, no chart. Every song must have its CD-style cover.</p>
       <p class="note">Your cover is judged too — it's one of the 15 points. Artists who believe in themselves put in the work: quality artwork helps your score; anything slapped together will hurt it.</p>
       <p class="note">You can only have two songs live at a time — those are the only songs that get judged. Remove one from your Dashboard to put another up.</p>
+      <div class="panel" style="border-color:rgba(255,190,60,.55);text-align:left">
+        <h3 style="margin-top:0">📜 Terms &amp; Conditions — read before you upload</h3>
+        <ul class="rules">
+          <li><b>Your song, your rights:</b> you certify this song is yours — you are the artist, or an authorized representative of the label — and you control the rights to upload it.</li>
+          <li><b>The permission:</b> you grant Hot Top 20 <b>exclusive permission to add and play your song</b> on hottop20.com — streaming it on the Stage, placing it on the charts and in the rotation.</li>
+          <li><b>Promotion:</b> Hot Top 20 may use the song, its cover art, and your artist name and profile on chart pages, share cards and platform promotion.</li>
+          <li><b>Real artists only:</b> no AI artists, no AI vocals — a producer may use AI tools, but he still has to produce the song.</li>
+          <li><b>Your music stays yours:</b> uploading grants the permission above — it does not transfer ownership of your song.</li>
+          <li><b>Taking it down:</b> remove your song any time from your dashboard and it leaves the rotation and the charts at the next chart change.</li>
+        </ul>
+        <p class="note"><a href="/terms" style="color:var(--accent);font-weight:700;text-decoration:none">Read the full Terms &amp; Conditions →</a></p>
+        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer">
+          <input type="checkbox" name="consent" value="yes" required style="width:20px;height:20px;margin-top:2px;flex:none">
+          <span><b style="color:#fff">I agree to the Terms &amp; Conditions.</b> I am the artist or an authorized label representative for this song, and I grant Hot Top 20 exclusive permission to add and play it on this platform. My consent is recorded with this upload.</span>
+        </label>
+      </div>
       <button class="btn btn-blue btn-block" type="submit">Upload &amp; get judged</button>
     </form>
   </div>`;
@@ -2090,6 +2106,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   const cleanup = () => {
     for (const f of [audioFile, coverFile]) if (f) fs.unlink(f.path, () => {});
   };
+  if (!req.body.consent) { cleanup(); return uploadError(res, "Upload stopped — the Terms & Conditions box wasn't checked. Hot Top 20 can only add and play a song with the artist's or label's permission on file, so that consent has to come first."); }
   if (!coverFile) { cleanup(); return uploadError(res, "Cover art is required — no cover, no upload, no judging, no chart."); }
   if (!audioFile) { cleanup(); return uploadError(res, "An audio file is required to upload a song."); }
   if (!isRadioQuality(probeAudioQuality(audioFile.path))) {
@@ -2119,8 +2136,8 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   const audioWeb = `/uploads/audio/${audioFile.filename}`;
   const coverWeb = `/uploads/covers/${coverFile.filename}`;
   const songInfo = db.prepare(
-    "INSERT INTO songs (artist_id, title, genre, audio_path, cover_path, lyrics, status) VALUES (?, ?, ?, ?, ?, ?, 'live')"
-  ).run(user.id, title.trim(), genre, audioWeb, coverWeb, lyrics ? String(lyrics) : null);
+    "INSERT INTO songs (artist_id, title, genre, audio_path, cover_path, lyrics, status, consent_at, consent_by) VALUES (?, ?, ?, ?, ?, ?, 'live', datetime('now'), ?)"
+  ).run(user.id, title.trim(), genre, audioWeb, coverWeb, lyrics ? String(lyrics) : null, user.email);
   const songId = Number(songInfo.lastInsertRowid);
 
   const judged = judgeAudioFile(audioFile.path, coverFile.path);
@@ -2937,6 +2954,39 @@ app.post("/admin/ads/:id/delete", requireAdmin, (req, res) => {
     fs.unlink(abs, () => {});
   }
   res.redirect("/admin/placements");
+});
+
+app.get("/terms", (req, res) => {
+  const body = `
+  <h1>Terms &amp; Conditions</h1>
+  <p class="sub">The deal between Hot Top 20 and every artist and label on the platform — in plain words.</p>
+  <div class="panel">
+    <h2>1. Who can upload</h2>
+    <ul class="rules">
+      <li>Only the <b>artist</b>, or a <b>representative the label has authorized</b>, may upload a song.</li>
+      <li>By uploading, you certify that you own the song or control every right needed to upload it and grant the permission below. If that isn't true, don't upload it.</li>
+      <li><b>Real artists only:</b> no AI artists and no AI vocals. A producer may use AI tools, but he still has to produce the song — a fully generated instrumental passed off as produced counts as an AI upload.</li>
+    </ul>
+    <h2>2. The permission you grant</h2>
+    <ul class="rules">
+      <li>You grant Hot Top 20 <b>exclusive permission to add and play your song on hottop20.com</b>: streaming it on the 24/7 Stage, placing it on the Local, Regional and National charts, and keeping it in the rotation while it is live on your profile.</li>
+      <li>Hot Top 20 may use the song, its <b>cover art</b>, and your <b>artist name and profile</b> on chart pages, song pages, share cards and in promotion of the platform.</li>
+      <li>Your consent is <b>recorded with the upload</b> — the date, the time, and the account that certified it.</li>
+    </ul>
+    <h2>3. What does not change</h2>
+    <ul class="rules">
+      <li><b>Your music stays yours.</b> Uploading grants the permission above — it does not transfer ownership of your song, your masters or your publishing to Hot Top 20.</li>
+      <li>Chart position is earned on the <b>15-Point Scale</b> and engagement — it is never sold and never promised.</li>
+    </ul>
+    <h2>4. Taking a song down</h2>
+    <ul class="rules">
+      <li>You can remove your song at any time from your dashboard. It leaves the rotation and the charts at the next midnight chart change.</li>
+      <li>If a song is found to break these terms — including the real-artists rule, or a rights claim that checks out — it is pulled from the Top 20 and the Top 100 immediately.</li>
+    </ul>
+    <p class="note">Uploading a song means you agreed to these terms. The consent checkbox on the Upload page is the signature.</p>
+  </div>
+  <p style="text-align:center"><a class="ghost" href="/upload">← To the Upload page</a></p>`;
+  res.send(layout("Terms & Conditions", "", body));
 });
 
 app.get("/advertise", (req, res) => {

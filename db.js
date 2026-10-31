@@ -204,6 +204,14 @@ function openDb() {
   // Public ad submissions (Oct 31 2026): advertisers send ads from the
   // /advertise page; they land as status='pending' and only go into the
   // rotation when the owner personally approves them (status='live').
+  // Upload consent (Oct 31 2026): every uploaded song records when the
+  // artist/label granted Hot Top 20 permission to add and play it, and
+  // which account certified it. No consent on file, no upload.
+  const songCols = db.prepare("PRAGMA table_info(songs)").all().map((r) => r.name);
+  if (songCols.length && !songCols.includes("consent_at")) {
+    db.exec("ALTER TABLE songs ADD COLUMN consent_at TEXT");
+    db.exec("ALTER TABLE songs ADD COLUMN consent_by TEXT");
+  }
   if (adCols.length && !adCols.includes("status")) {
     db.exec("ALTER TABLE ads ADD COLUMN status TEXT NOT NULL DEFAULT 'live'");
     db.exec("ALTER TABLE ads ADD COLUMN submitter TEXT");
