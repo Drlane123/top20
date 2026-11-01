@@ -620,7 +620,14 @@ function layout(title, active, body, opts = {}) {
 <meta property="og:image" content="${esc(meta.image)}">${meta.image.includes("/card/") ? `
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="1200">
-<meta property="og:image:type" content="image/jpeg">` : ""}` : ""}
+<meta property="og:image:type" content="image/jpeg">` : ""}${meta.imageW ? `
+<meta property="og:image:width" content="${meta.imageW}">
+<meta property="og:image:height" content="${meta.imageH}">` : ""}` : ""}${meta.video ? `
+<meta property="og:video" content="${esc(meta.video)}">
+<meta property="og:video:secure_url" content="${esc(meta.video)}">
+<meta property="og:video:type" content="video/mp4">
+<meta property="og:video:width" content="${meta.videoW || 960}">
+<meta property="og:video:height" content="${meta.videoH || 540}">` : ""}
 <meta name="twitter:card" content="${meta.image ? "summary_large_image" : "summary"}">
 <meta name="twitter:title" content="${esc(ogTitle)}">
 <meta name="twitter:description" content="${esc(ogDesc)}">${meta.image ? `
@@ -2147,7 +2154,13 @@ app.get("/", (req, res) => {
     meta: first ? {
       title: "TOP 20 — The Stage",
       description: `Now playing the National Overall Top 20. #1 today: "${first.title}" by ${first.artist}. The rotation plays the Top 20 in order, 1 through 20, 24 hours a day.`,
-      image: absUrl(req, first.cover),
+      image: absUrl(req, "/hero-poster.jpg"),
+      imageW: 960,
+      imageH: 540,
+      type: "video.other",
+      video: absUrl(req, "/hero.mp4"),
+      videoW: 960,
+      videoH: 540,
     } : {},
   }));
 });
