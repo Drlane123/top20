@@ -1556,10 +1556,77 @@ app.get("/", (req, res) => {
     <div class="chips" style="margin-top:8px">
       <span class="chip">▶ <b id="npPlays">${fmtNum(first.plays || 0)}</b> plays</span>
       <span class="chip">♥ <b id="npLikes">${fmtNum(first.likes || 0)}</b> likes</span>
-      <span class="chip">⤴ <b id="npShares">${fmtNum(first.shares || 0)}</b> shares</span>
+      <span class="chip" id="npSharesChip" style="cursor:pointer" title="Share this song">⤴ <b id="npShares">${fmtNum(first.shares || 0)}</b> shares</span>
       <span class="chip" id="npDays">${first.fresh ? "🔥 New entry · Day 1" : "Days charted · " + (first.days || 0)}</span>
       <span class="chip pickchip" id="npPick"${first.pick ? "" : " hidden"}>🎧 DJ's Hot Pick</span>
     </div>
+    <button type="button" id="npShareBtn" class="btn" style="margin-top:12px">⤴ Share this song</button>
+    <p class="sub" id="npShareMsg" style="margin:6px 0 0"></p>
+    <div id="npShareMenu" class="panel" style="display:none;padding:12px;margin-top:8px;text-align:left">
+      <p class="sub" style="margin:0 0 10px"><b style="color:#fff">Share this song</b> — pick where it goes:</p>
+      <div style="display:grid;gap:8px">
+        <a id="npShareFb" data-npdest="facebook" target="_blank" rel="noopener" href="#" style="display:block;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700;text-decoration:none">📘&nbsp; Share to Facebook</a>
+        <a id="npShareWa" data-npdest="whatsapp" target="_blank" rel="noopener" href="#" style="display:block;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700;text-decoration:none">💬&nbsp; Share to WhatsApp</a>
+        <a id="npShareX" data-npdest="x" target="_blank" rel="noopener" href="#" style="display:block;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700;text-decoration:none">✖️&nbsp; Share to X</a>
+        <button type="button" id="npShareCopy" style="display:block;width:100%;font:inherit;text-align:left;cursor:pointer;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700">🔗&nbsp; Copy the link</button>
+        <button type="button" id="npShareNative" style="display:none;width:100%;font:inherit;text-align:left;cursor:pointer;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700">📲&nbsp; More options — Instagram and more</button>
+      </div>
+      <p class="note" style="margin:10px 0 0">Instagram sits under "More options" — that opens the share panel built into the phone, where Instagram lives.</p>
+    </div>
+    <script>
+    (function(){
+      var btn = document.getElementById('npShareBtn');
+      var menu = document.getElementById('npShareMenu');
+      var msg = document.getElementById('npShareMsg');
+      if (!btn || !menu) return;
+      var cur = { id: ${first.id}, title: ${JSON.stringify(first.title)}, artist: ${JSON.stringify(first.artist)}, shares: ${Number(first.shares || 0)} };
+      var countedFor = 0;
+      function songUrl(){ return location.origin + '/song/' + cur.id; }
+      function words(){ return '"' + cur.title + '" by ' + cur.artist + ' — playing now on the TOP 20 Stage'; }
+      function refresh(){
+        var u = encodeURIComponent(songUrl());
+        document.getElementById('npShareFb').href = 'https://www.facebook.com/sharer/sharer.php?u=' + u;
+        document.getElementById('npShareWa').href = 'https://wa.me/?text=' + encodeURIComponent(words() + ' ' + songUrl());
+        document.getElementById('npShareX').href = 'https://twitter.com/intent/tweet?text=' + encodeURIComponent(words()) + '&url=' + u;
+      }
+      function count(){
+        if (countedFor === cur.id) return; countedFor = cur.id; cur.shares++;
+        var el = document.getElementById('npShares'); if (el) el.textContent = cur.shares.toLocaleString('en-US');
+        try { fetch('/song/' + cur.id + '/engage', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'type=share', keepalive: true }); } catch (e) {}
+      }
+      window.__npShareSet = function(t){ cur = { id: t.id, title: t.title, artist: t.artist, shares: t.shares || 0 }; refresh(); };
+      function toggle(){
+        var open = menu.style.display !== 'none';
+        menu.style.display = open ? 'none' : 'block';
+      }
+      btn.addEventListener('click', toggle);
+      var chip = document.getElementById('npSharesChip');
+      if (chip) chip.addEventListener('click', toggle);
+      var dests = menu.querySelectorAll('[data-npdest]');
+      for (var i = 0; i < dests.length; i++) dests[i].addEventListener('click', function(){ count(); msg.textContent = 'Opening your pick — thanks for spreading the word.'; });
+      function fallbackCopy(done){
+        var ta = document.createElement('textarea');
+        ta.value = songUrl(); ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta); done();
+      }
+      var copyBtn = document.getElementById('npShareCopy');
+      if (copyBtn) copyBtn.addEventListener('click', function(){
+        var done = function(){ count(); msg.textContent = 'Link copied — paste it anywhere you like.'; };
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(songUrl()).then(done, function(){ fallbackCopy(done); });
+        else fallbackCopy(done);
+      });
+      var nativeBtn = document.getElementById('npShareNative');
+      if (nativeBtn && navigator.share) {
+        nativeBtn.style.display = 'block';
+        nativeBtn.addEventListener('click', function(){
+          navigator.share({ title: document.title, text: words(), url: songUrl() }).then(function(){ count(); msg.textContent = 'Shared — thanks for spreading the word.'; }, function(){});
+        });
+      }
+      refresh();
+    })();
+    </script>
   </div></div>
   <div class="panel">
     <h2 style="margin-top:0">In rotation</h2>
@@ -1908,7 +1975,7 @@ app.get("/", (req, res) => {
     $('npCover').src = t.cover; $('npTitle').textContent = t.title;
     $('npArtist').textContent = t.artist; $('npBigRank').textContent = '#' + t.rank;
     $('npCraft').textContent = t.craft; $('npChannel').textContent = LABELS[ch];
-    $('npPlays').textContent = fmtN(t.plays); $('npLikes').textContent = fmtN(t.likes); $('npShares').textContent = fmtN(t.shares);
+    $('npPlays').textContent = fmtN(t.plays); $('npLikes').textContent = fmtN(t.likes); $('npShares').textContent = fmtN(t.shares); if (window.__npShareSet) window.__npShareSet(t);
     $('npDays').textContent = t.fresh ? '🔥 New entry · Day 1' : 'Days charted · ' + (t.days || 0);
     $('npPick').hidden = !t.pick;
     $('barThumb').src = t.cover; $('barTitle').textContent = t.title; $('barArtist').textContent = t.artist;
