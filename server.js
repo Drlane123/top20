@@ -198,6 +198,31 @@ if (CROWD) {
     res.end(CROWD.lady);
   });
 }
+// App icons — the owner's platinum HOT TOP 20 logo (Nov 1, 2026): served
+// from baked data like the hero, because the repo push path cannot carry
+// binary PNG files. These routes sit ahead of the static folder, so the
+// new mark wins everywhere the icon shows: favicon/Google, the install
+// bar, the download pill, and installed home-screen icons.
+const ICONS = (() => {
+  try {
+    const raw = require("./icon-data");
+    const out = {};
+    for (const k of Object.keys(raw)) out[k] = Buffer.from(raw[k], "base64");
+    return out;
+  } catch (e) { return null; }
+})();
+if (ICONS) {
+  const iconRoute = (pathName, key) => app.get(pathName, (req, res) => {
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(ICONS[key]);
+  });
+  iconRoute("/icons/icon-512x512.png", "icon-512x512.png");
+  iconRoute("/icons/icon-192x192.png", "icon-192x192.png");
+  iconRoute("/icons/icon-maskable-512x512.png", "icon-maskable-512x512.png");
+  iconRoute("/icons/apple-touch-icon.png", "apple-touch-icon.png");
+  iconRoute("/apple-touch-icon.png", "apple-touch-icon.png");
+}
 // Pages always re-fetch fresh HTML (owner hit a stale cached page more
 // than once — new features like the DJ voice never reached his phone).
 // Media and data files keep their normal caching.
