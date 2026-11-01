@@ -2271,6 +2271,11 @@ app.get("/song/:id", (req, res) => {
     ? `${headline.rank <= 20 ? "🔥" : "🎵"} #${headline.rank} on the ${headlineLabel} Top ${headlineTier} — "${song.title}" by ${song.artist}. Listen on TOP 20:`
     : null;
   const standingBadge = headline ? `<p style="margin:2px 0 10px"><span style="display:inline-block;background:linear-gradient(180deg,#ffdf8e,#f5b921);color:#231a00;font-weight:900;padding:${headline.rank <= 20 ? "9px 18px" : "6px 13px"};border-radius:999px;font-size:${headline.rank <= 20 ? "17px" : "13.5px"};letter-spacing:.4px">🏆 #${headline.rank} · ${esc(headlineLabel)} TOP ${headlineTier}</span></p>` : "";
+  const songUrlAbs = absUrl(req, `/song/${song.id}`);
+  const shareWords = shareText || `"${song.title}" by ${song.artist} — TOP 20`;
+  const encSongUrl = encodeURIComponent(songUrlAbs);
+  const encShareWords = encodeURIComponent(shareWords);
+  const encWaText = encodeURIComponent(shareWords + " " + songUrlAbs);
   const myPick = db.prepare("SELECT pick_date FROM dj_picks WHERE song_id = ? ORDER BY pick_date DESC LIMIT 1").get(song.id);
   const pickChip = myPick
     ? `<p style="margin:2px 0 10px"><span class="picktag" style="font-size:11px;padding:4px 11px">${myPick.pick_date === latestPickDate() ? "🎧 DJ's Hot Pick — this week" : "🎧 DJ's Hot Pick — " + fmtChartDate(myPick.pick_date)}</span></p>`
@@ -2296,6 +2301,17 @@ app.get("/song/:id", (req, res) => {
     <form id="shareForm" method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="share"><button class="btn" type="submit">⤴ Share (${fmtNum(eng.share || 0)})</button></form>
   </div>
   <p class="sub" id="shareMsg" style="margin-top:6px"></p>
+  <div id="shareMenu" class="panel" style="display:none;padding:12px;margin-top:2px">
+    <p class="sub" style="margin:0 0 10px"><b style="color:#fff">Share this song</b> — pick where it goes:</p>
+    <div style="display:grid;gap:8px">
+      <a data-dest="facebook" target="_blank" rel="noopener" href="https://www.facebook.com/sharer/sharer.php?u=${encSongUrl}" style="display:block;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700;text-decoration:none">📘&nbsp; Share to Facebook</a>
+      <a data-dest="whatsapp" target="_blank" rel="noopener" href="https://wa.me/?text=${encWaText}" style="display:block;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700;text-decoration:none">💬&nbsp; Share to WhatsApp</a>
+      <a data-dest="x" target="_blank" rel="noopener" href="https://twitter.com/intent/tweet?text=${encShareWords}&url=${encSongUrl}" style="display:block;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700;text-decoration:none">✖️&nbsp; Share to X</a>
+      <button type="button" id="shareCopy" style="display:block;width:100%;font:inherit;text-align:left;cursor:pointer;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700">🔗&nbsp; Copy the link</button>
+      <button type="button" id="shareNative" style="display:none;width:100%;font:inherit;text-align:left;cursor:pointer;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700">📲&nbsp; More options — Instagram and more</button>
+    </div>
+    <p class="note" style="margin:10px 0 0">Instagram sits under "More options" — that opens the share panel built into the phone, where Instagram lives.</p>
+  </div>
   <div class="statstrip">
     <div class="stat"><b>${fmtNum(eng.play || 0)}</b><span>plays</span></div>
     <div class="stat"><b>${fmtNum(eng.share || 0)}</b><span>shares</span></div>
@@ -2305,22 +2321,53 @@ app.get("/song/:id", (req, res) => {
   <script>
   (function(){
     var form = document.getElementById('shareForm');
-    if (!form) return;
+    var menu = document.getElementById('shareMenu');
+    var msg = document.getElementById('shareMsg');
+    if (!form || !menu) return;
+    var url = location.origin + '/song/${song.id}';
+    var shareCount = ${Number(eng.share || 0)};
+    var counted = false;
+    function count(){
+      if (counted) return; counted = true; shareCount++;
+      var b = form.querySelector('button');
+      if (b) b.textContent = '⤴ Share (' + shareCount.toLocaleString('en-US') + ')';
+      try {
+        fetch('/song/${song.id}/engage', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'type=share', keepalive: true });
+      } catch (e) {}
+    }
     form.addEventListener('submit', function(e){
       e.preventDefault();
-      var url = location.origin + '/song/${song.id}';
-      var msg = document.getElementById('shareMsg');
-      var counted = function(text){ msg.textContent = text; setTimeout(function(){ form.submit(); }, 350); };
-      if (navigator.share) {
-        navigator.share({ title: document.title, text: ${JSON.stringify(shareText)} || document.title, url: url }).then(function(){
-          counted('Shared — that link points to this song\\'s Top 20 page.');
-        }, function(){});
-      } else if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(url).then(function(){
-          counted('Link copied — it points to this song\\'s Top 20 page. Paste it anywhere.');
-        }, function(){ form.submit(); });
-      } else { form.submit(); }
+      var open = menu.style.display !== 'none';
+      menu.style.display = open ? 'none' : 'block';
+      if (!open) menu.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     });
+    var dests = menu.querySelectorAll('[data-dest]');
+    for (var i = 0; i < dests.length; i++) {
+      dests[i].addEventListener('click', function(){ count(); msg.textContent = 'Opening your pick — thanks for spreading the word.'; });
+    }
+    function fallbackCopy(done){
+      var ta = document.createElement('textarea');
+      ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta); done();
+    }
+    var copyBtn = document.getElementById('shareCopy');
+    if (copyBtn) copyBtn.addEventListener('click', function(){
+      var done = function(){ count(); msg.textContent = 'Link copied — paste it anywhere you like.'; };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(done, function(){ fallbackCopy(done); });
+      } else { fallbackCopy(done); }
+    });
+    var nativeBtn = document.getElementById('shareNative');
+    if (nativeBtn && navigator.share) {
+      nativeBtn.style.display = 'block';
+      nativeBtn.addEventListener('click', function(){
+        navigator.share({ title: document.title, text: ${JSON.stringify(shareText)} || document.title, url: url }).then(function(){
+          count(); msg.textContent = 'Shared — thanks for spreading the word.';
+        }, function(){});
+      });
+    }
   })();
   </script>
   ${songVideo ? videoDisplayHtml(songVideo) : ""}
