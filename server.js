@@ -11,6 +11,7 @@ const { GENRES, OVERALL, CATEGORIES, regionForState, localKey } = require("./con
 const { judgeAudioFile } = require("./judge");
 const { judgeMeasuredFile } = require("./judge2");
 const storage = require("./storage");
+const sharecard = require("./sharecard");
 const { recalc, latestChartDate, previousChartDate, ensureCurrent, todayStr } = require("./charts");
 
 const PORT = process.env.PORT || 8077;
@@ -2222,6 +2223,32 @@ app.get("/charts", (req, res) => {
 
 /* ---------------------------------- Song ---------------------------------- */
 
+// The share-my-position card image (Dale's spec): composed live from
+// today's chart. Uncharted songs (or an unreadable cover) fall back to
+// the plain cover, so a share never breaks.
+app.get("/card/:id.jpg", async (req, res) => {
+  const song = db.prepare(`
+    SELECT s.*, u.name AS artist FROM songs s JOIN users u ON u.id = s.artist_id WHERE s.id = ?
+  `).get(req.params.id);
+  if (!song) return res.status(404).end();
+  const standing = sharecard.headlineStanding(db, song.id);
+  if (!standing) return res.redirect(song.cover_path);
+  const coverAbs = [path.join(__dirname, "public", song.cover_path), path.join(__dirname, song.cover_path)]
+    .find((p) => fs.existsSync(p));
+  if (!coverAbs) return res.redirect(song.cover_path);
+  try {
+    const buf = await sharecard.renderCard({
+      songId: song.id, title: song.title, artist: song.artist,
+      coverAbs, standing, chartDate: latestChartDate(db),
+    });
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(buf);
+  } catch {
+    res.redirect(song.cover_path);
+  }
+});
+
 app.get("/song/:id", (req, res) => {
   const song = db.prepare(`
     SELECT s.*, u.name AS artist, u.city, u.state, u.email
@@ -2234,6 +2261,16 @@ app.get("/song/:id", (req, res) => {
   const dc = daysCharted(song.id);
   const dcNew = dc.days > 0 && dc.first === latestChartDate(db);
   const { ranks } = songRanks(song.id);
+  // Share-my-position (Dale's spec): the headline standing drives the
+  // badge on this page, the words in the share sheet, and the card image
+  // other sites show. No standing in the Top 100 — no badge, plain share.
+  const headline = sharecard.headlineStanding(db, song.id);
+  const headlineLabel = headline ? sharecard.chartLabelText(headline) : null;
+  const headlineTier = headline ? (headline.rank <= 20 ? 20 : 100) : null;
+  const shareText = headline
+    ? `${headline.rank <= 20 ? "🔥" : "🎵"} #${headline.rank} on the ${headlineLabel} Top ${headlineTier} — "${song.title}" by ${song.artist}. Listen on TOP 20:`
+    : null;
+  const standingBadge = headline ? `<p style="margin:2px 0 10px"><span style="display:inline-block;background:linear-gradient(180deg,#ffdf8e,#f5b921);color:#231a00;font-weight:900;padding:${headline.rank <= 20 ? "9px 18px" : "6px 13px"};border-radius:999px;font-size:${headline.rank <= 20 ? "17px" : "13.5px"};letter-spacing:.4px">🏆 #${headline.rank} · ${esc(headlineLabel)} TOP ${headlineTier}</span></p>` : "";
   const myPick = db.prepare("SELECT pick_date FROM dj_picks WHERE song_id = ? ORDER BY pick_date DESC LIMIT 1").get(song.id);
   const pickChip = myPick
     ? `<p style="margin:2px 0 10px"><span class="picktag" style="font-size:11px;padding:4px 11px">${myPick.pick_date === latestPickDate() ? "🎧 DJ's Hot Pick — this week" : "🎧 DJ's Hot Pick — " + fmtChartDate(myPick.pick_date)}</span></p>`
@@ -2251,6 +2288,7 @@ app.get("/song/:id", (req, res) => {
   <h1>${esc(song.title)}</h1>
   <p class="sub"><a href="/artist/${song.artist_id}" style="color:var(--accent);font-weight:700;text-decoration:none">${esc(song.artist)}</a> · ${esc(song.genre)} · ${esc(song.city)}, ${esc(song.state)}</p>
   ${pickChip}
+  ${standingBadge}
   ${removedNote}
   <audio controls preload="metadata" src="${esc(song.audio_path)}"></audio>
   <div class="flexbtns">
@@ -2274,7 +2312,7 @@ app.get("/song/:id", (req, res) => {
       var msg = document.getElementById('shareMsg');
       var counted = function(text){ msg.textContent = text; setTimeout(function(){ form.submit(); }, 350); };
       if (navigator.share) {
-        navigator.share({ title: document.title, text: document.title, url: url }).then(function(){
+        navigator.share({ title: document.title, text: ${JSON.stringify(shareText)} || document.title, url: url }).then(function(){
           counted('Shared — that link points to this song\\'s Top 20 page.');
         }, function(){});
       } else if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -2302,9 +2340,11 @@ app.get("/song/:id", (req, res) => {
   res.send(layout(song.title, "", body, {
     meta: {
       title: `"${song.title}" by ${song.artist} — TOP 20`,
-      description: `${song.artist} · ${song.genre} · ${song.city}, ${song.state}. Craft score ${judge.craft_score}/100 across the 15 judges on TOP 20 — judged only because it was uploaded here.`,
+      description: headline
+        ? `#${headline.rank} on the ${headlineLabel} Top ${headlineTier} — "${song.title}" by ${song.artist} on TOP 20. Craft score ${judge.craft_score}/100 across the 15 judges — judged only because it was uploaded here.`
+        : `${song.artist} · ${song.genre} · ${song.city}, ${song.state}. Craft score ${judge.craft_score}/100 across the 15 judges on TOP 20 — judged only because it was uploaded here.`,
       type: "music.song",
-      image: absUrl(req, song.cover_path),
+      image: headline ? absUrl(req, `/card/${song.id}.jpg`) : absUrl(req, song.cover_path),
     },
   }));
 });
