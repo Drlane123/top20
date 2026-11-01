@@ -12,7 +12,7 @@ const { judgeAudioFile } = require("./judge");
 const { judgeMeasuredFile } = require("./judge2");
 const storage = require("./storage");
 const sharecard = require("./sharecard");
-const { recalc, latestChartDate, previousChartDate, ensureCurrent, todayStr } = require("./charts");
+const { recalc, latestChartDate, previousChartDate, ensureCurrent, todayStr, supportBonus, supportBySong } = require("./charts");
 
 const PORT = process.env.PORT || 8077;
 // Build identity for the stale-page self-heal: Render sets
@@ -1483,6 +1483,10 @@ app.get("/", (req, res) => {
   <div class="panel" style="border:1px solid rgba(255,190,60,.55);background:linear-gradient(180deg,rgba(255,170,40,.10),rgba(255,170,40,.03))">
     <h2 style="margin-top:0;color:#ffd98a">The 16th Law</h2>
     <p class="sub">The 15 points measure your song. The 16th law is <b style="color:#fff">pure raw talent</b> — the gift no machine can value. Motown saw it in a young Michael Jackson; the world saw it in New Edition, and in a young Chris Brown. Our staff is always looking for that gift, and the law is simple: <b style="color:#fff">talent like that does not escape.</b> When we see it, you get the opportunity to grow right here on Top 20.</p>
+  </div>
+  <div class="panel" style="border:1px solid rgba(255,190,60,.55);background:linear-gradient(180deg,rgba(255,170,40,.10),rgba(255,170,40,.03))">
+    <h2 style="margin-top:0;color:#ffd98a">The Fan Bonus</h2>
+    <p class="sub">The 15 points judge your song — but your people can push it. Every <b style="color:#fff">like</b> and <b style="color:#fff">share</b> from your song's page is a <b style="color:#fff">bonus</b> on top of your chart score (up to +6, counted at the midnight chart change). Sitting deep in the Top 100? Work your fans — their likes and shares lift you up the chart. Craft still rules: the bonus helps you climb, it can't crown a song by itself.</p>
   </div>`;
 
   const tabs = channels.map((c, i) =>
@@ -2427,6 +2431,7 @@ app.get("/song/:id", (req, res) => {
   const judge = db.prepare("SELECT * FROM judge_scores WHERE song_id = ?").get(song.id);
   const eng = {};
   for (const r of db.prepare("SELECT type, count FROM engagements WHERE song_id = ?").all(song.id)) eng[r.type] = r.count;
+  const fanBonus = supportBonus(eng.like || 0, eng.share || 0);
   const dc = daysCharted(song.id);
   const dcNew = dc.days > 0 && dc.first === latestChartDate(db);
   const { ranks } = songRanks(song.id);
@@ -2470,6 +2475,9 @@ app.get("/song/:id", (req, res) => {
     <form id="shareForm" method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="share"><button class="btn" type="submit">⤴ Share (${fmtNum(eng.share || 0)})</button></form>
   </div>
   <p class="sub" id="shareMsg" style="margin-top:6px"></p>
+  <div class="panel" style="padding:12px 14px">
+    <p class="sub" style="margin:0">🔥 <b style="color:#fff">Fan Bonus: +${fanBonus.toFixed(1)}</b> — the likes and shares on this page are a <b style="color:#fff">bonus</b> on top of the chart score (up to +6, counted at the midnight chart change). ♥ ${fmtNum(eng.like || 0)} likes · ⤴ ${fmtNum(eng.share || 0)} shares so far — every one helps this song climb.</p>
+  </div>
   <div id="shareMenu" class="panel" style="display:none;padding:12px;margin-top:2px">
     <p class="sub" style="margin:0 0 10px"><b style="color:#fff">Share this song</b> — pick where it goes:</p>
     <div style="display:grid;gap:8px">
@@ -2878,6 +2886,7 @@ app.get("/profile", (req, res) => {
   const comp = profileCompleteness(user);
   const body = `${intro}
   ${req.query.err ? `<div class="panel" style="border-left:3px solid #ff9d9d"><p class="sub" style="margin:0;color:#ffb3b3">${esc(req.query.err)}</p></div>` : ""}
+  ${req.query.saved ? `<div class="panel" style="border-left:3px solid #7dff9a"><p class="sub" style="margin:0;color:#c9ffd6">✓ <b style="color:#fff">Profile saved.</b> It's yours — come back any time to add to it, and put a song on it whenever your song is ready.</p></div>` : ""}
   <div class="panel">
     <p class="sub" style="margin:0">Profile for <b style="color:#fff">${esc(email)}</b> — ${comp.filled} of ${comp.total} fields complete.
     ${hasProfile(user) ? `<a href="/artist/${user.id}" style="color:var(--accent);font-weight:700;text-decoration:none">View your public profile →</a>` : "Add your artist name and home city to go public."}</p>
@@ -2890,10 +2899,10 @@ app.get("/profile", (req, res) => {
       <label>Home state (2 letters)<input name="state" required maxlength="2" style="text-transform:uppercase" value="${esc(user.state || "")}"></label>
       <label>Your genre<select name="genre"><option value="">— choose —</option>${GENRES.map((g) => `<option value="${esc(g)}" ${user.genre === g ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></label>
       <div style="border:1px solid rgba(255,190,60,.45);border-radius:12px;padding:12px 12px 4px;margin:14px 0;background:rgba(255,170,40,.05)">
-        <p class="sub" style="margin:0 0 6px"><b style="color:#ffd98a">Where the judging system finds you.</b> Before your songs are judged, the system searches the platforms below to locate you and your music. <b style="color:#fff">Facebook, Instagram and TikTok are required</b> — paste the full link or just your handle. No socials on file, and the system can't find you.</p>
-        <label>Facebook profile (required)<input name="facebook" required maxlength="160" placeholder="facebook.com/yourname or your page link" value="${esc(user.facebook || "")}"></label>
-        <label>Instagram (required)<input name="instagram" required maxlength="160" placeholder="@yourhandle or instagram.com/yourhandle" value="${esc(user.instagram || "")}"></label>
-        <label>TikTok (required)<input name="tiktok" required maxlength="160" placeholder="@yourhandle or tiktok.com/@yourhandle" value="${esc(user.tiktok || "")}"></label>
+        <p class="sub" style="margin:0 0 6px"><b style="color:#ffd98a">Where the judging system finds you.</b> Before your songs are judged, the system searches the platforms below to locate you and your music — have your <b style="color:#fff">Facebook, Instagram and TikTok</b> on file before you upload (paste the full link or just your handle). Your profile saves either way — add these whenever you're ready.</p>
+        <label>Facebook profile<input name="facebook" maxlength="160" placeholder="facebook.com/yourname or your page link" value="${esc(user.facebook || "")}"></label>
+        <label>Instagram<input name="instagram" maxlength="160" placeholder="@yourhandle or instagram.com/yourhandle" value="${esc(user.instagram || "")}"></label>
+        <label>TikTok<input name="tiktok" maxlength="160" placeholder="@yourhandle or tiktok.com/@yourhandle" value="${esc(user.tiktok || "")}"></label>
         <label>YouTube channel (if you have one)<input name="youtube" maxlength="160" placeholder="youtube.com/@yourchannel" value="${esc(user.youtube || "")}"></label>
       </div>
       <label>Profile photo (optional — leave blank and you get a styled initial avatar)<input name="photo" type="file" accept="image/*"></label>
@@ -2927,12 +2936,10 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
     tiktok: String(req.body.tiktok || "").trim().slice(0, 160),
     youtube: String(req.body.youtube || "").trim().slice(0, 160),
   };
-  const missing = [["facebook", "Facebook"], ["instagram", "Instagram"], ["tiktok", "TikTok"]]
-    .filter(([k]) => !socials[k]).map(([, l]) => l);
-  if (missing.length) {
-    return res.redirect(`/profile?email=${encodeURIComponent(emailLc)}&err=${encodeURIComponent(
-      "Your profile didn't save — add your " + missing.join(", ") + ". The judging system searches those platforms to locate you and your music, so every artist has to have them on file.")}`);
-  }
+  // Every profile SAVES (owner, Nov 1, 2026 — "just like Facebook"): a
+  // missing social never throws the artist's information away. The save
+  // always lands; the artist adds the rest whenever they're ready, and
+  // comes back to put songs on the profile whenever a song is ready.
   db.prepare(
     `UPDATE users SET name = ?, city = ?, state = ?, region = ?, genre = ?, bio = ?,
        age = ?, years_in_game = ?, history = ?, photo_path = ?,
@@ -2948,10 +2955,12 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
     parseOptInt(req.body.years_in_game),
     String(req.body.history || "").trim().slice(0, 4000) || null,
     photoPath || null,
-    socials.facebook, socials.instagram, socials.tiktok, socials.youtube || null,
+    socials.facebook || null, socials.instagram || null, socials.tiktok || null, socials.youtube || null,
     user.id
   );
-  res.redirect(`/artist/${user.id}`);
+  const saved = db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
+  if (hasProfile(saved)) return res.redirect(`/artist/${user.id}?saved=1`);
+  return res.redirect(`/profile?email=${encodeURIComponent(emailLc)}&saved=1`);
 });
 
 app.get("/artist/:id", (req, res) => {
@@ -2974,7 +2983,10 @@ app.get("/artist/:id", (req, res) => {
   `);
   const where = (r) => r.level === "national" ? "National"
     : r.level === "regional" ? `Regional · ${r.region_key}` : `Local · ${r.region_key}`;
+  const support = supportBySong(db);
   const songCards = songs.map((s) => {
+    const sup = support.get(s.id) || { likes: 0, shares: 0 };
+    const bonusChip = `<span class="chip">🔥 Fan Bonus <b>+${supportBonus(sup.likes, sup.shares).toFixed(1)}</b></span>`;
     const best = date ? bestToday.get(s.id, date) : null;
     const any = date ? anyToday.get(s.id, date) : null;
     const standing = best
@@ -2987,7 +2999,7 @@ app.get("/artist/:id", (req, res) => {
         <img class="thumb" src="${esc(s.cover_path)}" alt="">
         <span class="meta"><span class="t">${esc(s.title)}</span><br><span class="a">${esc(s.genre)} · Craft ${s.craft_score}</span></span>
       </a>
-      <div class="chips">${standing}</div>
+      <div class="chips">${standing} ${bonusChip}</div>
     </div>`;
   }).join("");
   const highlights = db.prepare(`
@@ -3007,6 +3019,7 @@ app.get("/artist/:id", (req, res) => {
   ].filter(Boolean).join(" · ");
   const profileVideo = artistVideo(user.id);
   const body = `
+  ${req.query.saved ? `<div class="panel" style="border-left:3px solid #7dff9a"><p class="sub" style="margin:0;color:#c9ffd6">✓ <b style="color:#fff">Profile saved.</b> This page is yours — come back any time, and add songs whenever you're ready.</p></div>` : ""}
   <div class="panel">
     <div style="display:flex;gap:14px;align-items:center">
       ${avatarHtml(user)}
@@ -3140,6 +3153,11 @@ app.get("/how-it-works", (req, res) => {
     <p class="sub">Motown saw it in a young Michael Jackson. The world saw it in New Edition — and in a young Chris Brown. They were young, and the gift was already undeniable. If you have the eye, you recognize it from the door, before any number proves it.</p>
     <p class="sub">So the 16th law of TOP 20 is this: <b style="color:#fff">talent like that does not escape us.</b> Our staff is always looking for that raw, pure gift — and when we capture it, when we see it, that artist gets the opportunity to grow right here on Top 20.</p>
     <p class="sub" style="margin-bottom:0">Fifteen points measure the song. <b style="color:#ffd98a">The 16th law watches for the gift.</b></p>
+  </div>
+  <div class="panel" style="border:1px solid rgba(255,190,60,.55);background:linear-gradient(180deg,rgba(255,170,40,.10),rgba(255,170,40,.03))">
+    <h2 style="margin-top:0;color:#ffd98a">The Fan Bonus — likes &amp; shares push the climb</h2>
+    <p class="sub">Separate from the 15 points and the 16th law, there is a <b style="color:#fff">bonus</b>: the <b style="color:#fff">likes</b> and <b style="color:#fff">shares</b> your song earns right here on its TOP 20 page. They add bonus points on top of your chart score — up to <b style="color:#fff">+6</b> — counted fresh at every midnight chart change.</p>
+    <p class="sub" style="margin-bottom:0">That's the road up out of the bucket: if your song is sitting at #60 or #85 in the Top 100, your people's activity is real leverage — every like and every share moves your number. The bonus rewards the push and early support counts most, and it is capped on purpose: <b style="color:#fff">craft still rules the chart</b> — the bonus helps a good song climb, it can't carry a weak one to #1.</p>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">The Stage</h2>

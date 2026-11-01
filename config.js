@@ -33,6 +33,15 @@ const FORMULA = {
   buzzShare: 0.25,
 };
 
+// The FAN BONUS (owner, Nov 1, 2026): likes and shares earned on a song's
+// own page are a bonus on top of the chart score — the people's push. A
+// song buried in the Top 100 bucket can climb on its supporters' activity:
+// bonus = capPoints * log10(1 + support) / log10(1 + supportMax), where
+// support = likes + shareWeight * shares. The curve pays early support
+// best and the cap keeps craft in charge — the bonus moves a song up the
+// bucket, it cannot crown one by itself.
+const FAN_BONUS = { capPoints: 6, supportMax: 1000, shareWeight: 3 };
+
 // Raw in-app engagement weighting: one like is worth more than one play, etc.
 const ENGAGEMENT_WEIGHTS = { play: 1, like: 4, share: 6, save: 5 };
 
@@ -60,4 +69,4 @@ function localKey(city, state) {
   return `${String(city || "").trim()}, ${String(state || "").trim().toUpperCase()}`;
 }
 
-module.exports = { GENRES, OVERALL, CATEGORIES, FORMULA, ENGAGEMENT_WEIGHTS, regionForState, localKey };
+module.exports = { GENRES, OVERALL, CATEGORIES, FORMULA, ENGAGEMENT_WEIGHTS, FAN_BONUS, regionForState, localKey };

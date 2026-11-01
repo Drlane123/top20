@@ -3,7 +3,7 @@
 // engagement  = 0.75 * (in-app, normalized to the chart's max) + 0.25 * buzz
 // Charts: per genre + a cross-genre 'Overall' chart, at local / regional /
 // national level. FULL rankings are stored, not just the Top 20.
-const { GENRES, OVERALL, FORMULA, ENGAGEMENT_WEIGHTS, localKey } = require("./config");
+const { GENRES, OVERALL, FORMULA, ENGAGEMENT_WEIGHTS, FAN_BONUS, localKey } = require("./config");
 
 const LEVELS = ["local", "regional", "national"];
 const CHART_GENRES = [...GENRES, OVERALL];
@@ -28,6 +28,7 @@ function rawEngagementBySong(db) {
 
 function loadSongs(db) {
   const raw = rawEngagementBySong(db);
+  const support = supportBySong(db);
   const rows = db.prepare(`
     SELECT s.id AS song_id, s.title, s.genre, u.id AS artist_id, u.name AS artist,
            u.city, u.state, u.region, u.buzz_score, j.craft_score
@@ -36,7 +37,29 @@ function loadSongs(db) {
     JOIN judge_scores j ON j.song_id = s.id
     WHERE s.status = 'live'
   `).all();
-  return rows.map((r) => ({ ...r, rawEngagement: raw.get(r.song_id) || 0 }));
+  return rows.map((r) => ({ ...r, rawEngagement: raw.get(r.song_id) || 0, likes: support.get(r.song_id)?.likes || 0, shares: support.get(r.song_id)?.shares || 0 }));
+}
+
+// Likes and shares per song — the two signals the Fan Bonus pays on.
+function supportBySong(db) {
+  const rows = db.prepare(
+    `SELECT song_id,
+       SUM(CASE WHEN type = 'like' THEN count ELSE 0 END) AS likes,
+       SUM(CASE WHEN type = 'share' THEN count ELSE 0 END) AS shares
+     FROM engagements GROUP BY song_id`
+  ).all();
+  const map = new Map();
+  for (const r of rows) map.set(r.song_id, { likes: r.likes || 0, shares: r.shares || 0 });
+  return map;
+}
+
+// The Fan Bonus in chart points (owner, Nov 1, 2026): a log curve over
+// likes + weighted shares, capped — see FAN_BONUS in config.js.
+function supportBonus(likes, shares) {
+  const support = (likes || 0) + FAN_BONUS.shareWeight * (shares || 0);
+  if (support <= 0) return 0;
+  const pts = FAN_BONUS.capPoints * (Math.log10(1 + support) / Math.log10(1 + FAN_BONUS.supportMax));
+  return Math.round(Math.min(pts, FAN_BONUS.capPoints) * 10) / 10;
 }
 
 // Group songs into charts and rank each chart. jitterFn(songId) optionally
@@ -52,6 +75,7 @@ function computeRankings(db, jitterFn = null) {
       const inApp = maxRaw > 0 ? (m.rawEngagement / maxRaw) * 100 : 0;
       const engagement = FORMULA.inAppShare * inApp + FORMULA.buzzShare * (m.buzz_score || 0);
       let chartScore = FORMULA.craftWeight * m.craft_score + FORMULA.engagementWeight * engagement;
+      chartScore += supportBonus(m.likes, m.shares); // the Fan Bonus: likes + shares push the climb
       if (jitterFn) chartScore += jitterFn(m.song_id);
       return { song: m, chartScore: Math.round(chartScore * 10) / 10 };
     });
@@ -279,4 +303,4 @@ function ensureCurrent(db, today = todayStr()) {
   return dealt;
 }
 
-module.exports = { computeRankings, recalc, latestChartDate, previousChartDate, todayStr, ensureCurrent, dailyDriftFn, LEVELS, CHART_GENRES };
+module.exports = { computeRankings, recalc, latestChartDate, previousChartDate, todayStr, ensureCurrent, dailyDriftFn, LEVELS, CHART_GENRES, supportBonus, supportBySong };
