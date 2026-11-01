@@ -2653,7 +2653,7 @@ app.get("/upload", (req, res) => {
       <label>Genre<select name="genre">${GENRES.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join("")}</select></label>
       <label>Lyrics (optional)<textarea name="lyrics" rows="4"></textarea></label>
       <label>Audio file — required, radio quality only<input name="audio" type="file" accept="audio/*" required></label>
-      <p class="note">Radio quality only: WAV, FLAC, or 320 kbps MP3 — the same quality radio stations accept. Lower-quality files are turned away.</p>
+      <p class="note">Radio quality only: WAV or FLAC, or MP3 / M4A at 192 kbps or better — the same quality radio stations send and accept. Lower-quality files are turned away.</p>
       <label>Cover art — REQUIRED<input name="cover" type="file" accept="image/*" required></label>
       <p class="note">No cover, no upload, no judging, no chart. Every song must have its CD-style cover.</p>
       <p class="note">Your cover is judged too — it's one of the 15 points. Artists who believe in themselves put in the work: quality artwork helps your score; anything slapped together will hurt it.</p>
@@ -2696,19 +2696,26 @@ function profileGate(res, emailLc) {
   <p><a class="btn btn-block" href="/upload">Back to upload</a></p></div>`));
 }
 
-// Radio-quality gate: TOP 20 takes what radio takes — lossless WAV/FLAC
-// at any bitrate, or MP3 at 320 kbps (>= 310 kbps allows for VBR reporting).
+// Radio-quality gate (owner widened it Nov 1, 2026): TOP 20 takes what
+// radio takes AND what radio SENDS — lossless WAV/FLAC at any bitrate,
+// or MP3 / M4A at 192 kbps or better (>= 180 kbps allows for VBR
+// reporting, so a true 192 never bounces). Radio copies go out at
+// 192 / 256 / 320 and as M4A every day; the gate stopped knocking them
+// off at the owner's word — he reviews quality personally from here.
 function probeAudioQuality(absPath) {
   try {
     const out = execFileSync("ffprobe", [
       "-v", "error", "-select_streams", "a:0",
-      "-show_entries", "stream=codec_name,bit_rate",
+      "-show_entries", "stream=codec_name,bit_rate:format=bit_rate",
       "-of", "json", absPath,
     ], { encoding: "utf8" });
-    const stream = (JSON.parse(out).streams || [])[0] || {};
+    const parsed = JSON.parse(out);
+    const stream = (parsed.streams || [])[0] || {};
+    const streamRate = parseInt(stream.bit_rate, 10) || 0;
+    const formatRate = parseInt((parsed.format || {}).bit_rate, 10) || 0;
     return {
       codec: String(stream.codec_name || "").toLowerCase(),
-      bitRate: parseInt(stream.bit_rate, 10) || 0,
+      bitRate: Math.max(streamRate, formatRate),
     };
   } catch {
     return { codec: "", bitRate: 0 };
@@ -2718,7 +2725,7 @@ function probeAudioQuality(absPath) {
 const LOSSLESS_CODECS = ["pcm_s16le", "pcm_s24le", "pcm_s32le", "pcm_f32le", "pcm_f64le", "pcm_u8", "flac", "alac"];
 function isRadioQuality(q) {
   if (LOSSLESS_CODECS.includes(q.codec)) return true;
-  if (q.codec === "mp3") return q.bitRate >= 310000;
+  if (q.codec === "mp3" || q.codec === "aac") return q.bitRate >= 180000;
   return false;
 }
 
@@ -2733,7 +2740,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   if (!audioFile) { cleanup(); return uploadError(res, "An audio file is required to upload a song."); }
   if (!isRadioQuality(probeAudioQuality(audioFile.path))) {
     cleanup();
-    return uploadError(res, "That file isn't radio quality. Top 20 only takes WAV or 320 kbps MP3 — the same quality radio stations accept.");
+    return uploadError(res, "That file isn't radio quality. Top 20 takes WAV or FLAC, or MP3 / M4A at 192 kbps or better — the same quality radio stations send and accept.");
   }
   const { title, email, genre, lyrics } = req.body;
   if (!title || !email || !GENRES.includes(genre)) {
@@ -2844,7 +2851,7 @@ const RULES_PANEL = `
       <li><b>Two live songs max</b> — those are the only songs that get judged. Remove one to put another up.</li>
       <li>Every song needs its <b>cover — and the cover is judged too</b>, one of the 15 points.</li>
       <li>Every uploaded song is judged on the <b>same 15 points</b>, 1–10 each.</li>
-      <li>Audio must be <b>radio quality</b> — WAV, FLAC, or 320 kbps MP3, the same quality radio stations accept.</li>
+      <li>Audio must be <b>radio quality</b> — WAV or FLAC, or MP3 / M4A at 192 kbps or better, the same quality radio stations send and accept.</li>
       <li>New charts land at <b>12:00 midnight</b>, every night.</li>
       <li>The only chart email is the <b>entry email</b> — when you enter a Top 20. Falling off is never emailed.</li>
       <li><b>No pay, no labels</b> can move a song — the algorithm decides, and artists who believe in themselves put in the work. The one exception: <b>DJ's Hot Picks</b> — every Friday, a DJ panel steps 3 songs that are already hot into the Top 20, badged for all to see.</li>
@@ -3150,7 +3157,7 @@ app.get("/how-it-works", (req, res) => {
       <li><b>Add your Facebook, Instagram and TikTok</b> to your profile — the judging system searches them to locate you and your music. No socials on file, and the system can't find you.</li>
       <li><b>No labels, no pay</b> can move a song. The algorithm decides — with one exception: <b>DJ's Hot Picks</b>. Every Friday a panel of DJs picks 3 songs that are already hot, and those picks step into the Top 20, badged for all to see. After Friday, the algorithm treats them like everybody else.</li>
       <li><b>Real artists only — no AI artists.</b> The voice and the artist have to be real: your vocals, your ability, your work, your hours. A producer may use AI tools — that is not what this rule is about — but he still has to produce the song: prompting a machine to generate the whole instrumental, start to finish, is not producing. But an AI singer, an AI performer — a song with no real artist behind it — we can't grade that and we won't; it isn't fair to the real artists. If we find out the artist is AI — today, next week, whenever — the song is pulled from the Top 20 and out of the Top 100 immediately.</li>
-      <li>Audio must be <b>radio quality</b> — WAV, FLAC, or 320 kbps MP3, the same quality radio stations accept.</li>
+      <li>Audio must be <b>radio quality</b> — WAV or FLAC, or MP3 / M4A at 192 kbps or better, the same quality radio stations send and accept.</li>
       <li>Charts <b>recalculate daily</b> — the new chart lands at 12:00 midnight.</li>
       <li>Only the <b>Top 20 plays on the Stage</b>.</li>
       <li>When you enter a Top 20, you get the email. Falling off is never emailed — you come back and check, like the pros check the charts.</li>
