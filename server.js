@@ -5,7 +5,7 @@ const multer = require("multer");
 const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
-const { execFileSync } = require("node:child_process");
+const { execFileSync, execFile } = require("node:child_process");
 const { openDb } = require("./db");
 const { GENRES, OVERALL, CATEGORIES, regionForState, localKey } = require("./config");
 const { judgeAudioFile } = require("./judge");
@@ -2154,7 +2154,7 @@ app.get("/", (req, res) => {
     meta: first ? {
       title: "TOP 20 — The Stage",
       description: `Now playing the National Overall Top 20. #1 today: "${first.title}" by ${first.artist}. The rotation plays the Top 20 in order, 1 through 20, 24 hours a day.`,
-      image: absUrl(req, "/hero-poster.jpg"),
+      image: absUrl(req, "/fb-poster.jpg"),
       imageW: 960,
       imageH: 540,
       type: "video.other",
@@ -2310,6 +2310,47 @@ app.get("/charts", (req, res) => {
 // The share-my-position card image (Dale's spec): composed live from
 // today's chart. Uncharted songs (or an unreadable cover) fall back to
 // the plain cover, so a share never breaks.
+// Homepage share poster: the hero video's face with the rollout clock
+// banded across the bottom — Dale wants the clock seen wherever the
+// homepage link gets posted. The days-left number is figured fresh each
+// day (Central), matching the countdown bar on the page itself; after
+// the date lands, the band flips to the live line.
+let fbPosterCache = { day: "", buf: null };
+app.get("/fb-poster.jpg", (req, res) => {
+  const target = Date.UTC(2026, 11, 16, 6, 0, 0); // Dec 16, 2026, 12:00 AM Central
+  const now = Date.now();
+  const ctDay = new Date(now).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+  if (fbPosterCache.day === ctDay && fbPosterCache.buf) {
+    res.set("Content-Type", "image/jpeg");
+    res.set("Cache-Control", "public, max-age=3600");
+    return res.send(fbPosterCache.buf);
+  }
+  const live = now >= target;
+  const days = live ? 0 : Math.floor((target - now) / 86400000);
+  const line1 = live ? "THE TOP 20 ROLLOUT IS ON" : "THE TOP 20 ROLLOUT — COMING SOON";
+  const line2 = live ? "THE CHARTS ARE LIVE — JOIN IN"
+    : days > 0 ? `${days} ${days === 1 ? "DAY" : "DAYS"} TO GO — LANDS DEC 16`
+    : "STARTS TONIGHT AT MIDNIGHT";
+  const dir = fs.mkdtempSync(path.join(require("node:os").tmpdir(), "fbp-"));
+  const f1 = path.join(dir, "l1.txt"); fs.writeFileSync(f1, line1);
+  const f2 = path.join(dir, "l2.txt"); fs.writeFileSync(f2, line2);
+  const out = path.join(dir, "out.jpg");
+  const font = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf";
+  const graph = "[0:v]drawbox=x=0:y=422:w=960:h=118:color=0x060B1C@0.94:t=fill,drawbox=x=0:y=422:w=960:h=3:color=0xFFC44D:t=fill,"
+    + `drawtext=fontfile=${font}:textfile=${f1}:fontsize=27:fontcolor=0xFFD98A:x=24:y=440,`
+    + `drawtext=fontfile=${font}:textfile=${f2}:fontsize=39:fontcolor=0xFFFFFF:x=24:y=478[out]`;
+  execFile("ffmpeg", ["-y", "-i", path.join(PUBLIC_DIR, "hero-poster.jpg"), "-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-q:v", "3", out], { timeout: 20000 }, (err) => {
+    let buf = null;
+    if (!err) { try { buf = fs.readFileSync(out); } catch { buf = null; } }
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* temp cleanup */ }
+    if (!buf) return res.redirect(302, "/hero-poster.jpg");
+    fbPosterCache = { day: ctDay, buf };
+    res.set("Content-Type", "image/jpeg");
+    res.set("Cache-Control", "public, max-age=3600");
+    res.send(buf);
+  });
+});
+
 app.get("/card/:id.jpg", async (req, res) => {
   const song = db.prepare(`
     SELECT s.*, u.name AS artist FROM songs s JOIN users u ON u.id = s.artist_id WHERE s.id = ?
