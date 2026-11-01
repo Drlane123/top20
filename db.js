@@ -193,6 +193,17 @@ function openDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       removed_at TEXT                       -- set when the owner removes it
     );
+
+    CREATE TABLE IF NOT EXISTS viewcast_episodes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      backdrop TEXT NOT NULL DEFAULT 'podcast',  -- studio set key (viewcast-data.js)
+      file_path TEXT NOT NULL,                   -- web path, /uploads/viewcast/episode-*.mp4
+      poster_path TEXT,                          -- web path to a frame-grab poster
+      duration_sec REAL,
+      status TEXT NOT NULL DEFAULT 'live',       -- 'live' | 'hidden'; only live episodes show
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 
   // Migrations for a DB created by an earlier build (seed rebuilds from

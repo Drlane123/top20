@@ -11,6 +11,7 @@ const { GENRES, OVERALL, CATEGORIES, regionForState, localKey } = require("./con
 const { judgeAudioFile } = require("./judge");
 const { judgeMeasuredFile } = require("./judge2");
 const storage = require("./storage");
+const VIEWCAST_SETS = require("./viewcast-data");
 const sharecard = require("./sharecard");
 const { recalc, latestChartDate, previousChartDate, ensureCurrent, todayStr, supportBonus, supportBySong } = require("./charts");
 
@@ -22,9 +23,11 @@ const PUBLIC_DIR = path.join(__dirname, "public");
 const AUDIO_UP = path.join(PUBLIC_DIR, "uploads", "audio");
 const COVER_UP = path.join(PUBLIC_DIR, "uploads", "covers");
 const VIDEO_UP = path.join(PUBLIC_DIR, "uploads", "videos");
+const VIEWCAST_UP = path.join(PUBLIC_DIR, "uploads", "viewcast");
 fs.mkdirSync(AUDIO_UP, { recursive: true });
 fs.mkdirSync(COVER_UP, { recursive: true });
 fs.mkdirSync(VIDEO_UP, { recursive: true });
+fs.mkdirSync(VIEWCAST_UP, { recursive: true });
 
 // Storage phase 2: on a fresh deploy the local record book is gone —
 // pull the latest snapshot from the bucket BEFORE opening the database.
@@ -674,6 +677,7 @@ function layout(title, active, body, opts = {}) {
     ["/profile", "profile", "Profile"],
     ["/dashboard", "dashboard", "Dashboard"],
     ["/djs", "djs", "DJs"],
+    ["/viewcast", "viewcast", "Viewcast"],
     ["/how-it-works", "how", "How It Works"],
     ["/admin/outbox", "outbox", "Outbox"],
   ].map(([href, key, label]) =>
@@ -1511,6 +1515,11 @@ app.get("/", (req, res) => {
   <div class="panel" style="border:1px solid rgba(255,190,60,.55);background:linear-gradient(180deg,rgba(255,170,40,.10),rgba(255,170,40,.03))">
     <h2 style="margin-top:0;color:#ffd98a">The Fan Bonus</h2>
     <p class="sub">The 15 points judge your song — but your people can push it. Every <b style="color:#fff">like</b> and <b style="color:#fff">share</b> from your song's page is a <b style="color:#fff">bonus</b> on top of your chart score (up to +6, counted at the midnight chart change). Sitting deep in the Top 100? Work your fans — their likes and shares lift you up the chart. Craft still rules: the bonus helps you climb, it can't crown a song by itself.</p>
+  </div>
+  <div class="panel" style="border:1px solid rgba(201,162,39,.7)">
+    <h2 style="margin-top:0">🎙️ VIEWCAST — THE TALK OF THE CHARTS</h2>
+    <p class="sub">The uploads, the artists, and what's hot this week — filmed in the Viewcast studio, right here on Top 20.</p>
+    <p style="margin:8px 0 2px"><a href="/viewcast" style="display:inline-block;background:#f2c14e;color:#131313;font-weight:800;border-radius:9px;padding:11px 18px;text-decoration:none">🎙️ Watch Viewcast</a></p>
   </div>`;
 
   const tabs = channels.map((c, i) =>
@@ -4121,6 +4130,11 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     <p class="sub" style="margin:12px 0 0"><a href="/dj" style="color:var(--accent);font-weight:700;text-decoration:none">Open the DJ panel →</a></p>
   </div>
   <div class="panel">
+    <h2 style="margin-top:0">🎙️ Viewcast Studio</h2>
+    <p class="sub">Film an episode — you on camera, or an artist in front of you — inside a studio set, and post it to the Viewcast page.</p>
+    <p class="sub" style="margin:12px 0 0"><a href="/admin/viewcast" style="color:var(--accent);font-weight:700;text-decoration:none">Open the Viewcast studio →</a></p>
+  </div>
+  <div class="panel">
     <h2 style="margin-top:0">🎬 Site media — Cloudflare storage</h2>
     ${!mediaState.configured ? `<p class="sub">Storage is not connected yet — the four R2 settings still need to go into the site's Render environment. Until then the site runs on its built-in copies, same as always.</p>`
     : !mediaState.ok ? `<p class="sub" style="color:#ff9d9d">Storage is set up but the connection check failed: ${esc(mediaState.error || "unknown error")}. The site keeps running on its built-in copies. Tell Vesper what this line says and she'll sort it.</p>`
@@ -4286,6 +4300,322 @@ app.post("/admin/recalc", (req, res) => {
 
 /* ---------------------------------- main ---------------------------------- */
 
+/* ------------------------------ Viewcast ---------------------------------
+   (Owner, Nov 1, 2026.) The site's own little TV studio, behind the staff
+   login. The owner opens a camera — front (talking to the people) or back
+   (filming an artist on location) — and the studio lifts the person out of
+   the real room and sets them inside a chosen backdrop: a true virtual
+   background, segmented live in the browser (MediaPipe), with a VIEWCAST
+   frame and a lower-third name bar burned in. Recording posts an episode:
+   transcoded here to a universal MP4 with a poster frame, listed on
+   /viewcast, and mirrored into the bucket like every other upload
+   (storage phase 2). If the segmentation library can't load, the studio
+   falls back to frame mode — the camera as a big framed picture over the
+   set — so a take is never blocked. */
+
+const VIEWCAST_KEYS = Object.keys(VIEWCAST_SETS);
+const backdropBuf = {};
+for (const k of VIEWCAST_KEYS) backdropBuf[k] = Buffer.from(VIEWCAST_SETS[k].data.split(",")[1], "base64");
+
+app.get("/viewcast/backdrop/:key.jpg", (req, res) => {
+  const buf = backdropBuf[req.params.key];
+  if (!buf) return res.status(404).end();
+  res.set({ "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" });
+  res.send(buf);
+});
+
+const viewcastUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, VIEWCAST_UP),
+    filename: (req, file, cb) => cb(null, `raw-${Date.now()}-${crypto.randomBytes(3).toString("hex")}${(path.extname(file.originalname || "") || ".webm").toLowerCase()}`),
+  }),
+  limits: { fileSize: 400 * 1024 * 1024 },
+});
+
+function episodeDuration(absPath) {
+  try {
+    const out = execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", absPath], { encoding: "utf8" });
+    return parseFloat(JSON.parse(out).format.duration) || null;
+  } catch { return null; }
+}
+
+// Every take becomes a phone-friendly MP4 (H.264 + AAC, fast-start) plus a
+// poster frame, whatever the recording browser handed us (usually WebM).
+function buildEpisodeFiles(rawPath, mp4Path, posterPath) {
+  return new Promise((resolve, reject) => {
+    execFile("ffmpeg", ["-y", "-v", "error", "-i", rawPath, "-vf", "scale='min(1280,iw)':-2", "-c:v", "libx264", "-preset", "veryfast", "-crf", "24", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", mp4Path], (err) => {
+      if (err) return reject(err);
+      execFile("ffmpeg", ["-y", "-v", "error", "-ss", "1", "-i", mp4Path, "-frames:v", "1", "-q:v", "4", posterPath], () => resolve());
+    });
+  });
+}
+
+app.get("/admin/viewcast", requireAdmin, (req, res) => {
+  const eps = db.prepare("SELECT * FROM viewcast_episodes ORDER BY id DESC").all();
+  const setBtns = VIEWCAST_KEYS.map((k) => `
+    <button type="button" class="vset${k === "podcast" ? " on" : ""}" data-key="${k}" onclick="pickSet('${k}')" style="background:#0a0f22;border:2px solid ${k === "podcast" ? "#f2c14e" : "#232a45"};border-radius:10px;padding:6px;cursor:pointer;color:#e9ecf2;width:132px">
+      <img src="/viewcast/backdrop/${k}.jpg" alt="" style="width:100%;border-radius:6px;display:block">
+      <span style="font-size:12.5px;font-weight:700">${esc(VIEWCAST_SETS[k].label)}</span>
+    </button>`).join("");
+  const epRows = eps.map((ep) => `
+    <div style="display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #232a45">
+      ${ep.poster_path ? `<img src="${esc(ep.poster_path)}" alt="" style="width:96px;border-radius:6px">` : ""}
+      <div style="flex:1;min-width:0">
+        <strong>${esc(ep.title)}</strong> ${ep.status !== "live" ? `<span style="color:#ffb020;font-size:12px">HIDDEN</span>` : ""}
+        <br><span style="color:#8a8f99;font-size:12.5px">${esc(String(ep.created_at).slice(0, 16))} · ${esc(VIEWCAST_SETS[ep.backdrop] ? VIEWCAST_SETS[ep.backdrop].label : ep.backdrop)}${ep.duration_sec ? " · " + Math.round(ep.duration_sec) + "s" : ""}</span>
+        <br><a href="/viewcast/${ep.id}" style="color:#f2c14e;font-size:13px">Watch page</a>
+      </div>
+      <form method="post" action="/admin/viewcast/toggle" style="margin:0"><input type="hidden" name="id" value="${ep.id}"><button style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:6px 10px;cursor:pointer">${ep.status === "live" ? "Hide" : "Show"}</button></form>
+      <form method="post" action="/admin/viewcast/delete" style="margin:0" onsubmit="return confirm('Delete this episode for good?')"><input type="hidden" name="id" value="${ep.id}"><button style="background:#3a1120;color:#ffb3c1;border:1px solid #6e2c3a;border-radius:8px;padding:6px 10px;cursor:pointer">Delete</button></form>
+    </div>`).join("");
+  res.send(layout("Viewcast Studio", "viewcast", `
+  <p><a href="/admin/placements" style="color:#f2c14e">← Chart placements</a></p>
+  <h1>🎙️ Viewcast Studio</h1>
+  <p style="color:#c9cdd6">Your studio, right in the site. Turn the camera on, pick a set, and the person on camera is lifted out of the room and set inside it — film yourself up front, or flip the camera and film an artist wherever you're standing. Hit record, give the episode a title, and post it to the Viewcast page.</p>
+  <div class="panel">
+    <canvas id="vstage" width="1280" height="720" style="width:100%;border-radius:10px;background:#000;display:block"></canvas>
+    <video id="vcam" playsinline muted style="display:none"></video>
+    <p id="vstatus" style="color:#f2c14e;margin:10px 0 4px">Tap “Turn camera on” to open the studio.</p>
+    <p style="margin:4px 0"><span id="vtimer" style="font-weight:800;color:#ff5f6b"></span></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+      <button type="button" onclick="startCam()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">📷 Turn camera on</button>
+      <button type="button" onclick="flipCam()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">🔄 Flip camera</button>
+      <button type="button" id="recBtn" onclick="startRec()" disabled style="background:#c22743;color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer;opacity:.55">● Record</button>
+      <button type="button" id="stopBtn" onclick="stopRec()" disabled style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer;opacity:.55">■ Stop</button>
+    </div>
+    <p style="margin:12px 0 6px"><strong>Pick your set:</strong></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">${setBtns}</div>
+    <div style="display:grid;gap:8px;margin-top:14px;max-width:560px">
+      <input id="vtitle" placeholder="Episode title — e.g. This Week's Uploads" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+      <input id="vname" placeholder="Name on screen — e.g. Dale · Top 20 (optional)" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+      <input id="vtopic" placeholder="Topic line — e.g. Talking new uploads (optional)" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+    </div>
+    <video id="vprev" controls playsinline style="display:none;width:100%;border-radius:10px;margin-top:14px;background:#000"></video>
+    <p style="margin-top:10px"><button type="button" id="postBtn" onclick="postEp()" disabled style="background:#1db954;color:#08130c;border:0;border-radius:9px;padding:12px 18px;font-weight:800;cursor:pointer;opacity:.55">⬆ Post episode to Viewcast</button></p>
+    <p style="color:#8a8f99;font-size:12.5px">Good light on the face makes the cleanest edge. The take stays on this phone until you post it; posting saves it to your bucket for good.</p>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">Your episodes</h2>
+    ${eps.length ? epRows : `<p style="color:#8a8f99;margin:4px 0">None yet — your first recording lands here.</p>`}
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+  <script>
+  var video = document.getElementById('vcam'), canvas = document.getElementById('vstage'), ctx = canvas.getContext('2d');
+  var W = 1280, H = 720, stream = null, facing = 'user', micTrack = null;
+  var seg = null, segBusy = false, mode = 'virtual';
+  var currentSet = 'podcast', backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/podcast.jpg';
+  var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
+  function setStatus(t) { document.getElementById('vstatus').textContent = t; }
+  function pickSet(key) {
+    currentSet = key; backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/' + key + '.jpg';
+    var btns = document.querySelectorAll('.vset');
+    for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-key') === key) ? '#f2c14e' : '#232a45';
+  }
+  function drawCoverInto(img, x, y, w, h) {
+    var iw = img.videoWidth || img.naturalWidth || img.width, ih = img.videoHeight || img.naturalHeight || img.height;
+    if (!iw || !ih) return;
+    var s = Math.max(w / iw, h / ih), dw = iw * s, dh = ih * s;
+    ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+  }
+  function roundRectPath(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+  function drawChrome() {
+    ctx.save();
+    ctx.lineWidth = Math.max(6, H * 0.012); ctx.strokeStyle = '#c9a227'; ctx.strokeRect(6, 6, W - 12, H - 12);
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(233,236,242,.85)'; ctx.strokeRect(18, 18, W - 36, H - 36);
+    ctx.font = '800 ' + Math.round(H * 0.042) + 'px Arial';
+    var label = 'VIEWCAST'; var tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(2,6,18,.72)'; roundRectPath(ctx, 30, 30, tw + 30, H * 0.078, 10); ctx.fill();
+    ctx.fillStyle = '#f2c14e'; ctx.fillRect(44, 30 + H * 0.024, 10, H * 0.03);
+    ctx.fillStyle = '#f2c14e'; ctx.textBaseline = 'middle'; ctx.fillText(label, 64, 30 + H * 0.039 + 2);
+    var name = (document.getElementById('vname').value || '').trim();
+    var topic = (document.getElementById('vtopic').value || '').trim();
+    if (name || topic) {
+      var bh = H * 0.135, by = H - bh - 30, bw = Math.min(W * 0.66, W - 60);
+      ctx.fillStyle = 'rgba(2,6,18,.78)'; roundRectPath(ctx, 30, by, bw, bh, 10); ctx.fill();
+      ctx.fillStyle = '#f2c14e'; ctx.fillRect(30, by, 7, bh);
+      if (name) { ctx.fillStyle = '#ffffff'; ctx.font = '800 ' + Math.round(H * 0.04) + 'px Arial'; ctx.fillText(name, 54, by + bh * (topic ? 0.33 : 0.5)); }
+      if (topic) { ctx.fillStyle = '#c9cdd6'; ctx.font = Math.round(H * 0.03) + 'px Arial'; ctx.fillText(topic, 54, by + bh * (name ? 0.72 : 0.5)); }
+    }
+    ctx.restore();
+  }
+  function drawFrameMode() {
+    drawCoverInto(backdropImg, 0, 0, W, H);
+    var ar = (video.videoWidth && video.videoHeight) ? video.videoWidth / video.videoHeight : 16 / 9;
+    var ch = H * 0.84, cw = ch * ar;
+    if (cw > W * 0.88) { cw = W * 0.88; ch = cw / ar; }
+    var cx = (W - cw) / 2, cy = (H - ch) / 2;
+    ctx.save(); ctx.beginPath(); ctx.rect(cx, cy, cw, ch); ctx.clip(); drawCoverInto(video, cx, cy, cw, ch); ctx.restore();
+    ctx.lineWidth = 6; ctx.strokeStyle = '#c9a227'; ctx.strokeRect(cx, cy, cw, ch);
+    drawChrome();
+  }
+  function onSeg(results) {
+    ctx.save();
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(results.segmentationMask, 0, 0, W, H);
+    ctx.globalCompositeOperation = 'source-in';
+    ctx.drawImage(results.image, 0, 0, W, H);
+    ctx.globalCompositeOperation = 'destination-over';
+    drawCoverInto(backdropImg, 0, 0, W, H);
+    ctx.restore();
+    drawChrome();
+  }
+  function initSeg() {
+    if (seg || mode === 'frame') return;
+    try {
+      if (typeof SelfieSegmentation === 'undefined') { mode = 'frame'; return; }
+      seg = new SelfieSegmentation({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f; } });
+      seg.setOptions({ modelSelection: 1 });
+      seg.onResults(onSeg);
+    } catch (e) { seg = null; mode = 'frame'; }
+  }
+  async function pump() {
+    if (!stream) return;
+    if (seg && !segBusy && video.readyState >= 2) {
+      segBusy = true;
+      try { await seg.send({ image: video }); } catch (e) { mode = 'frame'; }
+      segBusy = false;
+    }
+    if (!seg || mode === 'frame') drawFrameMode();
+    requestAnimationFrame(pump);
+  }
+  async function startCam() {
+    try {
+      if (stream) { var tr = stream.getTracks(); for (var i = 0; i < tr.length; i++) tr[i].stop(); }
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
+      video.srcObject = stream;
+      await video.play();
+      if (video.videoWidth && video.videoHeight) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; W = canvas.width; H = canvas.height; }
+      micTrack = stream.getAudioTracks()[0] || null;
+      initSeg(); pump();
+      var rb = document.getElementById('recBtn'); rb.disabled = false; rb.style.opacity = 1;
+      setStatus(mode === 'frame' ? 'Camera on (framed-picture mode). Pick a set, then hit Record.' : 'Camera on — the virtual set is live. Pick a set, then hit Record.');
+    } catch (e) { setStatus('The camera did not open — allow camera access for this site in your browser, then tap again.'); }
+  }
+  function flipCam() { facing = (facing === 'user') ? 'environment' : 'user'; if (stream) startCam(); }
+  function fmtT(s) { var m = Math.floor(s / 60), r = s % 60; return m + ':' + (r < 10 ? '0' : '') + r; }
+  function startRec() {
+    if (!stream) { setStatus('Turn the camera on first.'); return; }
+    chunks = [];
+    var cs = canvas.captureStream(30);
+    if (micTrack) cs.addTrack(micTrack);
+    var mt = '';
+    if (window.MediaRecorder) {
+      if (MediaRecorder.isTypeSupported('video/mp4')) mt = 'video/mp4';
+      else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) mt = 'video/webm;codecs=vp9,opus';
+      else if (MediaRecorder.isTypeSupported('video/webm')) mt = 'video/webm';
+    }
+    try { recorder = new MediaRecorder(cs, mt ? { mimeType: mt } : undefined); }
+    catch (e) { setStatus('This browser cannot record — try Chrome.'); return; }
+    recorder.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
+    recorder.onstop = onRecStop;
+    recorder.start(500);
+    recStart = Date.now();
+    var tv = document.getElementById('vtimer');
+    tv.textContent = '● REC 0:00';
+    recTimer = setInterval(function () { tv.textContent = '● REC ' + fmtT(Math.floor((Date.now() - recStart) / 1000)); }, 500);
+    document.getElementById('recBtn').disabled = true;
+    var sb = document.getElementById('stopBtn'); sb.disabled = false; sb.style.opacity = 1;
+    setStatus('Recording… talk away.');
+  }
+  function stopRec() {
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    clearInterval(recTimer); document.getElementById('vtimer').textContent = '';
+    document.getElementById('recBtn').disabled = false;
+    var sb = document.getElementById('stopBtn'); sb.disabled = true; sb.style.opacity = .55;
+  }
+  function onRecStop() {
+    lastBlob = new Blob(chunks, { type: (recorder && recorder.mimeType) || 'video/webm' });
+    var prev = document.getElementById('vprev');
+    prev.src = URL.createObjectURL(lastBlob); prev.style.display = 'block';
+    var pb = document.getElementById('postBtn'); pb.disabled = false; pb.style.opacity = 1;
+    setStatus('Take saved on this phone — watch it back above, then post it.');
+  }
+  async function postEp() {
+    var title = (document.getElementById('vtitle').value || '').trim();
+    if (!title) { setStatus('Give the episode a title first.'); return; }
+    if (!lastBlob) { setStatus('Record a take first.'); return; }
+    var fd = new FormData();
+    fd.append('video', lastBlob, 'viewcast' + (lastBlob.type.indexOf('mp4') >= 0 ? '.mp4' : '.webm'));
+    fd.append('title', title); fd.append('backdrop', currentSet);
+    var pb = document.getElementById('postBtn'); pb.disabled = true; pb.style.opacity = .55;
+    setStatus('Posting your episode — this can take a moment for a long take…');
+    try {
+      var r = await fetch('/admin/viewcast/upload', { method: 'POST', body: fd });
+      var j = await r.json();
+      if (j.ok) { setStatus('Posted! Refreshing your episode list…'); setTimeout(function () { location.reload(); }, 900); }
+      else { setStatus(j.error || 'Posting failed — try again.'); pb.disabled = false; pb.style.opacity = 1; }
+    } catch (e) { setStatus('Posting failed — check your connection and try again.'); pb.disabled = false; pb.style.opacity = 1; }
+  }
+  </script>`));
+});
+
+app.post("/admin/viewcast/upload", requireAdmin, viewcastUpload.single("video"), async (req, res) => {
+  if (!req.file) return res.status(400).json({ ok: false, error: "No video came through — record a take and try again." });
+  const title = String(req.body.title || "").trim().slice(0, 120) || "Viewcast episode";
+  const backdrop = VIEWCAST_KEYS.includes(req.body.backdrop) ? req.body.backdrop : "podcast";
+  const stamp = Date.now();
+  const mp4Name = `episode-${stamp}.mp4`;
+  const posterName = `episode-${stamp}.jpg`;
+  const mp4Path = path.join(VIEWCAST_UP, mp4Name);
+  const posterPath = path.join(VIEWCAST_UP, posterName);
+  try {
+    await buildEpisodeFiles(req.file.path, mp4Path, posterPath);
+  } catch {
+    try { fs.unlinkSync(req.file.path); } catch {}
+    return res.status(500).json({ ok: false, error: "That take couldn't be processed — try a shorter one." });
+  }
+  try { fs.unlinkSync(req.file.path); } catch {}
+  const info = db.prepare("INSERT INTO viewcast_episodes (title, backdrop, file_path, poster_path, duration_sec) VALUES (?, ?, ?, ?, ?)")
+    .run(title, backdrop, `/uploads/viewcast/${mp4Name}`, `/uploads/viewcast/${posterName}`, episodeDuration(mp4Path));
+  mirrorUpload(mp4Path);
+  mirrorUpload(posterPath);
+  snapshotDbSoon();
+  res.json({ ok: true, id: info.lastInsertRowid });
+});
+
+app.post("/admin/viewcast/toggle", requireAdmin, (req, res) => {
+  const ep = db.prepare("SELECT * FROM viewcast_episodes WHERE id = ?").get(req.body.id);
+  if (ep) db.prepare("UPDATE viewcast_episodes SET status = ? WHERE id = ?").run(ep.status === "live" ? "hidden" : "live", ep.id);
+  res.redirect("/admin/viewcast");
+});
+
+app.post("/admin/viewcast/delete", requireAdmin, (req, res) => {
+  const ep = db.prepare("SELECT * FROM viewcast_episodes WHERE id = ?").get(req.body.id);
+  if (ep) {
+    db.prepare("DELETE FROM viewcast_episodes WHERE id = ?").run(ep.id);
+    for (const p of [ep.file_path, ep.poster_path]) {
+      if (p) { try { fs.unlinkSync(path.join(PUBLIC_DIR, p)); } catch {} }
+    }
+    snapshotDbSoon();
+  }
+  res.redirect("/admin/viewcast");
+});
+
+app.get("/viewcast", (req, res) => {
+  const eps = db.prepare("SELECT * FROM viewcast_episodes WHERE status = 'live' ORDER BY id DESC").all();
+  const cards = eps.map((ep) => `
+    <a class="panel" href="/viewcast/${ep.id}" style="display:block;text-decoration:none;color:inherit;padding:0;overflow:hidden">
+      ${ep.poster_path ? `<img src="${esc(ep.poster_path)}" alt="" style="width:100%;display:block;aspect-ratio:16/9;object-fit:cover">` : ""}
+      <div style="padding:12px 14px"><strong>${esc(ep.title)}</strong><br>
+      <span style="color:#8a8f99;font-size:12.5px">${esc(String(ep.created_at).slice(0, 10))}${ep.duration_sec ? " · " + Math.round(ep.duration_sec) + "s" : ""} · the ${esc(VIEWCAST_SETS[ep.backdrop] ? VIEWCAST_SETS[ep.backdrop].label : "Podcast Studio")} set</span></div>
+    </a>`).join("");
+  res.send(layout("Viewcast", "viewcast", `
+  <h1>🎙️ Viewcast</h1>
+  <p style="color:#c9cdd6">The talk of Top 20 — the uploads, the artists, and what's hot this week, filmed right here in the Viewcast studio.</p>
+  ${eps.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">${cards}</div>` : `<div class="panel"><p style="margin:4px 0">The first episode is on its way — check back soon.</p></div>`}`));
+});
+
+app.get("/viewcast/:id", (req, res) => {
+  const ep = db.prepare("SELECT * FROM viewcast_episodes WHERE id = ? AND status = 'live'").get(req.params.id);
+  if (!ep) return res.status(404).send(layout("Not found", "viewcast", `<div class="panel"><h2>That episode isn't up.</h2><p><a href="/viewcast" style="color:#f2c14e">Back to Viewcast</a></p></div>`));
+  res.send(layout(ep.title, "viewcast", `
+  <p><a href="/viewcast" style="color:#f2c14e">← All episodes</a></p>
+  <h1 style="font-size:24px">${esc(ep.title)}</h1>
+  <video controls playsinline preload="metadata" ${ep.poster_path ? `poster="${esc(ep.poster_path)}"` : ""} src="${esc(ep.file_path)}" style="width:100%;border-radius:12px;background:#000"></video>
+  <p style="color:#8a8f99;font-size:13px">Filmed ${esc(String(ep.created_at).slice(0, 10))} in the ${esc(VIEWCAST_SETS[ep.backdrop] ? VIEWCAST_SETS[ep.backdrop].label : "Podcast Studio")} set on Viewcast.</p>`,
+    { meta: { title: `${ep.title} — Viewcast`, description: "Watch this Viewcast episode on Top 20.", type: "video.other" } }));
+});
+
 /* --------------------- Storage phase 2: permanence ----------------------
    (Owner, Nov 1, 2026.) Render's disk is wiped on every deploy, so the
    bucket is the real home of everything an artist entrusts to the site:
@@ -4298,7 +4628,7 @@ app.post("/admin/recalc", (req, res) => {
      opens it (see the top of this file).
    When storage is not configured, all of this is a no-op. */
 
-const MIRROR_DIRS = [AUDIO_UP, COVER_UP, PHOTO_UP, VIDEO_UP, AD_UP];
+const MIRROR_DIRS = [AUDIO_UP, COVER_UP, PHOTO_UP, VIDEO_UP, AD_UP, VIEWCAST_UP];
 const MIRRORED = new Set();
 const MIRROR_TYPES = { ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav", ".flac": "audio/flac", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/quicktime" };
 
