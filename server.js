@@ -1511,7 +1511,7 @@ app.get("/", (req, res) => {
   </div>
   <script>
   (function () {
-    var target = new Date("2026-12-15T06:00:00Z").getTime(); // Dec 15, 2026, 12:00 AM Central (45-day rollout countdown, owner Oct 31)
+    var target = new Date("2026-12-16T06:00:00Z").getTime(); // Dec 16, 2026, 12:00 AM Central (45-day rollout countdown — restarted by Dale the night of Oct 31, a full 45 days from Nov 1)
     function pad(n) { return (n < 10 ? "0" : "") + n; }
     function tick() {
       var left = target - Date.now();
