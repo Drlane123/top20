@@ -349,6 +349,13 @@ h2{letter-spacing:1px}
   box-shadow:inset 0 1px 0 rgba(255,255,255,.5),0 5px 12px rgba(0,0,0,.5)}
 .btn-block{display:block;width:100%}
 .np-top{display:flex;align-items:center;gap:14px}
+#npPanel{scroll-margin-top:0px}
+@media (max-width:700px){
+  /* One tap on PLAYLIST LIVE frames the whole now-playing panel on a
+     phone screen (owner request, Nov 1): the cover gives up height on
+     short screens so the big rank through the Share button fit at once. */
+  #npCover{width:min(100%,calc(100vh - 448px));width:min(100%,calc(100dvh - 448px));height:auto;aspect-ratio:1/1;display:block;margin-left:auto;margin-right:auto}
+}
 .np-bigrank{font-family:Impact,"Arial Narrow Bold",sans-serif;font-weight:900;font-style:italic;font-size:56px;line-height:.9;padding-right:.06em;background:linear-gradient(180deg,#ffffff 0%,#f4f8ff 20%,#aebdd2 38%,#ffffff 47%,#c3d0e2 58%,#7e8ea6 80%,#eef3fa 100%);background-size:100% 210%;animation:shine 4.5s ease-in-out infinite alternate;-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 -1px 1px rgba(0,0,0,.95)) drop-shadow(0 1px 0 rgba(255,255,255,.4)) drop-shadow(0 0 9px rgba(215,230,255,.3))}
 .np-ranklab{font-size:10px;letter-spacing:2px;color:var(--dim);text-transform:uppercase;margin-top:3px}
 .cover{width:100%;aspect-ratio:1/1;object-fit:cover;border-radius:16px;border:1px solid #4a4e58;display:block;
@@ -1498,7 +1505,7 @@ app.get("/", (req, res) => {
     if (pj) pj.addEventListener("click", function () {
       scrolledMute = false;
       if (!v.muted) { v.muted = true; b.textContent = "🔊 SOUND ON"; }
-      var tgt = document.getElementById("channelTabs");
+      var tgt = document.getElementById("npPanel") || document.getElementById("channelTabs");
       if (tgt) tgt.scrollIntoView({ behavior: "smooth", block: "start" });
       var busy = false;
       try { busy = !!(window.__stageAudible && window.__stageAudible()); } catch (e) {}
@@ -1555,7 +1562,7 @@ app.get("/", (req, res) => {
   <div class="tabs" id="channelTabs">${tabs}</div>
   ${first ? `
   <div class="stagegrid">
-  <div class="chrome-frame"><div class="panel">
+  <div class="chrome-frame" id="npPanel"><div class="panel">
     <div class="np-top"><div class="np-bigrank" id="npBigRank">#${first.rank}</div><div><div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">Now playing — <span id="npChannel">Main Stage</span></div><div class="np-ranklab">National rank</div></div></div>
     <img class="cover" id="npCover" src="${esc(first.cover)}" alt="cover" style="margin-top:10px">
     <h1 id="npTitle">${esc(first.title)}</h1>
