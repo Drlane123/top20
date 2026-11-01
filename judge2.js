@@ -260,21 +260,18 @@ function judgeMeasured(m, genre, coverAbsPath, lyricsText, titleText) {
     : `One pass doesn't yet demand a second — the hook and groove reads aren't strong enough together. Strengthen the moment people would rewind for.`;
   // ---- Radio Readiness — judged the music-director way (Dale): a song is
   // radio ready when its MIX measures close to the radio formats — Pop,
-  // R&B and Hip-Hop — no matter what chart it sits on, and when the record
-  // is clean: profanity in the words caps it, profanity in the TITLE gets
-  // no radio approval at all.
+  // R&B and Hip-Hop — no matter what chart it sits on, and when the WORDS
+  // sent in are clean: profanity in the lyrics caps it. The TITLE is never
+  // judged (owner, Nov 1, 2026): a radio version gets in and gets judged on
+  // its sound and its words, whatever its title says — the owner reviews
+  // titles personally, the engine does not pick at them.
   const formatMatch = (T) => (bandScore(m.lufs, T.lufs, 0.5) + bandScore(m.drProxy, T.dr, 0.5) + bandScore(m.lowEndDb, T.low, 0.5) + bandScore(m.topEndDb, T.top, 0.5)) / 4;
   const radioFam = [TEMPLATES.pop, TEMPLATES.rb, TEMPLATES.hiphop].map((T) => ({ name: T.label, score: formatMatch(T) })).sort((a, b) => b.score - a.score);
   const famMean = radioFam.reduce((a, f) => a + f.score, 0) / radioFam.length;
   let radioBase = round5(0.6 * radioFam[0].score + 0.4 * famMean);
   if (m.truePeak > -0.3) radioBase = Math.min(radioBase, 7); // broadcast ceiling
-  const titleScan = scanProfanity(titleText);
   const lyricScan = lyricsText ? scanProfanity(lyricsText) : null;
-  const titleProfane = titleScan.hardHits + titleScan.mildHits > 0;
-  if (titleProfane) {
-    out.radio_readiness = 1;
-    notes.radio_readiness = `No radio approval — the title itself carries profanity ("${[...titleScan.hardWords, ...titleScan.mildWords][0]}"). A DJ can't even say this record's name on air, so it doesn't get judged for radio at all, no matter how the mix measures. Retitle it clean and the radio read opens up.`;
-  } else if (lyricScan && lyricScan.hardHits > 0) {
+  if (lyricScan && lyricScan.hardHits > 0) {
     out.radio_readiness = Math.min(radioBase, 3);
     notes.radio_readiness = `Not radio ready — the lyrics sent in carry ${lyricScan.hardHits} explicit hit${lyricScan.hardHits > 1 ? "s" : ""} (${lyricScan.hardWords.slice(0, 3).join(", ")}${lyricScan.hardWords.length > 3 ? "…" : ""}). Radio can't play it as-is no matter how the mix measures — and the mix itself sits closest to the ${radioFam[0].name} radio profile. Upload a clean edit and this point is judged on the sound.`;
   } else {
