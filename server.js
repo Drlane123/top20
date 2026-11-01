@@ -2368,7 +2368,7 @@ app.get("/song/:id", (req, res) => {
   ${removedNote}
   <audio controls preload="metadata" src="${esc(song.audio_path)}"></audio>
   <div class="flexbtns">
-    <form method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="like"><button class="btn" type="submit">♥ Like (${fmtNum(eng.like || 0)})</button></form>
+    <form id="likeForm" method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="like"><button class="btn" type="submit" id="likeBtn">♥ <span id="likeLabel">Like</span> (<span id="likeCount">${fmtNum(eng.like || 0)}</span>)</button></form>
     <form id="shareForm" method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="share"><button class="btn" type="submit">⤴ Share (${fmtNum(eng.share || 0)})</button></form>
   </div>
   <p class="sub" id="shareMsg" style="margin-top:6px"></p>
@@ -2394,6 +2394,32 @@ app.get("/song/:id", (req, res) => {
     var form = document.getElementById('shareForm');
     var menu = document.getElementById('shareMenu');
     var msg = document.getElementById('shareMsg');
+    var likeForm = document.getElementById('likeForm');
+    if (likeForm) {
+      var likeKey = 't20-liked-${song.id}';
+      var likeCountEl = document.getElementById('likeCount');
+      var likeLabelEl = document.getElementById('likeLabel');
+      var likeBtnEl = document.getElementById('likeBtn');
+      var likedNow = false;
+      try { likedNow = !!localStorage.getItem(likeKey); } catch (e) {}
+      var paintLike = function(){
+        if (likeLabelEl) likeLabelEl.textContent = likedNow ? 'Liked' : 'Like';
+        if (likeBtnEl) likeBtnEl.style.borderColor = likedNow ? '#ffc44d' : '';
+      };
+      paintLike();
+      likeForm.addEventListener('submit', function(ev){
+        ev.preventDefault();
+        var going = likedNow ? 'unlike' : 'like';
+        likedNow = !likedNow;
+        try { if (likedNow) localStorage.setItem(likeKey, '1'); else localStorage.removeItem(likeKey); } catch (e) {}
+        if (likeCountEl) {
+          var n = parseInt(likeCountEl.textContent.replace(/[^0-9]/g, ''), 10) || 0;
+          likeCountEl.textContent = Math.max(0, n + (likedNow ? 1 : -1)).toLocaleString('en-US');
+        }
+        paintLike();
+        try { fetch(likeForm.action, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'type=' + going, keepalive: true }); } catch (e) {}
+      });
+    }
     if (!form || !menu) return;
     var url = location.origin + '/song/${song.id}';
     var shareCount = ${Number(eng.share || 0)};
@@ -2468,6 +2494,12 @@ app.get("/song/:id", (req, res) => {
 });
 
 app.post("/song/:id/engage", (req, res) => {
+  if (req.body.type === "unlike") {
+    // Taking a like back: the Like button is a toggle — one like per
+    // visitor, tap again to undo it. Never below zero.
+    db.prepare("UPDATE engagements SET count = MAX(count - 1, 0) WHERE song_id = ? AND type = 'like'").run(req.params.id);
+    return res.redirect(`/song/${req.params.id}`);
+  }
   const type = ["like", "save", "share"].includes(req.body.type) ? req.body.type : "like";
   db.prepare(
     `INSERT INTO engagements (song_id, type, count) VALUES (?, ?, 1)
