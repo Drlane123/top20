@@ -28,6 +28,7 @@ fs.mkdirSync(VIDEO_UP, { recursive: true });
 
 const db = openDb();
 const app = express();
+app.set("trust proxy", 1); // Render terminates HTTPS — believe its forwarded protocol so absolute links (share cards) come out https
 
 // Hero welcome video: the binary ships base64-embedded (hero-data.js)
 // Build probe for the stale-page self-heal (see layout): an open page
@@ -616,7 +617,10 @@ function layout(title, active, body, opts = {}) {
 <meta property="og:description" content="${esc(ogDesc)}">
 <meta property="og:type" content="${esc(ogType)}">
 <meta property="og:site_name" content="TOP 20">${meta.image ? `
-<meta property="og:image" content="${esc(meta.image)}">` : ""}
+<meta property="og:image" content="${esc(meta.image)}">${meta.image.includes("/card/") ? `
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="1200">
+<meta property="og:image:type" content="image/jpeg">` : ""}` : ""}
 <meta name="twitter:card" content="${meta.image ? "summary_large_image" : "summary"}">
 <meta name="twitter:title" content="${esc(ogTitle)}">
 <meta name="twitter:description" content="${esc(ogDesc)}">${meta.image ? `
