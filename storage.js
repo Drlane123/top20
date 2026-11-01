@@ -78,6 +78,13 @@ async function putFile(key, filePath, contentType) {
   return putObject(key, fs.readFileSync(filePath), contentType);
 }
 
+async function getObject(key) {
+  const res = await request("GET", key);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`R2 get ${key} failed: HTTP ${res.status}`);
+  return Buffer.from(await res.arrayBuffer());
+}
+
 async function headObject(key) {
   const res = await request("HEAD", key);
   if (res.status === 404) return null;
@@ -147,4 +154,4 @@ async function testConnection() {
   }
 }
 
-module.exports = { configured, cfg, putObject, putFile, headObject, deleteObject, listObjects, presignGet, testConnection, _signingKey: signingKey, _sha256hex: sha256hex };
+module.exports = { configured, cfg, putObject, putFile, getObject, headObject, deleteObject, listObjects, presignGet, testConnection, _signingKey: signingKey, _sha256hex: sha256hex };

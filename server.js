@@ -6,7 +6,7 @@ const path = require("node:path");
 const fs = require("node:fs");
 const crypto = require("node:crypto");
 const { execFileSync, execFile } = require("node:child_process");
-const { openDb } = require("./db");
+const { openDb, DB_PATH } = require("./db");
 const { GENRES, OVERALL, CATEGORIES, regionForState, localKey } = require("./config");
 const { judgeAudioFile } = require("./judge");
 const { judgeMeasuredFile } = require("./judge2");
@@ -25,6 +25,16 @@ const VIDEO_UP = path.join(PUBLIC_DIR, "uploads", "videos");
 fs.mkdirSync(AUDIO_UP, { recursive: true });
 fs.mkdirSync(COVER_UP, { recursive: true });
 fs.mkdirSync(VIDEO_UP, { recursive: true });
+
+// Storage phase 2: on a fresh deploy the local record book is gone —
+// pull the latest snapshot from the bucket BEFORE opening the database.
+// Runs a small helper process and waits for it; a no-op when storage is
+// not configured or a local copy already exists.
+try {
+  const { spawnSync } = require("node:child_process");
+  const rr = spawnSync(process.execPath, [path.join(__dirname, "restore-db.js")], { stdio: "inherit", timeout: 30000 });
+  if (rr && rr.error) console.error("[restore] skipped:", rr.error.message);
+} catch (e) { console.error("[restore] skipped:", e.message); }
 
 const db = openDb();
 const app = express();
@@ -233,6 +243,20 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.urlencoded({ extended: true }));
+// Uploaded media is mirrored to the cloud bucket (storage phase 2): when
+// a file is missing from this instance's disk — every deploy starts with
+// an empty disk — send the visitor to the bucket copy instead of a 404.
+app.use("/uploads", (req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  const rel = decodeURIComponent(req.path || "").replace(/^\/+/, "");
+  if (!rel || rel.includes("..")) return next();
+  if (fs.existsSync(path.join(PUBLIC_DIR, "uploads", rel))) return next();
+  if (!storage.configured()) return next();
+  const url = storage.presignGet(`uploads/${rel}`, 3600);
+  if (!url) return next();
+  res.set("Cache-Control", "no-store");
+  return res.redirect(302, url);
+});
 app.use(express.static(PUBLIC_DIR, {
   setHeaders(res, filePath) {
     if (filePath.endsWith(".webmanifest")) {
@@ -2791,6 +2815,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   db.prepare("INSERT INTO engagements (song_id, type, count) VALUES (?, 'play', 0), (?, 'like', 0), (?, 'share', 0), (?, 'save', 0)")
     .run(songId, songId, songId, songId);
 
+  mirrorUpload(audioFile.path); mirrorUpload(coverFile.path); snapshotDbSoon();
   const result = recalc(db);
   const myNotifications = result.notifications.filter((n) => n.song_id === songId);
   const judge = db.prepare("SELECT * FROM judge_scores WHERE song_id = ?").get(songId);
@@ -2959,6 +2984,7 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
     user.id
   );
   const saved = db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
+  snapshotDbSoon();
   if (hasProfile(saved)) return res.redirect(`/artist/${user.id}?saved=1`);
   return res.redirect(`/profile?email=${encodeURIComponent(emailLc)}&saved=1`);
 });
@@ -4259,6 +4285,67 @@ app.post("/admin/recalc", (req, res) => {
 });
 
 /* ---------------------------------- main ---------------------------------- */
+
+/* --------------------- Storage phase 2: permanence ----------------------
+   (Owner, Nov 1, 2026.) Render's disk is wiped on every deploy, so the
+   bucket is the real home of everything an artist entrusts to the site:
+   - every uploaded file (song audio, covers, photos, videos, ads) is
+     mirrored into the bucket, and any /uploads file missing locally is
+     served from the bucket by signed redirect (see the /uploads mount);
+   - the record book (the whole database) is snapshotted into the bucket
+     shortly after boot, every few minutes after, after artist activity,
+     and on shutdown — and restore-db.js pulls it back before the app
+     opens it (see the top of this file).
+   When storage is not configured, all of this is a no-op. */
+
+const MIRROR_DIRS = [AUDIO_UP, COVER_UP, PHOTO_UP, VIDEO_UP, AD_UP];
+const MIRRORED = new Set();
+const MIRROR_TYPES = { ".mp3": "audio/mpeg", ".m4a": "audio/mp4", ".wav": "audio/wav", ".flac": "audio/flac", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".mp4": "video/mp4", ".mov": "video/quicktime" };
+
+function mirrorUpload(absPath) {
+  if (!storage.configured() || !absPath) return;
+  const key = path.relative(PUBLIC_DIR, absPath).split(path.sep).join("/");
+  if (!key.startsWith("uploads/") || MIRRORED.has(key)) return;
+  MIRRORED.add(key);
+  const type = MIRROR_TYPES[path.extname(absPath).toLowerCase()] || "application/octet-stream";
+  storage.putFile(key, absPath, type).catch((e) => { MIRRORED.delete(key); console.error("[storage] mirror failed:", key, e.message); });
+}
+
+function sweepUploads() {
+  if (!storage.configured()) return;
+  for (const dir of MIRROR_DIRS) {
+    let names = [];
+    try { names = fs.readdirSync(dir); } catch { continue; }
+    for (const name of names) mirrorUpload(path.join(dir, name));
+  }
+}
+
+let snapBusy = false;
+async function snapshotDb(reason) {
+  if (!storage.configured() || snapBusy) return;
+  snapBusy = true;
+  try {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
+    await storage.putFile("db/top20.db", DB_PATH, "application/octet-stream");
+    console.log(`[storage] record book snapshotted (${reason})`);
+  } catch (e) { console.error("[storage] snapshot failed:", e.message); }
+  snapBusy = false;
+}
+let snapTimer = null;
+function snapshotDbSoon() {
+  if (!storage.configured() || snapTimer) return;
+  snapTimer = setTimeout(() => { snapTimer = null; snapshotDb("activity"); }, 15000);
+}
+
+if (storage.configured()) {
+  setTimeout(() => { sweepUploads(); snapshotDb("boot"); }, 20000);
+  setInterval(() => { sweepUploads(); snapshotDb("interval"); }, 5 * 60 * 1000);
+  process.on("SIGTERM", () => {
+    // Render gives a short grace window on deploy/stop — use it to seal
+    // the record book into the bucket before the process goes.
+    Promise.race([snapshotDb("shutdown"), new Promise((r) => setTimeout(r, 8000))]).finally(() => process.exit(0));
+  });
+}
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`TOP 20 v1 listening on http://0.0.0.0:${PORT}`);
