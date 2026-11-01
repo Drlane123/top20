@@ -246,6 +246,7 @@ app.use((req, res, next) => {
   next();
 });
 app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "1mb" })); // Viewcast signaling posts JSON
 // Uploaded media is mirrored to the cloud bucket (storage phase 2): when
 // a file is missing from this instance's disk — every deploy starts with
 // an empty disk — send the visitor to the bucket copy instead of a 404.
@@ -4395,6 +4396,25 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     <p style="color:#8a8f99;font-size:12.5px">Good light on the face makes the cleanest edge. The take stays on this phone until you post it; posting saves it to your bucket for good.</p>
   </div>
   <div class="panel">
+    <h2 style="margin-top:0">👥 Bring in a guest — free</h2>
+    <p style="color:#c9cdd6;margin:6px 0">Make an invite link and send it to your guest. They tap it on any phone or computer — no account, no app — and their camera joins this studio. Pick how they sit in the picture, then record like normal: the recording keeps both of you.</p>
+    <p style="margin:8px 0"><button type="button" id="invBtn" onclick="makeInvite()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">🔗 Make my invite link</button></p>
+    <div id="invBox" style="display:none">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="invLink" readonly style="flex:1;min-width:220px;padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+        <button type="button" onclick="copyInvite()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:11px 14px;font-weight:700;cursor:pointer">Copy link</button>
+      </div>
+      <p id="invStatus" style="color:#f2c14e;margin:8px 0 4px">Send that link to your guest — waiting for them…</p>
+      <p style="margin:8px 0 2px"><strong>Guest in the picture:</strong><br>
+        <button type="button" class="layBtn" data-lay="split" onclick="setLayout('split')" style="background:#1a2140;color:#e9ecf2;border:2px solid #f2c14e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer;margin-top:6px">Side by side</button>
+        <button type="button" class="layBtn" data-lay="pip" onclick="setLayout('pip')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer;margin-top:6px">Corner window</button>
+        <button type="button" class="layBtn" data-lay="solo" onclick="setLayout('solo')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer;margin-top:6px">Just me</button>
+        <button type="button" onclick="endGuest()" style="background:#3a1120;color:#ffb3c1;border:1px solid #6e2c3a;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer;margin-top:6px">End guest</button>
+      </p>
+    </div>
+    <video id="gremote" autoplay playsinline style="display:none"></video>
+  </div>
+  <div class="panel">
     <h2 style="margin-top:0">Your episodes</h2>
     ${eps.length ? epRows : `<p style="color:#8a8f99;margin:4px 0">None yet — your first recording lands here.</p>`}
   </div>
@@ -4546,6 +4566,215 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       else { setStatus(j.error || 'Posting failed — try again.'); pb.disabled = false; pb.style.opacity = 1; }
     } catch (e) { setStatus('Posting failed — check your connection and try again.'); pb.disabled = false; pb.style.opacity = 1; }
   }
+  </script>
+  <script>
+  // ---- Viewcast guest interviews (host side) + compositing v2 ----
+  // The segmentation composite is painted onto an offscreen canvas so the
+  // main canvas can place the host (full frame, or left in side-by-side),
+  // lay the guest's camera in as a studio window, and keep the VIEWCAST
+  // chrome on top. Recording picks up the mixed host+guest audio.
+  var hostC = document.createElement('canvas'), hctx = hostC.getContext('2d');
+  var roomCode = null, pc = null, guestStream = null, guestOn = false, layoutMode = 'split', offerOut = false, hostPollTimer = null;
+  var mixCtx = null, mixDest = null;
+  function sizeHostC() { if (hostC.width !== W || hostC.height !== H) { hostC.width = W; hostC.height = H; } }
+  function drawCoverCtx(c, el, x, y, w, h) {
+    var iw = el.videoWidth || el.naturalWidth || el.width, ih = el.videoHeight || el.naturalHeight || el.height;
+    if (!iw || !ih) return;
+    var sa = iw / ih, da = w / h, sw, sh, sx, sy;
+    if (sa > da) { sh = ih; sw = ih * da; sx = (iw - sw) / 2; sy = 0; } else { sw = iw; sh = iw / da; sx = 0; sy = (ih - sh) / 2; }
+    c.drawImage(el, sx, sy, sw, sh, x, y, w, h);
+  }
+  function paintHostFrame() {
+    sizeHostC();
+    hctx.save(); hctx.clearRect(0, 0, W, H);
+    drawCoverCtx(hctx, backdropImg, 0, 0, W, H);
+    var ar = (video.videoWidth && video.videoHeight) ? video.videoWidth / video.videoHeight : 16 / 9;
+    var ch = H * 0.84, cw = ch * ar;
+    if (cw > W * 0.88) { cw = W * 0.88; ch = cw / ar; }
+    var cx = (W - cw) / 2, cy = (H - ch) / 2;
+    hctx.beginPath(); hctx.rect(cx, cy, cw, ch); hctx.clip();
+    drawCoverCtx(hctx, video, cx, cy, cw, ch);
+    hctx.restore();
+    hctx.lineWidth = 6; hctx.strokeStyle = '#c9a227'; hctx.strokeRect(cx, cy, cw, ch);
+  }
+  function drawGuestWin() {
+    if (!guestOn || layoutMode === 'solo') return;
+    var gv = document.getElementById('gremote');
+    if (!gv || gv.readyState < 2) return;
+    var x, y, w, h;
+    if (layoutMode === 'pip') { w = W * 0.30; h = w * 9 / 16; x = W - w - 36; y = H - h - 36; }
+    else { w = W * 0.40; h = H * 0.60; x = W - w - 42; y = H * 0.15; }
+    ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+    drawCoverCtx(ctx, gv, x, y, w, h);
+    ctx.restore();
+    ctx.lineWidth = 5; ctx.strokeStyle = '#c9a227'; ctx.strokeRect(x, y, w, h);
+    var bw = W * 0.085, bh = H * 0.045;
+    ctx.fillStyle = 'rgba(2,6,18,.78)'; ctx.fillRect(x, y, bw, bh);
+    ctx.fillStyle = '#f2c14e'; ctx.font = '800 ' + Math.round(H * 0.024) + 'px Arial'; ctx.textBaseline = 'middle';
+    ctx.fillText('GUEST', x + 10, y + bh / 2 + 1);
+  }
+  function composeFrame() {
+    ctx.save(); ctx.clearRect(0, 0, W, H);
+    if (mode === 'frame') {
+      ctx.drawImage(hostC, 0, 0, W, H);
+    } else {
+      drawCoverCtx(ctx, backdropImg, 0, 0, W, H);
+      if (guestOn && layoutMode === 'split') drawCoverCtx(ctx, hostC, 30, 30, W * 0.52, H - 60);
+      else ctx.drawImage(hostC, 0, 0, W, H);
+    }
+    ctx.restore();
+    drawGuestWin();
+    drawChrome();
+  }
+  initSeg = function () {
+    if (seg || mode === 'frame') return;
+    try {
+      if (typeof SelfieSegmentation === 'undefined') { mode = 'frame'; return; }
+      seg = new SelfieSegmentation({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f; } });
+      seg.setOptions({ modelSelection: 1 });
+      seg.onResults(function (results) {
+        sizeHostC();
+        hctx.save(); hctx.clearRect(0, 0, W, H);
+        hctx.drawImage(results.segmentationMask, 0, 0, W, H);
+        hctx.globalCompositeOperation = 'source-in';
+        hctx.drawImage(results.image, 0, 0, W, H);
+        hctx.restore();
+      });
+    } catch (e) { seg = null; mode = 'frame'; }
+  };
+  pump = async function () {
+    if (!stream) return;
+    if (seg && !segBusy && video.readyState >= 2) {
+      segBusy = true;
+      try { await seg.send({ image: video }); } catch (e) { mode = 'frame'; }
+      segBusy = false;
+    }
+    if (!seg || mode === 'frame') paintHostFrame();
+    composeFrame();
+    requestAnimationFrame(pump);
+  };
+  function recAudioTrack() {
+    if (guestOn && guestStream && guestStream.getAudioTracks().length) {
+      try {
+        if (!mixCtx) {
+          mixCtx = new (window.AudioContext || window.webkitAudioContext)();
+          mixDest = mixCtx.createMediaStreamDestination();
+          mixCtx.createMediaStreamSource(stream).connect(mixDest);
+        }
+        if (mixDest._wiredFor !== guestStream.id) {
+          mixCtx.createMediaStreamSource(guestStream).connect(mixDest);
+          mixDest._wiredFor = guestStream.id;
+        }
+        if (mixCtx.state === 'suspended') mixCtx.resume();
+        return mixDest.stream.getAudioTracks()[0];
+      } catch (e) {}
+    }
+    return micTrack;
+  }
+  startRec = function () {
+    if (!stream) { setStatus('Turn the camera on first.'); return; }
+    chunks = [];
+    var cs = canvas.captureStream(30);
+    var at = recAudioTrack();
+    if (at) cs.addTrack(at);
+    var mt = '';
+    if (window.MediaRecorder) {
+      if (MediaRecorder.isTypeSupported('video/mp4')) mt = 'video/mp4';
+      else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) mt = 'video/webm;codecs=vp9,opus';
+      else if (MediaRecorder.isTypeSupported('video/webm')) mt = 'video/webm';
+    }
+    try { recorder = new MediaRecorder(cs, mt ? { mimeType: mt } : undefined); }
+    catch (e) { setStatus('This browser cannot record — try Chrome.'); return; }
+    recorder.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
+    recorder.onstop = onRecStop;
+    recorder.start(500);
+    recStart = Date.now();
+    var tv = document.getElementById('vtimer');
+    tv.textContent = '● REC 0:00';
+    recTimer = setInterval(function () { tv.textContent = '● REC ' + fmtT(Math.floor((Date.now() - recStart) / 1000)); }, 500);
+    document.getElementById('recBtn').disabled = true;
+    var sb = document.getElementById('stopBtn'); sb.disabled = false; sb.style.opacity = 1;
+    setStatus(guestOn ? 'Recording — you and your guest are both in this take.' : 'Recording… talk away.');
+  };
+  function invSet(t) { document.getElementById('invStatus').textContent = t; }
+  async function makeInvite() {
+    try {
+      var r = await fetch('/admin/viewcast/room', { method: 'POST' });
+      var j = await r.json();
+      if (!j.ok) { invSet('The invite could not be made — try again.'); return; }
+      roomCode = j.code;
+      document.getElementById('invLink').value = location.origin + j.url;
+      document.getElementById('invBox').style.display = 'block';
+      document.getElementById('invBtn').textContent = '🔗 Make a fresh invite link';
+      invSet(stream ? 'Send that link to your guest — waiting for them…' : 'Link ready — now turn your camera on above, then send the link.');
+      if (hostPollTimer) clearInterval(hostPollTimer);
+      hostPollTimer = setInterval(hostPoll, 900);
+      hostPoll();
+    } catch (e) { setStatus('The invite could not be made — check your connection.'); }
+  }
+  function copyInvite() {
+    var inp = document.getElementById('invLink');
+    inp.select(); inp.setSelectionRange(0, 9999);
+    if (navigator.clipboard) navigator.clipboard.writeText(inp.value).then(function () { invSet('Link copied — send it to your guest.'); }, function () { document.execCommand('copy'); });
+    else document.execCommand('copy');
+  }
+  async function hsend(msg) {
+    if (!roomCode) return;
+    try { await fetch('/api/viewcast/signal/' + roomCode, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'host', msg: msg }) }); } catch (e) {}
+  }
+  async function hostPoll() {
+    if (!roomCode) return;
+    try {
+      var r = await fetch('/api/viewcast/poll/' + roomCode + '/host');
+      if (!r.ok) { invSet('This invite link expired — make a fresh one.'); clearInterval(hostPollTimer); return; }
+      var j = await r.json();
+      for (var i = 0; i < j.msgs.length; i++) await handleHostMsg(j.msgs[i]);
+      if (j.peerJoined && !offerOut && !guestOn) startCall();
+    } catch (e) {}
+  }
+  async function handleHostMsg(msg) {
+    if (msg.type === 'hello') { if (!offerOut && !guestOn) startCall(); return; }
+    if (!pc) return;
+    try {
+      if (msg.type === 'answer') await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+      else if (msg.type === 'ice') { if (msg.data) await pc.addIceCandidate(new RTCIceCandidate(msg.data)); }
+      else if (msg.type === 'bye') guestGone('Your guest left the interview. The link still works if they come back.');
+    } catch (e) {}
+  }
+  function startCall() {
+    if (offerOut || guestOn) return;
+    if (!stream) { invSet('Your guest is here — turn your camera on above and they come in.'); return; }
+    offerOut = true;
+    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    var sendFeed = canvas.captureStream(30);
+    sendFeed.getVideoTracks().forEach(function (t) { pc.addTrack(t, sendFeed); });
+    if (micTrack) pc.addTrack(micTrack, stream);
+    pc.ontrack = function (ev) {
+      guestStream = ev.streams[0];
+      document.getElementById('gremote').srcObject = guestStream;
+    };
+    pc.onicecandidate = function (ev) { if (ev.candidate) hsend({ type: 'ice', data: ev.candidate }); };
+    pc.onconnectionstatechange = function () {
+      if (!pc) return;
+      if (pc.connectionState === 'connected') { guestOn = true; invSet('● Your guest is ON — pick how they sit in the picture, then record like normal.'); }
+      else if (pc.connectionState === 'failed') { guestGone('The connection could not get through your guest\u2019s network. They can try different Wi-Fi or mobile data and tap the link again.'); }
+      else if (pc.connectionState === 'disconnected' && guestOn) { guestGone('Your guest\u2019s connection dropped. The link still works if they come back.'); }
+    };
+    pc.createOffer().then(function (o) { return pc.setLocalDescription(o); }).then(function () { hsend({ type: 'offer', data: pc.localDescription }); }).catch(function () {});
+    invSet('Your guest is here — bringing them in…');
+  }
+  function guestGone(note) {
+    if (pc) { try { pc.close(); } catch (e) {} pc = null; }
+    guestStream = null; guestOn = false; offerOut = false;
+    document.getElementById('gremote').srcObject = null;
+    invSet(note);
+  }
+  function endGuest() { hsend({ type: 'bye' }); guestGone('Guest ended. Make a fresh link any time.'); }
+  function setLayout(l) {
+    layoutMode = l;
+    var btns = document.querySelectorAll('.layBtn');
+    for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-lay') === l) ? '#f2c14e' : '#2c3a6e';
+  }
   </script>`));
 });
 
@@ -4614,6 +4843,153 @@ app.get("/viewcast/:id", (req, res) => {
   <video controls playsinline preload="metadata" ${ep.poster_path ? `poster="${esc(ep.poster_path)}"` : ""} src="${esc(ep.file_path)}" style="width:100%;border-radius:12px;background:#000"></video>
   <p style="color:#8a8f99;font-size:13px">Filmed ${esc(String(ep.created_at).slice(0, 10))} in the ${esc(VIEWCAST_SETS[ep.backdrop] ? VIEWCAST_SETS[ep.backdrop].label : "Podcast Studio")} set on Viewcast.</p>`,
     { meta: { title: `${ep.title} — Viewcast`, description: "Watch this Viewcast episode on Top 20.", type: "video.other" } }));
+});
+
+/* ------------------- Viewcast guest interviews ---------------------------
+   (Owner, Nov 1, 2026.) The free one-guest interview. The owner presses
+   "Invite a guest" in the studio and gets a link; the guest opens it on
+   any phone or computer — no account, no app — taps Join, and their
+   camera connects straight to the studio, phone-to-phone (WebRTC). This
+   server only introduces the two sides: a tiny in-memory signal relay
+   (rooms live in RAM and expire after 2 hours; the video itself never
+   passes through the site, so it costs nothing to run). Public STUN helps
+   the phones find each other; a home network that blocks direct links
+   entirely will show the guest a plain "couldn't connect" — the fix for
+   those is a relay service, deliberately not wired in at $0 scope. */
+
+const vcRooms = new Map();
+function vcRoom(code) {
+  const r = vcRooms.get(code);
+  if (!r) return null;
+  if (Date.now() - r.created > 2 * 3600 * 1000) { vcRooms.delete(code); return null; }
+  return r;
+}
+setInterval(() => { for (const code of [...vcRooms.keys()]) vcRoom(code); }, 10 * 60 * 1000).unref();
+
+app.post("/admin/viewcast/room", requireAdmin, (req, res) => {
+  const code = crypto.randomBytes(4).toString("hex");
+  vcRooms.set(code, { created: Date.now(), hostQ: [], guestQ: [], hostSeen: 0, guestSeen: 0, guestJoined: false });
+  res.json({ ok: true, code, url: `/viewcast/join/${code}` });
+});
+
+app.post("/api/viewcast/signal/:code", (req, res) => {
+  const room = vcRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false });
+  const from = req.body && req.body.from === "host" ? "host" : "guest";
+  const msg = req.body && req.body.msg;
+  if (!msg || !msg.type) return res.status(400).json({ ok: false });
+  if (from === "guest" && msg.type === "hello") room.guestJoined = true;
+  (from === "host" ? room.guestQ : room.hostQ).push(msg);
+  res.json({ ok: true });
+});
+
+app.get("/api/viewcast/poll/:code/:role", (req, res) => {
+  const room = vcRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false });
+  const role = req.params.role === "host" ? "host" : "guest";
+  const now = Date.now();
+  if (role === "host") room.hostSeen = now; else room.guestSeen = now;
+  const q = role === "host" ? room.hostQ : room.guestQ;
+  const msgs = q.splice(0, q.length);
+  res.json({
+    ok: true,
+    msgs,
+    peerSeen: (role === "host" ? room.guestSeen : room.hostSeen) > now - 6000,
+    peerJoined: role === "host" ? room.guestJoined : true,
+  });
+});
+
+app.get("/viewcast/join/:code", (req, res) => {
+  const room = vcRoom(req.params.code);
+  if (!room) {
+    return res.status(404).send(layout("Link expired", "viewcast", `
+    <div class="panel" style="text-align:center">
+      <h2 style="margin-top:0">This interview link has expired</h2>
+      <p style="color:#c9cdd6">Links last two hours. Ask the host to open the Viewcast studio and send you a fresh one.</p>
+    </div>`));
+  }
+  res.send(layout("Join the interview", "viewcast", `
+  <div style="text-align:center">
+    <h1>🎙️ You're invited to Viewcast</h1>
+    <p style="color:#c9cdd6">You've been invited to a live interview on Top 20. No account, no app — just tap Join, let your browser use your camera, and you're on.</p>
+  </div>
+  <div class="panel">
+    <div style="position:relative">
+      <video id="gfeed" autoplay playsinline style="width:100%;border-radius:10px;background:#000;display:block"></video>
+      <video id="gself" autoplay playsinline muted style="position:absolute;right:10px;bottom:10px;width:26%;border-radius:8px;border:2px solid #c9a227;background:#000"></video>
+    </div>
+    <p id="gstatus" style="color:#f2c14e;margin:10px 0 4px">Tap Join when you're ready.</p>
+    <p style="text-align:center;margin:10px 0 2px">
+      <button type="button" id="gjoin" onclick="joinCall()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:13px 22px;font-weight:800;font-size:16px;cursor:pointer">🎥 Join the interview</button>
+      <button type="button" id="gleave" onclick="leaveCall()" disabled style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:13px 18px;font-weight:700;cursor:pointer;opacity:.55">Leave</button>
+    </p>
+    <p style="color:#8a8f99;font-size:12.5px;text-align:center">Good light on your face and a quiet spot make you look and sound your best. Your camera connects straight to the studio — nothing is recorded unless the host records it.</p>
+  </div>
+  <script>
+  var CODE = ${JSON.stringify(req.params.code)};
+  var pc = null, myStream = null, pollTimer = null, joined = false;
+  function gset(t) { document.getElementById('gstatus').textContent = t; }
+  async function gsend(msg) {
+    try { await fetch('/api/viewcast/signal/' + CODE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'guest', msg: msg }) }); } catch (e) {}
+  }
+  async function gpoll() {
+    try {
+      var r = await fetch('/api/viewcast/poll/' + CODE + '/guest');
+      if (!r.ok) { gset('This link has expired — ask the host for a fresh one.'); clearInterval(pollTimer); return; }
+      var j = await r.json();
+      for (var i = 0; i < j.msgs.length; i++) await ghandle(j.msgs[i]);
+    } catch (e) {}
+  }
+  async function ghandle(msg) {
+    if (!pc) return;
+    try {
+      if (msg.type === 'offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+        var ans = await pc.createAnswer();
+        await pc.setLocalDescription(ans);
+        gsend({ type: 'answer', data: ans });
+        gset('Connecting…');
+      } else if (msg.type === 'ice') {
+        if (msg.data) await pc.addIceCandidate(new RTCIceCandidate(msg.data));
+      } else if (msg.type === 'bye') {
+        gset('The host ended the interview. Thanks for coming on!');
+      }
+    } catch (e) {}
+  }
+  async function joinCall() {
+    if (joined) return;
+    try {
+      myStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
+    } catch (e) { gset('The camera did not open — allow camera access for this site, then tap Join again.'); return; }
+    document.getElementById('gself').srcObject = myStream;
+    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    myStream.getTracks().forEach(function (t) { pc.addTrack(t, myStream); });
+    pc.ontrack = function (ev) { document.getElementById('gfeed').srcObject = ev.streams[0]; };
+    pc.onicecandidate = function (ev) { if (ev.candidate) gsend({ type: 'ice', data: ev.candidate }); };
+    pc.onconnectionstatechange = function () {
+      if (pc.connectionState === 'connected') gset('You are ON — the studio sees and hears you. Say hello!');
+      else if (pc.connectionState === 'failed') gset('The connection could not get through your network. Try a different Wi-Fi or mobile data, then rejoin.');
+      else if (pc.connectionState === 'disconnected') gset('Connection dropped — tap Leave, then Join again.');
+    };
+    joined = true;
+    await gsend({ type: 'hello' });
+    pollTimer = setInterval(gpoll, 900);
+    gpoll();
+    document.getElementById('gjoin').disabled = true;
+    var lv = document.getElementById('gleave'); lv.disabled = false; lv.style.opacity = 1;
+    gset('Waiting for the host to bring you in…');
+  }
+  function leaveCall() {
+    gsend({ type: 'bye' });
+    if (pollTimer) clearInterval(pollTimer);
+    if (pc) { try { pc.close(); } catch (e) {} pc = null; }
+    if (myStream) { myStream.getTracks().forEach(function (t) { t.stop(); }); myStream = null; }
+    joined = false;
+    document.getElementById('gjoin').disabled = false;
+    var lv = document.getElementById('gleave'); lv.disabled = true; lv.style.opacity = .55;
+    gset('You left the interview. Tap Join to come back in.');
+  }
+  </script>`));
 });
 
 /* --------------------- Storage phase 2: permanence ----------------------
