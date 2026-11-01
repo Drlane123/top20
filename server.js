@@ -10,6 +10,7 @@ const { openDb } = require("./db");
 const { GENRES, OVERALL, CATEGORIES, regionForState, localKey } = require("./config");
 const { judgeAudioFile } = require("./judge");
 const { judgeMeasuredFile } = require("./judge2");
+const storage = require("./storage");
 const { recalc, latestChartDate, previousChartDate, ensureCurrent, todayStr } = require("./charts");
 
 const PORT = process.env.PORT || 8077;
@@ -85,6 +86,25 @@ app.get("/ann/:file", (req, res) => {
   res.setHeader("Content-Type", "audio/mpeg");
   res.setHeader("Cache-Control", "public, max-age=604800");
   res.send(b);
+});
+// If the owner has uploaded his own hero video to Cloudflare storage, the
+// home page's hero is served from there (whole file, signed link, streamed
+// by Cloudflare). Until he does — or if storage is ever unconfigured — the
+// request falls through to the built-in copy below, untouched.
+app.get("/hero.mp4", (req, res, next) => {
+  try {
+    if (storage.configured()) {
+      const row = db.prepare("SELECT value FROM admin_config WHERE key = 'hero_r2'").get();
+      if (row) {
+        const url = storage.presignGet(JSON.parse(row.value).key, 3600);
+        if (url) {
+          res.setHeader("Cache-Control", "no-store");
+          return res.redirect(url);
+        }
+      }
+    }
+  } catch { /* fall through to the built-in hero */ }
+  return next();
 });
 if (HERO) {
   app.get("/hero.mp4", (req, res) => {
@@ -2300,7 +2320,7 @@ app.post("/song/:id/engage", (req, res) => {
 
 /* --------------------------------- Upload --------------------------------- */
 
-const storage = multer.diskStorage({
+const songDisk = multer.diskStorage({
   destination: (req, file, cb) => cb(null, file.fieldname === "audio" ? AUDIO_UP : COVER_UP),
   filename: (req, file, cb) => {
     const ext = (path.extname(file.originalname) || "").toLowerCase().replace(/[^.a-z0-9]/g, "")
@@ -2308,7 +2328,7 @@ const storage = multer.diskStorage({
     cb(null, `${file.fieldname}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}${ext}`);
   },
 });
-const upload = multer({ storage, limits: { fileSize: 40 * 1024 * 1024 } });
+const upload = multer({ storage: songDisk, limits: { fileSize: 40 * 1024 * 1024 } });
 
 app.get("/upload", (req, res) => {
   const checkEmail = String(req.query.email || "").trim().toLowerCase();
@@ -3629,7 +3649,7 @@ app.post("/admin/spotlight", requireAdmin, (req, res) => {
 // chart and a position, and the song is pinned there on every chart
 // from today until the placement ends or is removed. Scores are never
 // touched — this moves chart order only (charts.js applyAdminPlacements).
-app.get("/admin/placements", requireAdmin, (req, res) => {
+app.get("/admin/placements", requireAdmin, async (req, res) => {
   const songs = db.prepare(`
     SELECT s.id, s.title, s.genre, u.name AS artist FROM songs s
     JOIN users u ON u.id = s.artist_id WHERE s.status = 'live' ORDER BY s.title`).all();
@@ -3648,6 +3668,19 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
   const statusOf = (p) => p.ends_on && latest && p.ends_on < latest ? "ended"
     : latest && p.starts_on > latest ? "starts at midnight tonight" : "on the chart now";
   const adsList = db.prepare("SELECT * FROM ads ORDER BY id DESC").all();
+  // Cloudflare storage (R2): connection state + what's in the bucket, for
+  // the owner's media panel. Degrades to "not set up" when storage is off.
+  let mediaState = { configured: false, ok: false, error: null, objects: [], hero: null };
+  try {
+    const hrow = db.prepare("SELECT value FROM admin_config WHERE key = 'hero_r2'").get();
+    if (hrow) mediaState.hero = JSON.parse(hrow.value);
+  } catch { /* no hero override yet */ }
+  if (storage.configured()) {
+    mediaState.configured = true;
+    const t = await storage.testConnection();
+    mediaState.ok = t.ok; mediaState.error = t.error;
+    if (t.ok) { try { mediaState.objects = await storage.listObjects("", 100); } catch { /* list is a bonus */ } }
+  }
   const body = `
   <h1>Chart placements</h1>
   ${req.query.admsg ? `<p class="note" style="color:#ffd98a">${esc(req.query.admsg)}</p>` : ""}
@@ -3749,6 +3782,27 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
     <p class="sub" style="margin:12px 0 0"><a href="/dj" style="color:var(--accent);font-weight:700;text-decoration:none">Open the DJ panel →</a></p>
   </div>
   <div class="panel">
+    <h2 style="margin-top:0">🎬 Site media — Cloudflare storage</h2>
+    ${!mediaState.configured ? `<p class="sub">Storage is not connected yet — the four R2 settings still need to go into the site's Render environment. Until then the site runs on its built-in copies, same as always.</p>`
+    : !mediaState.ok ? `<p class="sub" style="color:#ff9d9d">Storage is set up but the connection check failed: ${esc(mediaState.error || "unknown error")}. The site keeps running on its built-in copies. Tell Vesper what this line says and she'll sort it.</p>`
+    : `<p class="sub" style="color:#9fe8a9">✅ Connected to your bucket <b style="color:#fff">top20-media</b>. Files uploaded here travel whole — no more pieces.</p>
+    <p class="sub"><b style="color:#fff">Welcome video (hero):</b> ${mediaState.hero ? `your uploaded copy is LIVE on the home page — uploaded ${esc(new Date(mediaState.hero.at).toLocaleString("en-US", { timeZone: "America/Chicago" }))}, ${(mediaState.hero.size / 1048576).toFixed(1)} MB${mediaState.hero.name ? ` (${esc(mediaState.hero.name)})` : ""}.` : `the built-in copy is playing. Upload your own below and it takes over the home page.`}</p>
+    <form method="post" action="/admin/media/hero" enctype="multipart/form-data">
+      <label class="sub">${mediaState.hero ? "Replace the welcome video" : "Upload the welcome video"} (mp4)<br>
+      <input type="file" name="file" accept="video/mp4,video/*" required style="margin:6px 0 10px;color:#fff"></label><br>
+      <button type="submit" style="padding:10px 20px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">${mediaState.hero ? "Replace welcome video" : "Put it on the home page"}</button>
+    </form>
+    ${mediaState.hero ? `<form method="post" action="/admin/media/hero/reset" style="margin-top:10px"><button type="submit" style="padding:8px 16px;border-radius:8px;border:1px solid #3a4a6b;background:transparent;color:#bcd;font-weight:700;cursor:pointer">Go back to the built-in welcome video</button></form>` : ""}
+    <hr style="border:0;border-top:1px solid #26355a;margin:18px 0">
+    <form method="post" action="/admin/media/upload" enctype="multipart/form-data">
+      <label class="sub">Upload another file to your storage (video, audio, image)<br>
+      <input type="file" name="file" required style="margin:6px 0 10px;color:#fff"></label><br>
+      <button type="submit" style="padding:10px 20px;border-radius:10px;border:0;background:#22355e;color:#fff;font-weight:800;cursor:pointer">Upload file</button>
+    </form>
+    ${mediaState.objects.length ? `<p class="sub" style="margin:16px 0 6px"><b style="color:#fff">In your bucket now (${mediaState.objects.length}):</b></p>
+    ${mediaState.objects.map((o) => `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid #1d2a47"><span class="sub" style="margin:0;word-break:break-all">${esc(o.key)} · ${(o.size / 1048576).toFixed(2)} MB</span><span style="white-space:nowrap"><a href="${esc(storage.presignGet(o.key, 3600) || "#")}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;text-decoration:none">Open</a>${o.key.startsWith("media/") ? ` <form method="post" action="/admin/media/delete" style="display:inline"><input type="hidden" name="key" value="${esc(o.key)}"><button type="submit" style="margin-left:8px;padding:4px 10px;border-radius:6px;border:1px solid #5a2630;background:transparent;color:#ff9d9d;font-weight:700;cursor:pointer">Delete</button></form>` : ""}</span></div>`).join("")}` : `<p class="sub" style="margin-top:14px">Your bucket is empty — the first upload lands here.</p>`}`}
+  </div>
+  <div class="panel">
     <h2 style="margin-top:0">Your admin code</h2>
     <p class="sub">Change the 8-digit code you log in with. You'll type your current code once, then the new code twice. If the site ever gets a big rebuild, the code can reset to the starter code you were given — change it again here any time.</p>
     <form method="post" action="/admin/code">
@@ -3765,6 +3819,70 @@ app.get("/admin/placements", requireAdmin, (req, res) => {
     </form>
   </div>`;
   res.send(layout("Chart placements", "", body));
+});
+
+// ---- Owner site media on Cloudflare R2 storage -------------------------
+// Files travel WHOLE from this panel into the owner's bucket — this is the
+// permanent cure for media ever shipping through git in base64 pieces.
+const mediaUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, AD_UP),
+    filename: (req, file, cb) => {
+      const ext = (path.extname(file.originalname) || "").toLowerCase().replace(/[^.a-z0-9]/g, "") || ".bin";
+      cb(null, `media-${Date.now()}-${crypto.randomBytes(3).toString("hex")}${ext}`);
+    },
+  }),
+  limits: { fileSize: 150 * 1024 * 1024 },
+});
+const mediaMsg = (res, text) => res.redirect("/admin/placements?msg=" + encodeURIComponent(text));
+
+app.post("/admin/media/hero", requireAdmin, (req, res) => {
+  if (!storage.configured()) return mediaMsg(res, "Storage is not connected yet — the R2 settings still need to go into Render.");
+  mediaUpload.single("file")(req, res, async (err) => {
+    if (err || !req.file) return mediaMsg(res, "That upload didn't come through — try the file again.");
+    try {
+      const r = await storage.putFile("site/hero.mp4", req.file.path, req.file.mimetype || "video/mp4");
+      db.prepare("INSERT INTO admin_config (key, value) VALUES ('hero_r2', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+        .run(JSON.stringify({ key: r.key, size: r.size, at: new Date().toISOString(), name: req.file.originalname }));
+      mediaMsg(res, "✅ Your welcome video is in storage and now plays on the home page.");
+    } catch (e) {
+      mediaMsg(res, "Upload failed: " + String(e.message || e).slice(0, 160));
+    } finally {
+      try { fs.unlinkSync(req.file.path); } catch { /* temp file gone either way */ }
+    }
+  });
+});
+
+app.post("/admin/media/hero/reset", requireAdmin, (req, res) => {
+  db.prepare("DELETE FROM admin_config WHERE key = 'hero_r2'").run();
+  mediaMsg(res, "The built-in welcome video is back on the home page. Your uploaded copy is still in your bucket if you want it again.");
+});
+
+app.post("/admin/media/upload", requireAdmin, (req, res) => {
+  if (!storage.configured()) return mediaMsg(res, "Storage is not connected yet — the R2 settings still need to go into Render.");
+  mediaUpload.single("file")(req, res, async (err) => {
+    if (err || !req.file) return mediaMsg(res, "That upload didn't come through — try the file again.");
+    try {
+      const safe = String(req.file.originalname || "file").replace(/[^a-zA-Z0-9._-]+/g, "-").slice(0, 80) || "file";
+      const r = await storage.putFile(`media/${Date.now()}-${safe}`, req.file.path, req.file.mimetype || "application/octet-stream");
+      mediaMsg(res, `✅ "${req.file.originalname}" is in your bucket (${(r.size / 1048576).toFixed(2)} MB).`);
+    } catch (e) {
+      mediaMsg(res, "Upload failed: " + String(e.message || e).slice(0, 160));
+    } finally {
+      try { fs.unlinkSync(req.file.path); } catch { /* temp file gone either way */ }
+    }
+  });
+});
+
+app.post("/admin/media/delete", requireAdmin, async (req, res) => {
+  const key = String(req.body.key || "");
+  if (!key.startsWith("media/")) return mediaMsg(res, "That file is managed by its own controls — it can't be deleted from the list.");
+  try {
+    await storage.deleteObject(key);
+    mediaMsg(res, "Deleted from your bucket: " + key);
+  } catch (e) {
+    mediaMsg(res, "Delete failed: " + String(e.message || e).slice(0, 160));
+  }
 });
 
 app.post("/admin/placements", requireAdmin, (req, res) => {
