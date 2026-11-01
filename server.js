@@ -4626,6 +4626,8 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     drawGuestWin();
     drawChrome();
   }
+  var maskC = document.createElement('canvas'), maskX = maskC.getContext('2d');
+  var prevC = document.createElement('canvas'), prevX = prevC.getContext('2d');
   initSeg = function () {
     if (seg || mode === 'frame') return;
     try {
@@ -4634,8 +4636,27 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       seg.setOptions({ modelSelection: 1 });
       seg.onResults(function (results) {
         sizeHostC();
+        if (maskC.width !== W || maskC.height !== H) { maskC.width = W; maskC.height = H; prevC.width = W; prevC.height = H; }
+        // Edge cleanup (owner, Nov 1): the raw mask leaves flaky scraps
+        // around hair and shoulders. Blend in the previous frame's mask
+        // behind this one (kills flicker and stray specks), then stamp it
+        // through a soft blur so the cut edge feathers onto the set
+        // instead of ending in a hard, scrapy line.
+        maskX.save();
+        maskX.globalCompositeOperation = 'copy';
+        maskX.drawImage(results.segmentationMask, 0, 0, W, H);
+        maskX.globalCompositeOperation = 'destination-over';
+        maskX.globalAlpha = 0.45;
+        maskX.drawImage(prevC, 0, 0, W, H);
+        maskX.restore();
+        prevX.save();
+        prevX.globalCompositeOperation = 'copy';
+        prevX.drawImage(maskC, 0, 0, W, H);
+        prevX.restore();
         hctx.save(); hctx.clearRect(0, 0, W, H);
-        hctx.drawImage(results.segmentationMask, 0, 0, W, H);
+        try { hctx.filter = 'blur(2px)'; } catch (e) {}
+        hctx.drawImage(maskC, 0, 0, W, H);
+        try { hctx.filter = 'none'; } catch (e) {}
         hctx.globalCompositeOperation = 'source-in';
         hctx.drawImage(results.image, 0, 0, W, H);
         hctx.restore();
