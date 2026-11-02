@@ -5389,10 +5389,24 @@ app.get("/admin/quickload", requireAdmin, (req, res) => {
     <label>Lyrics — optional (paste them and the Lyrical Quality point reads your words)<textarea name="lyrics" rows="5" placeholder="Optional"></textarea></label>
     <p style="margin-top:14px"><button class="btn btn-blue btn-block" type="submit" style="font-size:16px;padding:13px">▶ Load it — run the analyzer</button></p>
   </form>
-  <p class="note">Private to this desk: the song is not saved to the charts and nobody can find it. Load as many as you want.</p>`));
+  <p class="note">Private to this desk: the song is not saved to the charts and nobody can find it. Load as many as you want. A full-length record can take a minute or two to read — keep this page open while it works.</p>`));
 });
 
-app.post("/admin/quickload", requireAdmin, upload.fields([{ name: "audio", maxCount: 1 }, { name: "cover", maxCount: 1 }]), async (req, res) => {
+// If the file can't even get through the door (over the size cap,
+// or not audio at all), answer with a plain page in Dale's words —
+// never the framework's raw error (owner, Nov 2, 2026).
+const qlFields = (req, res, next) => {
+  upload.fields([{ name: "audio", maxCount: 1 }, { name: "cover", maxCount: 1 }])(req, res, (err) => {
+    if (!err) return next();
+    const big = err && err.code === "LIMIT_FILE_SIZE";
+    return res.status(400).send(layout("Quick Load", "", `
+    <div class="panel err"><h2 style="margin-top:0">Quick Load stopped</h2>
+    <p class="sub" style="color:#fff;font-size:16px">${big ? "That file is bigger than the test lane takes (40 MB). A full-length master WAV can run bigger than that — load the radio MP3 copy instead (a 320 kbps MP3 reads the same to the analyzer and loads in seconds), or trim the file and try again." : "That file couldn't be read as audio. Load a WAV, FLAC, MP3 or M4A and try again."}</p>
+    <p><a class="btn" href="/admin/quickload">Back to Quick Load</a></p></div>`));
+  });
+};
+
+app.post("/admin/quickload", requireAdmin, qlFields, async (req, res) => {
   const audioFile = req.files?.audio?.[0];
   const coverFile = req.files?.cover?.[0];
   const fail = (msg) => {
