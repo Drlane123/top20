@@ -3338,7 +3338,7 @@ app.get("/artist/:id", (req, res) => {
   // menu the song pages use; the phone's bare share sheet alone was
   // posting a naked link with the generic site card.
   const profileUrlAbs = absUrl(req, `/artist/${user.id}`);
-  const profileWords = `${user.name} on TOP 20 — my songs play right on my profile. Tap to listen:`;
+  const profileWords = `${user.name} on TOP 20 — my songs play right on my profile. Tap to listen. Artists — your own TOP 20 profile and song uploads are FREE:`;
   const encProfileUrl = encodeURIComponent(profileUrlAbs);
   const encProfileWords = encodeURIComponent(profileWords);
   const encProfileWa = encodeURIComponent(`${profileWords} ${profileUrlAbs}`);
@@ -3379,6 +3379,11 @@ app.get("/artist/:id", (req, res) => {
   <h2 style="margin:16px 2px 4px">Live songs</h2>
   <p class="sub" style="margin:0 2px 8px">Press play — every song plays right here on the profile, and a charted song gets the narrator's call first.</p>
   ${songCards || `<div class="panel"><p class="sub">No live songs yet — <a href="/upload">upload the first one</a> and get recognized.</p></div>`}
+  <div class="panel" style="margin-top:16px;border:1px solid rgba(255,190,60,.55);background:linear-gradient(180deg,rgba(255,170,40,.13),rgba(255,170,40,.04));text-align:center;padding:18px 16px">
+    <h2 style="margin:0 0 6px">Want a profile like this?</h2>
+    <p class="sub" style="margin:0 auto 12px;max-width:540px">This is what a TOP 20 artist profile looks like — your cover up front, your story in your own words, your songs playing right on the page, the narrator calling your record. <b style="color:#fff">It's FREE</b> — free profile, free uploads, judged on the 15-Point Scale like everybody else.</p>
+    <a class="btn btn-blue" href="/profile">Create your FREE profile</a> <a class="btn" href="/upload" style="margin-left:8px">Upload your song</a>
+  </div>
   <script>
   (function () {
     var audios = document.querySelectorAll('audio.profile-audio');
@@ -3500,8 +3505,8 @@ app.get("/artist/:id", (req, res) => {
   const bioText = String(user.bio || "").replace(/\s+/g, " ").trim();
   const bioCut = bioText.length > 300 ? bioText.slice(0, 300).replace(/\s+\S*$/, "") + "…" : bioText;
   const profileDesc = bioCut
-    ? `${bioCut} — ${user.name} · ${user.city}, ${user.state}${genreList(user).length ? ` · ${genreDisplay(user)}` : ""} on TOP 20. Songs play right on the profile.`
-    : `${user.name} · ${user.city}, ${user.state}${genreList(user).length ? ` · ${genreDisplay(user)}` : ""}. Independent artist on TOP 20 — judged on craft, ranked daily. Songs play right on the profile.`;
+    ? `${bioCut} — ${user.name} · ${user.city}, ${user.state}${genreList(user).length ? ` · ${genreDisplay(user)}` : ""} on TOP 20. Songs play right on the profile. Artists — profiles and uploads are FREE on Top 20.`
+    : `${user.name} · ${user.city}, ${user.state}${genreList(user).length ? ` · ${genreDisplay(user)}` : ""}. Independent artist on TOP 20 — judged on craft, ranked daily. Songs play right on the profile. Artists — profiles and uploads are FREE on Top 20.`;
   res.send(layout(user.name, "profile", body, {
     meta: {
       title: `${user.name} — TOP 20 Artist`,
