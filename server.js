@@ -262,6 +262,9 @@ if (ICONS) {
   iconRoute("/icons/icon-maskable-512x512.png", "icon-maskable-512x512.png");
   iconRoute("/icons/apple-touch-icon.png", "apple-touch-icon.png");
   iconRoute("/apple-touch-icon.png", "apple-touch-icon.png");
+  // The classic root path: Google and browsers ask for /favicon.ico
+  // directly, and it 404'd — the new mark now answers there too.
+  iconRoute("/favicon.ico", "icon-192x192.png");
 }
 // Pages always re-fetch fresh HTML (owner hit a stale cached page more
 // than once — new features like the DJ voice never reached his phone).
