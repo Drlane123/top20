@@ -995,6 +995,7 @@ function quickSpecsHtml(judge) {
   if (m.truePeak != null) chips.push(chip("📈 True peak", `${m.truePeak} dBTP`));
   if (m.hookStartSec != null) chips.push(chip("🎯 Hook lands", mmss(m.hookStartSec)));
   if (m.bpm) chips.push(chip("🥁 Tempo", `${m.bpm} BPM`));
+  if (m.keyRoot) chips.push(chip("🎼 Key", `${m.keyRoot} ${m.keyMode || ""}`.trim()));
   if (m.crestDb != null) chips.push(chip("📊 Peak/Average", `${m.crestDb} dB`));
   if (m.lra != null) chips.push(chip("🎚 Dynamics", `${m.lra} LU`));
   if (m.durationSec != null) chips.push(chip("⏱ Length", mmss(m.durationSec)));
@@ -3201,6 +3202,19 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   const myNotifications = result.notifications.filter((n) => n.song_id === songId);
   const judge = db.prepare("SELECT * FROM judge_scores WHERE song_id = ?").get(songId);
   const { ranks } = songRanks(songId);
+  // The server's factual reads of THIS file (tempo, key, loudness, true
+  // peak, hook point) — they drive the Theater's lock-ins and the
+  // read strip on the reveal. Null when the file couldn't be measured.
+  const specs = judged.measurements ? quickSpecs(judged.measurements) : null;
+  const readParts = [];
+  if (specs) {
+    if (specs.bpm) readParts.push(`Tempo <b style="color:#fff">${specs.bpm} BPM</b>`);
+    if (specs.keyRoot) readParts.push(`Key <b style="color:#fff">${esc(specs.keyRoot)} ${esc(specs.keyMode || "")}</b>`);
+    if (specs.lufs != null) readParts.push(`Loudness <b style="color:#fff">${specs.lufs} LUFS</b>`);
+    if (specs.truePeak != null) readParts.push(`True peak <b style="color:#fff">${specs.truePeak} dBTP</b>`);
+    if (specs.hookStartSec != null) readParts.push(`Hook lands <b style="color:#fff">${Math.floor(specs.hookStartSec / 60)}:${String(Math.round(specs.hookStartSec % 60)).padStart(2, "0")}</b>`);
+  }
+  const readStrip = readParts.length ? `<div class="panel" style="border-left:3px solid #ffc44d"><p class="sub" style="margin:0">🎧 <b style="color:#fff">What the analyzer read on your record:</b> ${readParts.join(" · ")}</p></div>` : "";
 
   const emailsHtml = myNotifications.length ? `
   <div class="panel">
@@ -3216,6 +3230,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   const body = `
   <h1>Judged &amp; ranked</h1>
   <p class="sub">"${esc(title)}" by ${esc(user.name)} was judged on all 15 criteria — cover art included — and placed on today's charts.</p>
+  ${readStrip}
   <div class="panel">
     <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">Craft score</div>
     <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px">
@@ -3256,10 +3271,21 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   };
   const theater = `
   <div class="panel" id="theaterPanel" style="padding:0;overflow:hidden">
-    <img src="/studio.jpg" alt="The Top 20 Mastering Analyzer" style="width:100%;display:block">
+    <style>@keyframes tPulse { 50% { opacity: .4 } }</style>
+    <div style="position:relative">
+      <img src="/studio.jpg" alt="The Top 20 Mastering Analyzer" style="width:100%;display:block">
+      <div id="tOvlBpm" style="position:absolute;left:64.6%;top:21.6%;width:16.2%;background:rgba(4,10,22,.82);border:1px solid #2ee6a8;border-radius:6px;padding:3px 6px;animation:tPulse 1.6s infinite">
+        <div style="font-size:8px;letter-spacing:1.5px;color:#57e6ff;line-height:1.1">TEMPO / BPM</div>
+        <div id="tOvlBpmVal" style="font-size:clamp(10px,3.1vw,16px);font-weight:800;color:#fff;line-height:1.15">···</div>
+      </div>
+      <div id="tOvlKey" style="position:absolute;left:64.6%;top:34.6%;width:16.2%;background:rgba(4,10,22,.82);border:1px solid #2ee6a8;border-radius:6px;padding:3px 6px;animation:tPulse 1.6s infinite">
+        <div style="font-size:8px;letter-spacing:1.5px;color:#57e6ff;line-height:1.1">KEY / NOTE</div>
+        <div id="tOvlKeyVal" style="font-size:clamp(10px,3.1vw,16px);font-weight:800;color:#fff;line-height:1.15">···</div>
+      </div>
+    </div>
     <div style="padding:18px">
       <h2 style="margin:6px 0 4px">🎚️ Your record is on the analyzer</h2>
-      <p class="sub" style="margin:0 0 6px">“${esc(title.trim())}” — this is the machine that judges every record on Top 20: loudness, true peak, the full spectrum, measured against the <b style="color:#fff">${esc(genre)} reference chart</b> — the same cheat-sheet references the pros keep on their desks. Press play and watch it read <b style="color:#fff">your</b> song: the meters below are fed by your record, live.</p>
+      <p class="sub" style="margin:0 0 6px">“${esc(title.trim())}” — this is the machine that judges every record on Top 20: loudness, true peak, the full spectrum, measured against the <b style="color:#fff">${esc(genre)} reference chart</b> — the same cheat-sheet references the pros keep on their desks. Press play and watch it read <b style="color:#fff">your</b> song: the meters below are fed by your record, live — and the <b style="color:#fff">tempo and key</b> it locks onto are read from your actual file.</p>
       <p style="margin:14px 0"><button class="btn btn-blue btn-block" id="tStart" type="button" style="font-size:17px;padding:14px">▶ Play my record — watch it get measured</button></p>
       <div id="tStage" style="display:none">
         <div id="tDeck">
@@ -3268,18 +3294,32 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
           <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">INTEGRATED</div><div id="tInt" style="font-size:21px;font-weight:800;color:#ff5a5a">—</div></div>
           <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">TRUE PEAK</div><div id="tPeak" style="font-size:21px;font-weight:800;color:#ffc44d">—</div></div>
         </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:0 0 10px">
+          <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">🥁 TEMPO — READ FROM YOUR FILE</div><div id="tTileBpm" style="font-size:21px;font-weight:800;color:#fff">—</div></div>
+          <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">🎼 KEY — READ FROM YOUR FILE</div><div id="tTileKey" style="font-size:21px;font-weight:800;color:#fff">—</div></div>
+          <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">🎯 HOOK LANDS</div><div id="tTileHook" style="font-size:21px;font-weight:800;color:#fff">—</div></div>
+        </div>
         <canvas id="tLevels" width="1440" height="460" style="width:100%;height:auto;display:block;background:#060b18;border:1px solid #22304f;border-radius:10px"></canvas>
+        <p class="note" style="margin:10px 0 4px;letter-spacing:2px">SPECTRUM — YOUR SONG, LIVE</p>
+        <canvas id="tSpec" width="1440" height="220" style="width:100%;height:auto;display:block;background:#060b18;border:1px solid #22304f;border-radius:10px"></canvas>
         <div style="display:flex;align-items:center;gap:8px;margin:10px 0 4px"><span class="note" style="width:14px">L</span><div style="flex:1;height:12px;background:#0a1122;border:1px solid #22304f;border-radius:6px;overflow:hidden"><div id="tML" style="height:100%;width:0%;background:linear-gradient(90deg,#2ee6a8,#ffc44d,#ff5a5a)"></div></div><span class="note" id="tLvl" style="width:74px;text-align:right">— dB</span></div>
         <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px"><span class="note" style="width:14px">R</span><div style="flex:1;height:12px;background:#0a1122;border:1px solid #22304f;border-radius:6px;overflow:hidden"><div id="tMR" style="height:100%;width:0%;background:linear-gradient(90deg,#2ee6a8,#ffc44d,#ff5a5a)"></div></div><span class="note" style="width:74px"></span></div>
         <div id="tSegs" style="display:flex;gap:3px;margin:2px 0 10px">${CATEGORIES.map(() => `<div style="flex:1;height:6px;border-radius:3px;background:#22304f"></div>`).join("")}</div>
-        <p class="note" id="tPhaseKick" style="margin:0;letter-spacing:2px">THE 15-POINT SCALE — READING YOUR RECORD</p>
-        <p id="tPhaseName" style="margin:2px 0 0;font-size:23px;font-weight:800;color:#fff">Warming up the analyzer…</p>
-        <p class="sub" id="tPhaseSub" style="margin:2px 0 0">Every point gets read off your actual mix.</p>
+        <div style="display:flex;gap:14px;align-items:center">
+          <canvas id="tWheel" width="236" height="236" style="width:118px;height:118px;flex:none"></canvas>
+          <div style="flex:1;min-width:0">
+            <p class="note" id="tPhaseKick" style="margin:0;letter-spacing:2px">THE 15-POINT SCALE — READING YOUR RECORD</p>
+            <p id="tPhaseName" style="margin:2px 0 0;font-size:23px;font-weight:800;color:#fff">Warming up the analyzer…</p>
+            <p class="sub" id="tPhaseSub" style="margin:2px 0 0">Every point gets read off your actual mix.</p>
+          </div>
+        </div>
         </div>
         <div id="tProc" style="display:none;text-align:center;padding:26px 6px 8px">
           <div id="tCount" style="font-size:52px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums;line-height:1">50%</div>
           <p id="tProcStatus" style="margin:10px 0 0;font-size:21px;font-weight:800;letter-spacing:3px;color:#2ee6a8">READING</p>
           <p class="sub" id="tProcPoint" style="margin:4px 0 0">Reading your record…</p>
+          <p id="tLockBpm" style="margin:8px 0 0;font-size:15px;font-weight:800;letter-spacing:1.5px;color:#5b6b8c">🥁 TEMPO — READING…</p>
+          <p id="tLockKey" style="margin:4px 0 0;font-size:15px;font-weight:800;letter-spacing:1.5px;color:#5b6b8c">🎼 KEY — READING…</p>
           <div style="height:16px;background:#0a1122;border:1px solid #22304f;border-radius:8px;overflow:hidden;margin:16px 0 12px"><div id="tProcFill" style="height:100%;width:50%;background:#2ee6a8"></div></div>
           <div style="max-width:440px;margin:0 auto 4px">
             <div style="height:8px;background:#0a1122;border:1px solid #22304f;border-radius:5px;overflow:hidden;margin-bottom:5px"><div id="tPML" style="height:100%;width:0%;background:linear-gradient(90deg,#2ee6a8,#ffc44d,#ff5a5a)"></div></div>
@@ -3314,6 +3354,61 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
         count = document.getElementById("tCount"), pfill = document.getElementById("tProcFill"),
         pstatus = document.getElementById("tProcStatus"), ppoint = document.getElementById("tProcPoint");
     var procOn = false, finishing = false;
+    // THE FACTUAL READS (owner, Nov 2, 2026): the server's own
+    // measurements of THIS file, embedded in the page. During the pass
+    // they LOCK IN one by one — the tiles fill, the badges on the
+    // studio screen itself stop scanning and show the real numbers,
+    // the key wheel lands on the song's real key. Nothing decorative:
+    // a value the engine couldn't read stays blank.
+    var READ = ${JSON.stringify(specs ? { bpm: specs.bpm, keyRoot: specs.keyRoot, keyMode: specs.keyMode, hookStartSec: specs.hookStartSec } : null)};
+    var NOTES12 = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    var locked = { bpm: false, key: false, hook: false };
+    var tileBpm = document.getElementById("tTileBpm"), tileKey = document.getElementById("tTileKey"), tileHook = document.getElementById("tTileHook");
+    var ovlBpm = document.getElementById("tOvlBpm"), ovlKey = document.getElementById("tOvlKey"),
+        ovlBpmVal = document.getElementById("tOvlBpmVal"), ovlKeyVal = document.getElementById("tOvlKeyVal");
+    var lockBpmEl = document.getElementById("tLockBpm"), lockKeyEl = document.getElementById("tLockKey");
+    var wheel = document.getElementById("tWheel"), wctx = wheel ? wheel.getContext("2d") : null, lastScan = -1;
+    function drawWheel(activePc, root, mode) {
+      if (!wctx) return;
+      var cx = 118, cy = 118, ro = 106, ri = 64;
+      wctx.clearRect(0, 0, 236, 236);
+      for (var pc = 0; pc < 12; pc++) {
+        var a0 = (pc / 12) * Math.PI * 2 - Math.PI / 2 - Math.PI / 12 + 0.03;
+        var a1 = ((pc + 1) / 12) * Math.PI * 2 - Math.PI / 2 - Math.PI / 12 - 0.03;
+        wctx.beginPath();
+        wctx.arc(cx, cy, ro, a0, a1); wctx.arc(cx, cy, ri, a1, a0, true); wctx.closePath();
+        wctx.fillStyle = pc === activePc ? (root ? "#ffc44d" : "#1d4a6e") : "#12233f";
+        wctx.fill();
+        var am = (a0 + a1) / 2, lx = cx + Math.cos(am) * 85, ly = cy + Math.sin(am) * 85;
+        wctx.fillStyle = pc === activePc && root ? "#060b18" : "#9fc6ee";
+        wctx.font = "700 16px sans-serif"; wctx.textAlign = "center"; wctx.textBaseline = "middle";
+        wctx.fillText(NOTES12[pc], lx, ly);
+      }
+      wctx.fillStyle = "#fff"; wctx.font = "800 30px sans-serif";
+      wctx.fillText(root || "KEY", cx, cy - (root ? 10 : 0));
+      if (root) { wctx.fillStyle = "#9fb6dd"; wctx.font = "700 14px sans-serif"; wctx.fillText(mode || "", cx, cy + 18); }
+    }
+    function lockRead(which) {
+      if (!READ) return;
+      if (which === "bpm" && READ.bpm) {
+        tileBpm.textContent = READ.bpm + " BPM";
+        ovlBpmVal.textContent = READ.bpm + " BPM";
+        ovlBpm.style.animation = "none"; ovlBpm.style.borderColor = "#ffc44d";
+        lockBpmEl.textContent = "✓ TEMPO READ — " + READ.bpm + " BPM"; lockBpmEl.style.color = "#ffc44d";
+      }
+      if (which === "key" && READ.keyRoot) {
+        var label = READ.keyRoot + " " + (READ.keyMode || "");
+        tileKey.textContent = label;
+        ovlKeyVal.textContent = label.toUpperCase();
+        ovlKey.style.animation = "none"; ovlKey.style.borderColor = "#ffc44d";
+        lockKeyEl.textContent = "✓ KEY READ — " + label.toUpperCase(); lockKeyEl.style.color = "#ffc44d";
+        drawWheel(NOTES12.indexOf(READ.keyRoot), READ.keyRoot, (READ.keyMode || "").toUpperCase());
+      }
+      if (which === "hook" && READ.hookStartSec != null) {
+        tileHook.textContent = Math.floor(READ.hookStartSec / 60) + ":" + String(Math.round(READ.hookStartSec % 60)).padStart(2, "0");
+      }
+    }
+    drawWheel(-1, "", "");
     function finish() {
       if (done) return; done = true;
       try {
@@ -3340,6 +3435,8 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
         src.connect(split); src.connect(anM); anM.connect(actx.destination);
         split.connect(anL, 0); split.connect(anR, 1);
         var lv = document.getElementById("tLevels"), lctx = lv.getContext("2d");
+        var sp = document.getElementById("tSpec"), sctx = sp ? sp.getContext("2d") : null;
+        if (sctx) { sctx.fillStyle = "#060b18"; sctx.fillRect(0, 0, sp.width, sp.height); }
         var NB = 16, barV = [], barP = [];
         for (var bi = 0; bi < NB; bi++) { barV.push(0); barP.push(0); }
         var freq = new Uint8Array(anM.frequencyBinCount), tdL = new Uint8Array(anL.fftSize), tdR = new Uint8Array(anR.fftSize), tdM = new Uint8Array(anM.fftSize);
@@ -3387,6 +3484,24 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
             lctx.fillStyle = "#ffffff";
             lctx.fillRect(x, bot - barP[i] * bh - 3, bwid, 3);
           }
+          // THE SPECTRUM WATERFALL + KEY WHEEL SCAN (owner, Nov 2,
+          // 2026): the spectrum scrolls like the real plug-in — every
+          // column is this moment of the song's own frequency content.
+          // Until the key locks, the wheel keeps sweeping the notes.
+          if (sctx) {
+            sctx.drawImage(sp, -4, 0);
+            var rowsN = 44, rh = sp.height / rowsN;
+            for (var r2 = 0; r2 < rowsN; r2++) {
+              var bi2 = Math.floor(Math.pow(r2 / rowsN, 1.6) * freq.length * 0.8);
+              var v2 = freq[bi2] / 255;
+              sctx.fillStyle = v2 < 0.03 ? "#060b18" : "hsl(" + Math.round(160 - v2 * 160) + ",95%," + Math.round(8 + v2 * 45) + "%)";
+              sctx.fillRect(sp.width - 4, sp.height - (r2 + 1) * rh, 4, rh);
+            }
+          }
+          if (!locked.key) {
+            var scanPc = Math.floor(Date.now() / 240) % 12;
+            if (scanPc !== lastScan) { lastScan = scanPc; drawWheel(scanPc, "", ""); }
+          }
           var rL = stats(anL, tdL), rR = stats(anR, tdR); stats(anM, tdM);
           smooth = smooth * 0.82 + Math.max(rL, rR) * 0.18;
           mL.style.width = Math.min(100, rL * 260) + "%";
@@ -3419,6 +3534,14 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
           psub.textContent = POINTS[ph][1];
           ppoint.textContent = "Judging point " + (ph + 1) + " of 15 — " + POINTS[ph][0];
           for (var si = 0; si < segs.children.length; si++) segs.children[si].style.background = si < ph ? "#ffc44d" : si === ph ? "#ff5a5a" : "#22304f";
+        }
+        // The factual reads lock in as their part of the pass arrives:
+        // the hook early, the tempo as the processing view opens, the
+        // key deeper in — so the artist WATCHES the machine read them.
+        if (READ) {
+          if (!locked.hook && el >= DUR * 0.20) { locked.hook = true; lockRead("hook"); }
+          if (!locked.bpm && el >= DUR * 0.52) { locked.bpm = true; lockRead("bpm"); }
+          if (!locked.key && el >= DUR * 0.68) { locked.key = true; lockRead("key"); }
         }
         // THE PROCESSING STRETCH (owner, Nov 2, 2026): the full screen
         // doesn't run the whole way. Halfway through, the deck steps

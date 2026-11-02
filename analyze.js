@@ -216,12 +216,27 @@ function analyzePcm(x) {
   const domFreqs = [];
   const secAcc = []; // per-second band magnitudes -> section fingerprints
   const binHz = SR / N;
+  // KEY DETECTION (owner, Nov 2, 2026 — the screen must be FACTUAL):
+  // a chromagram accumulated from the same FFT frames — every bin in the
+  // musical range votes its energy into one of the 12 pitch classes.
+  // After the pass, the chroma profile is correlated against the
+  // Krumhansl key profiles (major + minor, all 12 tonics) and the best
+  // match is the song's key. Pure measurement, same doctrine as the rest.
+  const chroma = new Float64Array(12);
+  const pcOfBin = new Int16Array(N / 2 + 1).fill(-1);
+  for (let i = 1; i <= N / 2; i++) {
+    const f = i * binHz;
+    if (f < 55 || f > 4200) continue;
+    const midi = Math.round(69 + 12 * Math.log2(f / 440));
+    pcOfBin[i] = ((midi % 12) + 12) % 12;
+  }
   const re = new Float64Array(N), im = new Float64Array(N);
   for (let f = 0; f < frames; f++) {
     const off = f * HOP;
     for (let i = 0; i < N; i++) { re[i] = x[off + i] * win[i]; im[i] = 0; }
     const mags = fftMag(re, im);
     for (let i = 0; i < mags.length; i++) acc[i] += mags[i];
+    for (let i = 1; i < mags.length; i++) { const pc = pcOfBin[i]; if (pc >= 0) chroma[pc] += mags[i] * (i * binHz < 250 ? 1.5 : 1); }
     { // file this frame's band magnitudes under its second
       const sec = Math.floor(off / SR);
       if (!secAcc[sec]) secAcc[sec] = new Float64Array(BANDS.length);
@@ -367,6 +382,45 @@ function analyzePcm(x) {
   };
 
 
+  // Key: correlate the song's chroma profile against the Krumhansl
+  // major/minor key profiles for all 12 tonics; the strongest Pearson
+  // correlation wins. Below r = 0.35 the record doesn't sit in a clear
+  // key (drum loops, spoken word, atonal) and we say so with null
+  // rather than guess — the screen only shows what it really read.
+  let key = null;
+  {
+    const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    const KMAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
+    const KMIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+    const total = chroma.reduce((a, b) => a + b, 0);
+    if (total > 0) {
+      const c = [...chroma].map((v) => v / total);
+      const cMean = c.reduce((a, b) => a + b, 0) / 12;
+      const cDev = c.map((v) => v - cMean);
+      const cNorm = Math.sqrt(cDev.reduce((a, v) => a + v * v, 0));
+      let best = null;
+      for (const [mode, prof] of [["major", KMAJ], ["minor", KMIN]]) {
+        const pMean = prof.reduce((a, b) => a + b, 0) / 12;
+        const pDev = prof.map((v) => v - pMean);
+        const pNorm = Math.sqrt(pDev.reduce((a, v) => a + v * v, 0));
+        if (!cNorm || !pNorm) continue;
+        for (let t = 0; t < 12; t++) {
+          let dot = 0;
+          for (let pc = 0; pc < 12; pc++) dot += cDev[pc] * pDev[(pc - t + 12) % 12];
+          const r = dot / (cNorm * pNorm);
+          if (!best || r > best.r) best = { r, tonic: t, mode };
+        }
+      }
+      if (best && best.r >= 0.35) {
+        key = {
+          root: NOTE_NAMES[best.tonic],
+          mode: best.mode,
+          confidence: Math.round(best.r * 100) / 100,
+        };
+      }
+    }
+  }
+
   return {
     durationSec: Math.round(durSec * 10) / 10,
     crestDb: Math.round(crestDb * 10) / 10,
@@ -376,6 +430,7 @@ function analyzePcm(x) {
     hook: { startSec: hookStart, levelDb: Math.round(hookLevel * 10) / 10, repeats: hookRepeats, liftDb: Math.round(hookLift * 10) / 10 },
     bands, lowEndDb: lowEnd, topEndDb: topEnd,
     tempoStrength, bpm, vocalShare: vShare, melodicRangeSemis: melodicRange,
+    key,
     sections,
     intro,
   };
@@ -410,6 +465,9 @@ function quickSpecs(m) {
     truePeak: n(m.truePeak),
     crestDb: n(m.crestDb),
     bpm: m.bpm ? Math.round(m.bpm) : null,
+    keyRoot: m.key && m.key.root ? m.key.root : null,
+    keyMode: m.key && m.key.mode ? m.key.mode : null,
+    keyConf: m.key && typeof m.key.confidence === "number" ? Math.round(m.key.confidence * 100) : null,
     hookStartSec: m.hook && typeof m.hook.startSec === "number" ? Math.round(m.hook.startSec) : null,
     hookLiftDb: m.hook ? n(m.hook.liftDb) : null,
     durationSec: n(m.durationSec),
