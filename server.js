@@ -5209,6 +5209,7 @@ function sweepUploads() {
 
 let snapBusy = false, snapSince = 0;
 async function snapshotDb(reason) {
+  // (Nov 1 late: probe-verified across deploys on the VACUUM lineage.)
   if (!storage.configured()) return;
   // Wedge guard: a snapshot stuck over 60s must not block every later
   // one — that failure mode silently froze the record book in the past.
