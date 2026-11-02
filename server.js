@@ -3145,116 +3145,9 @@ function isRadioQuality(q) {
   return false;
 }
 
-app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cover", maxCount: 1 }]), async (req, res) => {
-  const audioFile = req.files?.audio?.[0];
-  const coverFile = req.files?.cover?.[0];
-  const cleanup = () => {
-    for (const f of [audioFile, coverFile]) if (f) fs.unlink(f.path, () => {});
-  };
-  if (!req.body.consent) { cleanup(); return uploadError(res, "Upload stopped — the Terms & Conditions box wasn't checked. Hot Top 20 can only add and play a song with the artist's or label's permission on file, so that consent has to come first."); }
-  if (!coverFile) { cleanup(); return uploadError(res, "Cover art is required — no cover, no upload, no judging, no chart."); }
-  if (!audioFile) { cleanup(); return uploadError(res, "An audio file is required to upload a song."); }
-  if (!isRadioQuality(probeAudioQuality(audioFile.path))) {
-    cleanup();
-    return uploadError(res, "That file isn't radio quality. Top 20 takes WAV or FLAC, or MP3 / M4A at 192 kbps or better — the same quality radio stations send and accept.");
-  }
-  const { title, email, genre, lyrics } = req.body;
-  if (!title || !email || !GENRES.includes(genre)) {
-    cleanup();
-    return uploadError(res, "Please fill in the song title, your email, and a genre.");
-  }
-
-  const emailLc = String(email).trim().toLowerCase();
-  const user = db.prepare("SELECT * FROM users WHERE LOWER(email) = ?").get(emailLc);
-  // Recognition rule: no profile (artist name + home city on file), no upload.
-  if (!hasProfile(user)) { cleanup(); return profileGate(res, emailLc); }
-
-  // Hard rule: at most 2 live songs per artist — only live songs get judged.
-  const liveCount = db.prepare(
-    "SELECT COUNT(*) AS c FROM songs WHERE artist_id = ? AND status = 'live'"
-  ).get(user.id).c;
-  if (liveCount >= 2) {
-    cleanup();
-    return uploadError(res, "You can only have two songs live at a time — those are the only songs that get judged. Remove one to put another up.");
-  }
-
-  const audioWeb = `/uploads/audio/${audioFile.filename}`;
-  const coverWeb = `/uploads/covers/${coverFile.filename}`;
-  const songInfo = db.prepare(
-    "INSERT INTO songs (artist_id, title, genre, audio_path, cover_path, lyrics, status, consent_at, consent_by) VALUES (?, ?, ?, ?, ?, ?, 'live', datetime('now'), ?)"
-  ).run(user.id, title.trim(), genre, audioWeb, coverWeb, lyrics ? String(lyrics) : null, user.email);
-  const songId = Number(songInfo.lastInsertRowid);
-
-  // Judge v2 (measured): the spectrum analyzer reads the real file and the
-  // genre templates score it. If a file can't be measured, Judge v1 covers
-  // that one song so an upload never fails on the judging step.
-  let judged = null;
-  try { judged = await judgeMeasuredFile(audioFile.path, genre, coverFile.path, lyrics ? String(lyrics) : null, title ? String(title) : null); } catch { judged = null; }
-  if (!judged) judged = judgeAudioFile(audioFile.path, coverFile.path);
-  const catCols = CATEGORIES.map((c) => c.key).join(", ");
-  const placeholders = CATEGORIES.map(() => "?").join(", ");
-  db.prepare(
-    `INSERT INTO judge_scores (song_id, ${catCols}, total_score, craft_score, notes, metrics) VALUES (?, ${placeholders}, ?, ?, ?, ?)`
-  ).run(songId, ...CATEGORIES.map((c) => judged.scores[c.key]), judged.totalScore, judged.craftScore, JSON.stringify(judged.notes),
-    judged.measurements ? JSON.stringify(quickSpecs(judged.measurements)) : null);
-  db.prepare("INSERT INTO engagements (song_id, type, count) VALUES (?, 'play', 0), (?, 'like', 0), (?, 'share', 0), (?, 'save', 0)")
-    .run(songId, songId, songId, songId);
-
-  mirrorUpload(audioFile.path); mirrorUpload(coverFile.path); snapshotDbSoon();
-  const result = recalc(db);
-  const myNotifications = result.notifications.filter((n) => n.song_id === songId);
-  const judge = db.prepare("SELECT * FROM judge_scores WHERE song_id = ?").get(songId);
-  const { ranks } = songRanks(songId);
-  // The server's factual reads of THIS file (tempo, key, loudness, true
-  // peak, hook point) — they drive the Theater's lock-ins and the
-  // read strip on the reveal. Null when the file couldn't be measured.
-  const specs = judged.measurements ? quickSpecs(judged.measurements) : null;
-  const readParts = [];
-  if (specs) {
-    if (specs.bpm) readParts.push(`Tempo <b style="color:#fff">${specs.bpm} BPM</b>`);
-    if (specs.keyRoot) readParts.push(`Key <b style="color:#fff">${esc(specs.keyRoot)} ${esc(specs.keyMode || "")}</b>`);
-    if (specs.lufs != null) readParts.push(`Loudness <b style="color:#fff">${specs.lufs} LUFS</b>`);
-    if (specs.truePeak != null) readParts.push(`True peak <b style="color:#fff">${specs.truePeak} dBTP</b>`);
-    if (specs.hookStartSec != null) readParts.push(`Hook lands <b style="color:#fff">${Math.floor(specs.hookStartSec / 60)}:${String(Math.round(specs.hookStartSec % 60)).padStart(2, "0")}</b>`);
-  }
-  const readStrip = readParts.length ? `<div class="panel" style="border-left:3px solid #ffc44d"><p class="sub" style="margin:0">🎧 <b style="color:#fff">What the analyzer read on your record:</b> ${readParts.join(" · ")}</p></div>` : "";
-
-  const emailsHtml = myNotifications.length ? `
-  <div class="panel">
-    <h2 style="margin-top:0">✉️ You charted — email sent</h2>
-    ${myNotifications.map((n) => `
-      <p class="sub" style="margin-top:12px"><b style="color:#fff">To:</b> ${esc(user.email)}<br>
-      <b style="color:#fff">Subject:</b> ${esc(emailSubject(n))}</p>
-      <p class="note">${esc(emailBody(n, user.name, title.trim(), result.date))}</p>`).join("")}
-  </div>` : `
-  <div class="panel"><h2 style="margin-top:0">Not in a Top 20 — yet</h2>
-  <p class="sub">No chart email this time. Your exact ranks are below — charts recalculate daily, and any day you can pop into the Top 20. If you fall out later, we won't email that either: come back and check.</p></div>`;
-
-  const body = `
-  <h1>Judged &amp; ranked</h1>
-  <p class="sub">"${esc(title)}" by ${esc(user.name)} was judged on all 15 criteria — cover art included — and placed on today's charts.</p>
-  ${readStrip}
-  <div class="panel">
-    <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">Craft score</div>
-    <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px">
-      <span class="craftbig">${judge.craft_score}</span><span class="sub">/ 100 · total ${judge.total_score} / 150</span>
-    </div>
-    ${quickSpecsHtml(judge)}
-    ${scoreBars(judge)}
-    <p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/song/${songId}">Open your song page</a></p>
-  </div>
-  <div class="panel"><h2 style="margin-top:0">Your ranks today</h2>${rankLines(ranks)}</div>
-  ${emailsHtml}`;
-  // THE ANALYZER THEATER (owner, Nov 2, 2026): Dale's call — when an
-  // artist uploads, this screen pops up and WORKS: the metering-suite
-  // studio on top, and below it a live feed driven by the artist's own
-  // song playing in their browser (Web Audio) — spectrum bars dancing,
-  // L/R meters pumping, SHORT TERM / INTEGRATED / TRUE PEAK readouts
-  // ticking from the real signal, a loudness-history line drawing
-  // itself, a loading line sweeping through the reading stages — and
-  // at the end of the pass, the 15-point evaluation reveals below.
-  // The official numbers are the server's; the theater is the artist
-  // watching their record on the machine. Skip link for the impatient.
+// THE ANALYZER THEATER — one builder for every lane that runs a record
+// through the machine (chart uploads and the owner Quick Load).
+function theaterHtml(title, genre, audioWeb, specs) {
   const THEATER_SUBS = {
     mix: "How the low end, mids and highs sit against each other",
     mastering: "Loudness, true peak and polish — the radio finish",
@@ -3755,6 +3648,120 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
     });
   })();
   </script>`;
+  return theater;
+}
+
+app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cover", maxCount: 1 }]), async (req, res) => {
+  const audioFile = req.files?.audio?.[0];
+  const coverFile = req.files?.cover?.[0];
+  const cleanup = () => {
+    for (const f of [audioFile, coverFile]) if (f) fs.unlink(f.path, () => {});
+  };
+  if (!req.body.consent) { cleanup(); return uploadError(res, "Upload stopped — the Terms & Conditions box wasn't checked. Hot Top 20 can only add and play a song with the artist's or label's permission on file, so that consent has to come first."); }
+  if (!coverFile) { cleanup(); return uploadError(res, "Cover art is required — no cover, no upload, no judging, no chart."); }
+  if (!audioFile) { cleanup(); return uploadError(res, "An audio file is required to upload a song."); }
+  if (!isRadioQuality(probeAudioQuality(audioFile.path))) {
+    cleanup();
+    return uploadError(res, "That file isn't radio quality. Top 20 takes WAV or FLAC, or MP3 / M4A at 192 kbps or better — the same quality radio stations send and accept.");
+  }
+  const { title, email, genre, lyrics } = req.body;
+  if (!title || !email || !GENRES.includes(genre)) {
+    cleanup();
+    return uploadError(res, "Please fill in the song title, your email, and a genre.");
+  }
+
+  const emailLc = String(email).trim().toLowerCase();
+  const user = db.prepare("SELECT * FROM users WHERE LOWER(email) = ?").get(emailLc);
+  // Recognition rule: no profile (artist name + home city on file), no upload.
+  if (!hasProfile(user)) { cleanup(); return profileGate(res, emailLc); }
+
+  // Hard rule: at most 2 live songs per artist — only live songs get judged.
+  const liveCount = db.prepare(
+    "SELECT COUNT(*) AS c FROM songs WHERE artist_id = ? AND status = 'live'"
+  ).get(user.id).c;
+  if (liveCount >= 2) {
+    cleanup();
+    return uploadError(res, "You can only have two songs live at a time — those are the only songs that get judged. Remove one to put another up.");
+  }
+
+  const audioWeb = `/uploads/audio/${audioFile.filename}`;
+  const coverWeb = `/uploads/covers/${coverFile.filename}`;
+  const songInfo = db.prepare(
+    "INSERT INTO songs (artist_id, title, genre, audio_path, cover_path, lyrics, status, consent_at, consent_by) VALUES (?, ?, ?, ?, ?, ?, 'live', datetime('now'), ?)"
+  ).run(user.id, title.trim(), genre, audioWeb, coverWeb, lyrics ? String(lyrics) : null, user.email);
+  const songId = Number(songInfo.lastInsertRowid);
+
+  // Judge v2 (measured): the spectrum analyzer reads the real file and the
+  // genre templates score it. If a file can't be measured, Judge v1 covers
+  // that one song so an upload never fails on the judging step.
+  let judged = null;
+  try { judged = await judgeMeasuredFile(audioFile.path, genre, coverFile.path, lyrics ? String(lyrics) : null, title ? String(title) : null); } catch { judged = null; }
+  if (!judged) judged = judgeAudioFile(audioFile.path, coverFile.path);
+  const catCols = CATEGORIES.map((c) => c.key).join(", ");
+  const placeholders = CATEGORIES.map(() => "?").join(", ");
+  db.prepare(
+    `INSERT INTO judge_scores (song_id, ${catCols}, total_score, craft_score, notes, metrics) VALUES (?, ${placeholders}, ?, ?, ?, ?)`
+  ).run(songId, ...CATEGORIES.map((c) => judged.scores[c.key]), judged.totalScore, judged.craftScore, JSON.stringify(judged.notes),
+    judged.measurements ? JSON.stringify(quickSpecs(judged.measurements)) : null);
+  db.prepare("INSERT INTO engagements (song_id, type, count) VALUES (?, 'play', 0), (?, 'like', 0), (?, 'share', 0), (?, 'save', 0)")
+    .run(songId, songId, songId, songId);
+
+  mirrorUpload(audioFile.path); mirrorUpload(coverFile.path); snapshotDbSoon();
+  const result = recalc(db);
+  const myNotifications = result.notifications.filter((n) => n.song_id === songId);
+  const judge = db.prepare("SELECT * FROM judge_scores WHERE song_id = ?").get(songId);
+  const { ranks } = songRanks(songId);
+  // The server's factual reads of THIS file (tempo, key, loudness, true
+  // peak, hook point) — they drive the Theater's lock-ins and the
+  // read strip on the reveal. Null when the file couldn't be measured.
+  const specs = judged.measurements ? quickSpecs(judged.measurements) : null;
+  const readParts = [];
+  if (specs) {
+    if (specs.bpm) readParts.push(`Tempo <b style="color:#fff">${specs.bpm} BPM</b>`);
+    if (specs.keyRoot) readParts.push(`Key <b style="color:#fff">${esc(specs.keyRoot)} ${esc(specs.keyMode || "")}</b>`);
+    if (specs.lufs != null) readParts.push(`Loudness <b style="color:#fff">${specs.lufs} LUFS</b>`);
+    if (specs.truePeak != null) readParts.push(`True peak <b style="color:#fff">${specs.truePeak} dBTP</b>`);
+    if (specs.hookStartSec != null) readParts.push(`Hook lands <b style="color:#fff">${Math.floor(specs.hookStartSec / 60)}:${String(Math.round(specs.hookStartSec % 60)).padStart(2, "0")}</b>`);
+  }
+  const readStrip = readParts.length ? `<div class="panel" style="border-left:3px solid #ffc44d"><p class="sub" style="margin:0">🎧 <b style="color:#fff">What the analyzer read on your record:</b> ${readParts.join(" · ")}</p></div>` : "";
+
+  const emailsHtml = myNotifications.length ? `
+  <div class="panel">
+    <h2 style="margin-top:0">✉️ You charted — email sent</h2>
+    ${myNotifications.map((n) => `
+      <p class="sub" style="margin-top:12px"><b style="color:#fff">To:</b> ${esc(user.email)}<br>
+      <b style="color:#fff">Subject:</b> ${esc(emailSubject(n))}</p>
+      <p class="note">${esc(emailBody(n, user.name, title.trim(), result.date))}</p>`).join("")}
+  </div>` : `
+  <div class="panel"><h2 style="margin-top:0">Not in a Top 20 — yet</h2>
+  <p class="sub">No chart email this time. Your exact ranks are below — charts recalculate daily, and any day you can pop into the Top 20. If you fall out later, we won't email that either: come back and check.</p></div>`;
+
+  const body = `
+  <h1>Judged &amp; ranked</h1>
+  <p class="sub">"${esc(title)}" by ${esc(user.name)} was judged on all 15 criteria — cover art included — and placed on today's charts.</p>
+  ${readStrip}
+  <div class="panel">
+    <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">Craft score</div>
+    <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px">
+      <span class="craftbig">${judge.craft_score}</span><span class="sub">/ 100 · total ${judge.total_score} / 150</span>
+    </div>
+    ${quickSpecsHtml(judge)}
+    ${scoreBars(judge)}
+    <p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/song/${songId}">Open your song page</a></p>
+  </div>
+  <div class="panel"><h2 style="margin-top:0">Your ranks today</h2>${rankLines(ranks)}</div>
+  ${emailsHtml}`;
+  // THE ANALYZER THEATER (owner, Nov 2, 2026): Dale's call — when an
+  // artist uploads, this screen pops up and WORKS: the metering-suite
+  // studio on top, and below it a live feed driven by the artist's own
+  // song playing in their browser (Web Audio) — spectrum bars dancing,
+  // L/R meters pumping, SHORT TERM / INTEGRATED / TRUE PEAK readouts
+  // ticking from the real signal, a loudness-history line drawing
+  // itself, a loading line sweeping through the reading stages — and
+  // at the end of the pass, the 15-point evaluation reveals below.
+  // The official numbers are the server's; the theater is the artist
+  // watching their record on the machine. Skip link for the impatient.
+  const theater = theaterHtml(title, genre, audioWeb, specs);
   res.send(layout("Upload result", "upload", theater + `
   <div id="revealContent" style="display:none">${body}</div>`));
 });
@@ -5362,6 +5369,78 @@ app.post("/admin/remeasure", requireAdmin, async (req, res) => {
   return back(`Re-measured "${song.title}" — Quick Specs are on its scorecard now: ${bits.join(" · ")}. No score was touched.`);
 });
 
+// QUICK LOAD (owner, Nov 2, 2026): Dale's test lane — "just load
+// audio without filling out a whole profile." Staff-only: pick an
+// audio file (title, genre, cover and lyrics all optional) and the
+// record runs the SAME analyzer, the SAME 15-Point Scale and the
+// SAME Theater as a real upload. Nothing is inserted into songs,
+// nothing charts, no profile is created or needed, no email is
+// sent, and the file is never mirrored to the bucket — the result
+// page is the only copy of the read.
+app.get("/admin/quickload", requireAdmin, (req, res) => {
+  res.send(layout("Quick Load", "", `
+  <h1>⚡ Quick Load</h1>
+  <p class="sub">Your private test lane. Load a record and watch it run the full analyzer and the 15-Point Scale — <b style="color:#fff">no profile, no chart, nothing public</b>. The read is the real one, from the same machine that judges uploads.</p>
+  <form class="panel" method="post" action="/admin/quickload" enctype="multipart/form-data">
+    <label>Audio file — required, radio quality (WAV or FLAC, or MP3 / M4A at 192 kbps or better)<input name="audio" type="file" accept="audio/*" required></label>
+    <label>Song title — optional (blank = the file's name)<input name="title" maxlength="120" placeholder="Optional"></label>
+    <label>Genre — the reference chart the record is measured against<select name="genre">${GENRES.map((g) => `<option value="${esc(g)}"${g === "R&B" ? " selected" : ""}>${esc(g)}</option>`).join("")}</select></label>
+    <label>Cover art — optional (blank = the cover point reads as no cover)<input name="cover" type="file" accept="image/*"></label>
+    <label>Lyrics — optional (paste them and the Lyrical Quality point reads your words)<textarea name="lyrics" rows="5" placeholder="Optional"></textarea></label>
+    <p style="margin-top:14px"><button class="btn btn-blue btn-block" type="submit" style="font-size:16px;padding:13px">▶ Load it — run the analyzer</button></p>
+  </form>
+  <p class="note">Private to this desk: the song is not saved to the charts and nobody can find it. Load as many as you want.</p>`));
+});
+
+app.post("/admin/quickload", requireAdmin, upload.fields([{ name: "audio", maxCount: 1 }, { name: "cover", maxCount: 1 }]), async (req, res) => {
+  const audioFile = req.files?.audio?.[0];
+  const coverFile = req.files?.cover?.[0];
+  const fail = (msg) => {
+    for (const f of [audioFile, coverFile]) if (f) fs.unlink(f.path, () => {});
+    return res.status(400).send(layout("Quick Load", "", `
+    <div class="panel err"><h2 style="margin-top:0">Quick Load stopped</h2>
+    <p class="sub" style="color:#fff;font-size:16px">${esc(msg)}</p>
+    <p><a class="btn" href="/admin/quickload">Back to Quick Load</a></p></div>`));
+  };
+  if (!audioFile) return fail("An audio file is required — pick the record you want to run.");
+  if (!isRadioQuality(probeAudioQuality(audioFile.path))) {
+    return fail("That file isn't radio quality. Quick Load reads WAV or FLAC, or MP3 / M4A at 192 kbps or better — the same files the charts take.");
+  }
+  const genre = GENRES.includes(req.body.genre) ? req.body.genre : "R&B";
+  const title = String(req.body.title || "").trim() || String(audioFile.originalname || "Untitled").replace(/\.[^.]*$/, "");
+  const lyrics = req.body.lyrics ? String(req.body.lyrics) : null;
+  let judged = null;
+  try { judged = await judgeMeasuredFile(audioFile.path, genre, coverFile ? coverFile.path : null, lyrics, title); } catch { judged = null; }
+  if (!judged) judged = judgeAudioFile(audioFile.path, coverFile ? coverFile.path : null);
+  const specs = judged.measurements ? quickSpecs(judged.measurements) : null;
+  const judgeRow = { ...judged.scores, total_score: judged.totalScore, craft_score: judged.craftScore, notes: JSON.stringify(judged.notes), metrics: judged.measurements ? JSON.stringify(quickSpecs(judged.measurements)) : null };
+  const readParts = [];
+  if (specs) {
+    if (specs.bpm) readParts.push(`Tempo <b style="color:#fff">${specs.bpm} BPM</b>`);
+    if (specs.keyRoot) readParts.push(`Key <b style="color:#fff">${esc(specs.keyRoot)} ${esc(specs.keyMode || "")}</b>`);
+    if (specs.lufs != null) readParts.push(`Loudness <b style="color:#fff">${specs.lufs} LUFS</b>`);
+    if (specs.truePeak != null) readParts.push(`True peak <b style="color:#fff">${specs.truePeak} dBTP</b>`);
+    if (specs.hookStartSec != null) readParts.push(`Hook lands <b style="color:#fff">${Math.floor(specs.hookStartSec / 60)}:${String(Math.round(specs.hookStartSec % 60)).padStart(2, "0")}</b>`);
+  }
+  const readStrip = readParts.length ? `<div class="panel" style="border-left:3px solid #ffc44d"><p class="sub" style="margin:0">🎧 <b style="color:#fff">What the analyzer read on your record:</b> ${readParts.join(" · ")}</p></div>` : "";
+  const body = `
+  <h1>Quick Load — the read</h1>
+  <p class="sub">"${esc(title)}" was measured and judged on all 15 points by the same machine that judges chart uploads. <b style="color:#fff">Private test only</b> — nothing charted, no profile created, nothing public.</p>
+  ${readStrip}
+  <div class="panel">
+    <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">Craft score</div>
+    <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px">
+      <span class="craftbig">${judgeRow.craft_score}</span><span class="sub">/ 100 · total ${judgeRow.total_score} / 150</span>
+    </div>
+    ${quickSpecsHtml(judgeRow)}
+    ${scoreBars(judgeRow)}
+  </div>
+  <p style="display:flex;gap:10px;flex-wrap:wrap"><a class="btn btn-blue" href="/admin/quickload">Load another record</a><a class="btn" href="/admin/placements">Back to the desk</a></p>`;
+  const theater = theaterHtml(title, genre, `/uploads/audio/${audioFile.filename}`, specs);
+  res.send(layout("Quick Load result", "", theater + `
+  <div id="revealContent" style="display:none">${body}</div>`));
+});
+
 // PRE-FLIGHT desk (Nov 2, 2026): price + payment link settings, and the
 // release button that unlocks a report when its payment lands. The
 // report page is the artist's only key; releasing flips paid on the
@@ -5523,6 +5602,11 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
       <p class="sub" style="margin:0"><b style="color:#fff">${esc(c.title)}</b> — ${esc(c.artist)} · ${esc(critLabel(c.criterion))}: <b style="color:#fff">${c.old_score} → ${c.new_score}</b> · ${esc(String(c.created_at).slice(0, 10))}
       ${c.reason ? `<br>Reason: ${esc(c.reason)}` : ""}</p>
     </div>`).join("")}` : `<p class="sub" style="margin:12px 0 0">No corrections yet — the machine's word has stood on every record so far.</p>`}
+  </div>
+  <div class="panel" style="border-color:rgba(46,230,168,.55)">
+    <h2 style="margin-top:0">⚡ Quick Load — test any record</h2>
+    <p class="sub">Just the audio. <b style="color:#fff">No profile, no chart, nothing public</b> — load a record and it runs the full analyzer, the Theater and the 15-Point Scale, private to you. Made for testing records before anybody uploads for real.</p>
+    <p><a class="btn btn-blue" href="/admin/quickload">Open Quick Load →</a></p>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">🛫 Pre-Flight reports</h2>
