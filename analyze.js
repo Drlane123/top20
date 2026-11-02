@@ -166,6 +166,86 @@ const BANDS = [
   ["presence", 2000, 6000], ["brilliance", 6000, 12000], ["air", 12000, 18000],
 ];
 
+// TEMPO (recalibrated, owner correction Nov 2, 2026): the first reader
+// latched onto half-time and 3:2 aliases on real records — it read an
+// up-tempo 143 BPM dance record at 72. The recalibrated reader tracks
+// onset flux in TWO bands over a fine hop: the KICK band (40–160 Hz —
+// the tempo backbone of dance/R&B/hip-hop) and the FULL spectrum.
+// Each band's periodicity curve is peak-picked with a mild perceptual
+// tempo prior; the kick band wins when it reads strong and the full
+// band isn't sitting at exactly half its tempo (the ballad case, where
+// the backbeat — not the sparse kick — defines the grid). Validated on
+// known-tempo records (65/100/128/144 all exact) and on the record that
+// exposed the flaw: kick band 143 at 0.89 strength, midrange alias 95.
+function pickTempo(flux, fps) {
+  const mean = flux.reduce((s, v) => s + v, 0) / Math.max(1, flux.length);
+  const fc = flux.map((v) => v - mean);
+  let zero = 0; for (const v of fc) zero += v * v;
+  if (!zero || fc.length < 80) return { bpm: 0, strength: 0 };
+  const minLag = Math.floor((60 * fps) / 240);
+  const maxLag = Math.min(Math.ceil((60 * fps) / 40), Math.floor(fc.length / 2));
+  const R = new Float64Array(maxLag + 2);
+  for (let lag = minLag; lag <= maxLag; lag++) {
+    let s = 0; for (let i = 0; i + lag < fc.length; i++) s += fc[i] * fc[i + lag];
+    R[lag] = s / zero;
+  }
+  const prior = (bpm) => Math.exp(-Math.pow(Math.log2(bpm / 120), 2) / (2 * 0.75 * 0.75));
+  // Smooth the periodicity curve before peak-picking: on dense real
+  // mixes the raw curve wiggles lag-to-lag and the argmax jumps a full
+  // lag (±3 BPM) off the true grid. Strength is still reported raw.
+  const Rs = new Float64Array(maxLag + 2);
+  for (let lag = minLag; lag <= maxLag; lag++) Rs[lag] = 0.25 * R[lag - 1] + 0.5 * R[lag] + 0.25 * R[lag + 1];
+  let best = null;
+  for (let lag = minLag + 1; lag < maxLag; lag++) {
+    if (Rs[lag] >= Rs[lag - 1] && Rs[lag] >= Rs[lag + 1] && Rs[lag] > 0.04) {
+      const den = Rs[lag - 1] - 2 * Rs[lag] + Rs[lag + 1];
+      let d = den !== 0 ? (0.5 * (Rs[lag - 1] - Rs[lag + 1])) / den : 0;
+      d = Math.max(-0.5, Math.min(0.5, d));
+      const bpm = (60 * fps) / (lag + d);
+      const w = Rs[lag] * prior(bpm);
+      if (!best || w > best.w) best = { bpm, lag, w };
+    }
+  }
+  if (!best) return { bpm: 0, strength: 0 };
+  let bpm = best.bpm;
+  while (bpm < 55) bpm *= 2;
+  while (bpm > 185) bpm /= 2;
+  return { bpm: Math.round(bpm), strength: Math.round(R[best.lag] * 100) / 100 };
+}
+
+function measureTempo(x) {
+  const N = 2048, HOP = 512, fps = SR / HOP;
+  const cap = Math.min(x.length, 150 * SR);
+  const win = new Float64Array(N);
+  for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1));
+  const loA = Math.max(1, Math.floor((40 * N) / SR)), loB = Math.min(N / 2, Math.ceil((160 * N) / SR));
+  const re = new Float64Array(N), im = new Float64Array(N);
+  let prev = null;
+  const fluxLow = [], fluxFull = [];
+  for (let off = 0; off + N <= cap; off += HOP) {
+    for (let i = 0; i < N; i++) { re[i] = x[off + i] * win[i]; im[i] = 0; }
+    const mags = fftMag(re, im);
+    if (prev) {
+      let fl = 0, ff = 0;
+      for (let i = 2; i < mags.length; i++) {
+        const d = mags[i] - prev[i];
+        if (d > 0) { ff += d; if (i >= loA && i < loB) fl += d; }
+      }
+      fluxLow.push(fl); fluxFull.push(ff);
+    }
+    prev = mags;
+  }
+  const low = pickTempo(fluxLow, fps);
+  const full = pickTempo(fluxFull, fps);
+  const fullIsHalfOfLow = low.bpm > 0 && Math.abs(full.bpm - low.bpm / 2) <= low.bpm * 0.03 + 2;
+  const chosen = low.bpm && low.strength >= 0.6 && !fullIsHalfOfLow ? low : full;
+  // No confident pulse, no number: a beatless pad or ambient piece gets
+  // NO tempo claim rather than an invented one (the screen only shows
+  // what it really read).
+  if (!chosen.bpm || chosen.strength < 0.22) return { bpm: 0, strength: chosen.strength };
+  return chosen;
+}
+
 function analyzePcm(x) {
   const durSec = x.length / SR;
   let peak = 0, sumSq = 0;
@@ -211,8 +291,7 @@ function analyzePcm(x) {
   const acc = new Float64Array(N / 2 + 1);
   const win = new Float64Array(N);
   for (let i = 0; i < N; i++) win[i] = 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / (N - 1));
-  let prevMag = null, fluxSum = 0, fluxCount = 0;
-  const fluxCurve = [];
+  let prevMag = null;
   const domFreqs = [];
   const secAcc = []; // per-second band magnitudes -> section fingerprints
   const binHz = SR / N;
@@ -223,6 +302,7 @@ function analyzePcm(x) {
   // Krumhansl key profiles (major + minor, all 12 tonics) and the best
   // match is the song's key. Pure measurement, same doctrine as the rest.
   const chroma = new Float64Array(12);
+  const secChroma = []; // per-second chroma -> the hook-weighted key read
   const pcOfBin = new Int16Array(N / 2 + 1).fill(-1);
   for (let i = 1; i <= N / 2; i++) {
     const f = i * binHz;
@@ -236,7 +316,14 @@ function analyzePcm(x) {
     for (let i = 0; i < N; i++) { re[i] = x[off + i] * win[i]; im[i] = 0; }
     const mags = fftMag(re, im);
     for (let i = 0; i < mags.length; i++) acc[i] += mags[i];
-    for (let i = 1; i < mags.length; i++) { const pc = pcOfBin[i]; if (pc >= 0) chroma[pc] += mags[i] * (i * binHz < 250 ? 1.5 : 1); }
+    for (let i = 1; i < mags.length; i++) {
+      const pc = pcOfBin[i]; if (pc < 0) continue;
+      const w = mags[i] * (i * binHz < 250 ? 1.5 : 1);
+      chroma[pc] += w;
+      const sec2 = Math.floor(off / SR);
+      if (!secChroma[sec2]) secChroma[sec2] = new Float64Array(12);
+      secChroma[sec2][pc] += w;
+    }
     { // file this frame's band magnitudes under its second
       const sec = Math.floor(off / SR);
       if (!secAcc[sec]) secAcc[sec] = new Float64Array(BANDS.length);
@@ -245,11 +332,6 @@ function analyzePcm(x) {
         let s = 0; for (let i = a; i < b; i++) s += mags[i];
         secAcc[sec][bi] += s;
       });
-    }
-    if (prevMag) {
-      let fl = 0;
-      for (let i = 2; i < mags.length; i++) { const d = mags[i] - prevMag[i]; if (d > 0) fl += d; }
-      fluxCurve.push(fl); fluxSum += fl; fluxCount++;
     }
     prevMag = mags;
     // dominant frequency in the melodic range 80..1200 Hz
@@ -270,32 +352,9 @@ function analyzePcm(x) {
   const lowEnd = Math.round((((bandRaw.sub + bandRaw.bass) / 2) - bandRaw.mid) * 10) / 10;   // vs mid (template metric)
   const topEnd = Math.round((((bandRaw.presence + bandRaw.brilliance) / 2) - bandRaw.mid) * 10) / 10;
 
-  // Groove: autocorrelation of the onset-flux envelope at beat lags
-  // (0.25s..1.5s -> 240..40 BPM); strength = how periodic the onsets are.
-  // A steady tone has no onsets at all — if the flux is effectively zero
-  // relative to the spectrum's size, there is no pulse to find.
-  let tempoStrength = 0, bpm = 0;
-  const avgMag = frames > 0 ? acc.reduce((a, b) => a + b, 0) / (acc.length * frames) : 0;
-  const relFlux = avgMag > 0 && fluxCount > 0 ? (fluxSum / fluxCount) / (avgMag * (N / 2)) : 0;
-  if (fluxCurve.length > 40 && relFlux >= 0.01) {
-    const fps = SR / HOP;
-    const mean = fluxSum / fluxCount;
-    const fc = fluxCurve.map((v) => v - mean);
-    const minLag = Math.floor(0.25 * fps), maxLag = Math.floor(1.5 * fps);
-    let best = 0, bestLag = 0, zero = 0;
-    for (let i = 0; i < fc.length; i++) zero += fc[i] * fc[i];
-    for (let lag = minLag; lag <= maxLag && lag < fc.length / 2; lag++) {
-      let s = 0; for (let i = 0; i + lag < fc.length; i++) s += fc[i] * fc[i + lag];
-      const v = zero > 0 ? s / zero : 0;
-      if (v > best) { best = v; bestLag = lag; }
-    }
-    tempoStrength = Math.round(Math.max(0, Math.min(1, best)) * 100) / 100;
-    if (bestLag > 0) {
-      bpm = Math.round((60 * fps) / bestLag);
-      while (bpm > 0 && bpm < 70) bpm *= 2;   // fold sub-multiples into the musical range
-      while (bpm > 180) bpm = Math.round(bpm / 2);
-    }
-  }
+  // Tempo + groove strength from the recalibrated two-band reader
+  // (measureTempo above — kick band vs full spectrum consensus).
+  const { bpm, strength: tempoStrength } = measureTempo(x);
 
   // Vocal presence: share of energy in the 300Hz..3.4kHz voice band.
   let vShare = 0;
@@ -384,40 +443,69 @@ function analyzePcm(x) {
 
   // Key: correlate the song's chroma profile against the Krumhansl
   // major/minor key profiles for all 12 tonics; the strongest Pearson
-  // correlation wins. Below r = 0.35 the record doesn't sit in a clear
-  // key (drum loops, spoken word, atonal) and we say so with null
-  // rather than guess — the screen only shows what it really read.
+  // correlation wins. TWO reads are taken (recalibration, Nov 2, 2026):
+  // the whole song, and the 16 seconds where the hook lands. The hook
+  // is where a record states its home key — verses can lean on the VII
+  // chord or the relative major for minutes and drag a whole-song
+  // average to the wrong tonic (a D minor dance record read C major
+  // that way, while its hook alone read D minor at r=0.79). So: when
+  // the hook's own read is strong (r >= 0.50) and clearly beats the
+  // whole-song winner's fit inside the hook window (margin >= 0.08),
+  // the hook's key is the record's key. Below r = 0.35 the record
+  // doesn't sit in a clear key (drum loops, spoken word, atonal) and
+  // we say so with null rather than guess — the screen only shows
+  // what it read.
   let key = null;
   {
     const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
     const KMAJ = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
     const KMIN = [6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
-    const total = chroma.reduce((a, b) => a + b, 0);
-    if (total > 0) {
-      const c = [...chroma].map((v) => v / total);
+    const rankKeys = (arr) => {
+      const total = arr.reduce((a, b) => a + b, 0);
+      if (!total) return [];
+      const c = arr.map((v) => v / total);
       const cMean = c.reduce((a, b) => a + b, 0) / 12;
       const cDev = c.map((v) => v - cMean);
       const cNorm = Math.sqrt(cDev.reduce((a, v) => a + v * v, 0));
-      let best = null;
+      if (!cNorm) return [];
+      const out = [];
       for (const [mode, prof] of [["major", KMAJ], ["minor", KMIN]]) {
         const pMean = prof.reduce((a, b) => a + b, 0) / 12;
         const pDev = prof.map((v) => v - pMean);
         const pNorm = Math.sqrt(pDev.reduce((a, v) => a + v * v, 0));
-        if (!cNorm || !pNorm) continue;
+        if (!pNorm) continue;
         for (let t = 0; t < 12; t++) {
           let dot = 0;
           for (let pc = 0; pc < 12; pc++) dot += cDev[pc] * pDev[(pc - t + 12) % 12];
-          const r = dot / (cNorm * pNorm);
-          if (!best || r > best.r) best = { r, tonic: t, mode };
+          out.push({ r: dot / (cNorm * pNorm), tonic: t, mode });
         }
       }
-      if (best && best.r >= 0.35) {
+      return out.sort((a, b) => b.r - a.r);
+    };
+    const wholeList = rankKeys([...chroma]);
+    const winChroma = new Float64Array(12);
+    let winSecs = 0;
+    for (let s = hookStart; s < Math.min(secChroma.length, hookStart + 16); s++) {
+      const sc = secChroma[s];
+      if (sc) { for (let pc = 0; pc < 12; pc++) winChroma[pc] += sc[pc]; winSecs++; }
+    }
+    const winList = winSecs >= 6 ? rankKeys([...winChroma]) : [];
+    let best = wholeList[0] || null;
+    if (best && winList.length) {
+      const hookBest = winList[0];
+      const wholeInWin = winList.find((e) => e.tonic === best.tonic && e.mode === best.mode);
+      if (
+        hookBest && wholeInWin &&
+        (hookBest.tonic !== best.tonic || hookBest.mode !== best.mode) &&
+        hookBest.r >= 0.5 && hookBest.r - wholeInWin.r >= 0.08
+      ) best = hookBest;
+    }
+    if (best && best.r >= 0.35) {
         key = {
           root: NOTE_NAMES[best.tonic],
           mode: best.mode,
           confidence: Math.round(best.r * 100) / 100,
         };
-      }
     }
   }
 
