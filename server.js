@@ -2561,6 +2561,19 @@ app.get("/fb-poster.jpg", (req, res) => {
   res.send(fbPosterBuf);
 });
 
+// The Mastering Analyzer studio artwork (owner-directed, Nov 2, 2026):
+// the metering-suite screen behind the mixer, baked in as data like
+// the poster above. It heads the upload-result theater, where an
+// artist watches their own record get measured.
+let studioBuf = null;
+try { studioBuf = Buffer.from(require("./studio-data"), "base64"); } catch { studioBuf = null; }
+app.get("/studio.jpg", (req, res) => {
+  if (!studioBuf) return res.status(404).send("not found");
+  res.set("Content-Type", "image/jpeg");
+  res.set("Cache-Control", "public, max-age=3600");
+  res.send(studioBuf);
+});
+
 // A&R EXECUTIVE MODE (owner, Nov 2, 2026 — from the scorecard review
 // Dale brought in): the discovery engine. An executive filters the live
 // catalogue by genre, territory and the 15 points themselves — "South
@@ -3214,7 +3227,130 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   </div>
   <div class="panel"><h2 style="margin-top:0">Your ranks today</h2>${rankLines(ranks)}</div>
   ${emailsHtml}`;
-  res.send(layout("Upload result", "upload", body));
+  // THE ANALYZER THEATER (owner, Nov 2, 2026): Dale's call — when an
+  // artist uploads, this screen pops up and WORKS: the metering-suite
+  // studio on top, and below it a live feed driven by the artist's own
+  // song playing in their browser (Web Audio) — spectrum bars dancing,
+  // L/R meters pumping, SHORT TERM / INTEGRATED / TRUE PEAK readouts
+  // ticking from the real signal, a loudness-history line drawing
+  // itself, a loading line sweeping through the reading stages — and
+  // at the end of the pass, the 15-point evaluation reveals below.
+  // The official numbers are the server's; the theater is the artist
+  // watching their record on the machine. Skip link for the impatient.
+  const theater = `
+  <div class="panel" id="theaterPanel" style="padding:0;overflow:hidden">
+    <img src="/studio.jpg" alt="The Top 20 Mastering Analyzer" style="width:100%;display:block">
+    <div style="padding:18px">
+      <h2 style="margin:6px 0 4px">🎚️ Your record is on the analyzer</h2>
+      <p class="sub" style="margin:0 0 6px">“${esc(title.trim())}” — this is the machine that judges every record on Top 20: loudness, true peak, the full spectrum, measured against the <b style="color:#fff">${esc(genre)} reference chart</b> — the same cheat-sheet references the pros keep on their desks. Press play and watch it read <b style="color:#fff">your</b> song: the meters below are fed by your record, live.</p>
+      <p style="margin:14px 0"><button class="btn btn-blue btn-block" id="tStart" type="button" style="font-size:17px;padding:14px">▶ Play my record — watch it get measured</button></p>
+      <div id="tStage" style="display:none">
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:6px 0 10px">
+          <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">SHORT TERM</div><div id="tShort" style="font-size:21px;font-weight:800;color:#57e6ff">—</div></div>
+          <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">INTEGRATED</div><div id="tInt" style="font-size:21px;font-weight:800;color:#ff5a5a">—</div></div>
+          <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">TRUE PEAK</div><div id="tPeak" style="font-size:21px;font-weight:800;color:#ffc44d">—</div></div>
+        </div>
+        <canvas id="tSpec" width="920" height="230" style="width:100%;height:auto;display:block;background:#060b18;border:1px solid #22304f;border-radius:10px"></canvas>
+        <div style="display:flex;align-items:center;gap:8px;margin:10px 0 4px"><span class="note" style="width:14px">L</span><div style="flex:1;height:12px;background:#0a1122;border:1px solid #22304f;border-radius:6px;overflow:hidden"><div id="tML" style="height:100%;width:0%;background:linear-gradient(90deg,#2ee6a8,#ffc44d,#ff5a5a)"></div></div><span class="note" id="tLvl" style="width:74px;text-align:right">— dB</span></div>
+        <div style="display:flex;align-items:center;gap:8px;margin:0 0 10px"><span class="note" style="width:14px">R</span><div style="flex:1;height:12px;background:#0a1122;border:1px solid #22304f;border-radius:6px;overflow:hidden"><div id="tMR" style="height:100%;width:0%;background:linear-gradient(90deg,#2ee6a8,#ffc44d,#ff5a5a)"></div></div><span class="note" style="width:74px"></span></div>
+        <canvas id="tHist" width="920" height="90" style="width:100%;height:auto;display:block;background:#060b18;border:1px solid #22304f;border-radius:10px"></canvas>
+        <div style="height:6px;background:#0a1122;border-radius:3px;overflow:hidden;margin:14px 0 8px"><div id="tProgFill" style="height:100%;width:0%;background:linear-gradient(90deg,#ffc44d,#ff5a5a)"></div></div>
+        <p class="sub" id="tStageLabel" style="margin:0">Warming up the analyzer…</p>
+        <p class="note" style="margin:6px 0 0">Live feed — your song as it plays. The official readings land with your evaluation below.</p>
+      </div>
+      <p style="margin:12px 0 2px"><a href="#" id="tSkip" style="color:var(--accent);font-weight:700;text-decoration:none">Skip to my 15-point evaluation →</a></p>
+      <audio id="tAudio" src="${audioWeb}" preload="auto"></audio>
+    </div>
+  </div>
+  <script>
+  (function () {
+    var btn = document.getElementById("tStart"), stage = document.getElementById("tStage"),
+        skip = document.getElementById("tSkip"), panel = document.getElementById("theaterPanel"),
+        audio = document.getElementById("tAudio"), label = document.getElementById("tStageLabel"),
+        fill = document.getElementById("tProgFill");
+    var DUR = 60000, startedAt = null, done = false, actx = null, raf = null, hist = [];
+    var stages = ["Reading loudness & true peak…", "Mapping the spectrum — comparing it to the ${esc(genre)} reference chart…", "Finding the hook — testing structure, groove & dynamics…", "Scoring all 15 points — mix to cover art…"];
+    function finish() {
+      if (done) return; done = true;
+      try {
+        if (audio) { var v = audio.volume; var iv = setInterval(function () { v -= 0.12; if (v <= 0) { audio.pause(); clearInterval(iv); } else { audio.volume = Math.max(0, v); } }, 60); }
+        if (actx) actx.close();
+      } catch (e) {}
+      if (raf) cancelAnimationFrame(raf);
+      panel.style.display = "none";
+      var r = document.getElementById("revealContent");
+      r.style.display = "block";
+      r.scrollIntoView({ behavior: "smooth" });
+    }
+    skip.addEventListener("click", function (e) { e.preventDefault(); finish(); });
+    btn.addEventListener("click", function () {
+      btn.style.display = "none"; stage.style.display = "block";
+      startedAt = Date.now();
+      if (audio) audio.play().catch(function () {});
+      try {
+        actx = new (window.AudioContext || window.webkitAudioContext)();
+        var src = actx.createMediaElementSource(audio);
+        var split = actx.createChannelSplitter(2);
+        var anL = actx.createAnalyser(), anR = actx.createAnalyser(), anM = actx.createAnalyser();
+        anM.fftSize = 512; anL.fftSize = 256; anR.fftSize = 256;
+        src.connect(split); src.connect(anM); anM.connect(actx.destination);
+        split.connect(anL, 0); split.connect(anR, 1);
+        var spec = document.getElementById("tSpec"), sctx = spec.getContext("2d");
+        var histC = document.getElementById("tHist"), hctx = histC.getContext("2d");
+        var freq = new Uint8Array(anM.frequencyBinCount), tdL = new Uint8Array(anL.fftSize), tdR = new Uint8Array(anR.fftSize), tdM = new Uint8Array(anM.fftSize);
+        var mL = document.getElementById("tML"), mR = document.getElementById("tMR"), lvl = document.getElementById("tLvl");
+        var elS = document.getElementById("tShort"), elI = document.getElementById("tInt"), elP = document.getElementById("tPeak");
+        var sumSq = 0, nSamp = 0, peak = 0, smooth = 0;
+        function stats(an, buf) {
+          an.getByteTimeDomainData(buf); var s = 0, pk = 0;
+          for (var i = 0; i < buf.length; i++) { var d = (buf[i] - 128) / 128; s += d * d; if (Math.abs(d) > pk) pk = Math.abs(d); }
+          sumSq += s; nSamp += buf.length; if (pk > peak) peak = pk;
+          return Math.sqrt(s / buf.length);
+        }
+        (function loop() {
+          if (done) return; raf = requestAnimationFrame(loop);
+          anM.getByteFrequencyData(freq);
+          var W = spec.width, H = spec.height;
+          sctx.fillStyle = "#060b18"; sctx.fillRect(0, 0, W, H);
+          var bars = 72, bw = W / bars;
+          for (var i = 0; i < bars; i++) {
+            var v = freq[Math.floor(i * freq.length / bars * 0.82)] / 255;
+            var h = Math.max(2, v * H);
+            sctx.fillStyle = "hsl(" + (240 - i / bars * 240) + ",100%," + (45 + v * 20) + "%)";
+            sctx.fillRect(i * bw + 1, H - h, bw - 2, h);
+          }
+          var rL = stats(anL, tdL), rR = stats(anR, tdR); stats(anM, tdM);
+          smooth = smooth * 0.82 + Math.max(rL, rR) * 0.18;
+          mL.style.width = Math.min(100, rL * 260) + "%";
+          mR.style.width = Math.min(100, rR * 260) + "%";
+          lvl.textContent = (20 * Math.log10(Math.max(smooth, 0.0001))).toFixed(1) + " dB";
+          elS.textContent = (20 * Math.log10(Math.max(smooth, 0.0001))).toFixed(1);
+          if (nSamp > 0) elI.textContent = (20 * Math.log10(Math.max(Math.sqrt(sumSq / nSamp), 0.0001))).toFixed(1);
+          elP.textContent = peak > 0 ? (20 * Math.log10(peak)).toFixed(1) : "—";
+          hist.push((rL + rR) / 2); if (hist.length > 220) hist.shift();
+          var hW = histC.width, hH = histC.height;
+          hctx.fillStyle = "#060b18"; hctx.fillRect(0, 0, hW, hH);
+          hctx.strokeStyle = "#57e6ff"; hctx.lineWidth = 2; hctx.beginPath();
+          for (var j = 0; j < hist.length; j++) {
+            var x = j / 219 * hW, y = hH - 4 - Math.min(1, hist[j] * 2.6) * (hH - 10);
+            if (j) hctx.lineTo(x, y); else hctx.moveTo(x, y);
+          }
+          hctx.stroke();
+        })();
+      } catch (e) { /* meters unavailable in this browser — the reading clock still runs */ }
+      (function tick() {
+        if (done) return;
+        var el = Date.now() - startedAt, p = Math.min(1, el / DUR);
+        fill.style.width = (p * 100) + "%";
+        label.textContent = stages[Math.min(stages.length - 1, Math.floor(p * stages.length))];
+        if (p >= 1) { finish(); return; }
+        setTimeout(tick, 200);
+      })();
+    });
+  })();
+  </script>`;
+  res.send(layout("Upload result", "upload", theater + `
+  <div id="revealContent" style="display:none">${body}</div>`));
 });
 
 /* --------------------------- Pre-Flight Check --------------------------- */
