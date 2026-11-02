@@ -768,7 +768,7 @@ ${body}
 <footer class="site">TOP 20 — the Stage plays only the Top 20, 24/7.<br>
 Fall off the chart and the rotation moves on. Check your rank on the Dashboard.<br>
 <a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">How it works →</a> · <a href="/advertise" style="color:var(--accent);font-weight:700;text-decoration:none">Advertise →</a> · <a href="/terms" style="color:var(--accent);font-weight:700;text-decoration:none">Terms →</a><br>
-<a href="/admin/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">Staff Login</a> · <a href="/dj/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">DJ Login</a> · <a href="/ar" style="color:#8a8f99;font-size:11.5px;text-decoration:none">A&amp;R Mode</a></footer>
+<a href="/admin/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">Staff Login</a> · <a href="/dj/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">DJ Login</a> · <a href="/ar" style="color:#8a8f99;font-size:11.5px;text-decoration:none">A&amp;R Mode</a> · <a href="/preflight" style="color:#8a8f99;font-size:11.5px;text-decoration:none">Pre-Flight Check</a></footer>
 </div>
 <div class="installbar" id="installBar" role="dialog" aria-label="Install Top 20">
   <img src="/icons/icon-192x192.png" alt="">
@@ -3217,6 +3217,147 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   res.send(layout("Upload result", "upload", body));
 });
 
+/* --------------------------- Pre-Flight Check --------------------------- */
+// The paid private lane (owner, Nov 2, 2026 — from the scorecard review):
+// an artist pays ONCE for the full 15-point scorecard as a private
+// report BEFORE submitting the record anywhere. The track is judged by
+// the same engine the charts run on, but it never enters the songs
+// table — no chart, no public page, no profile. The report lives at an
+// unguessable token link; the teaser shows the Quick Specs and the
+// Craft Score, and the full 15 points with their written notes unlock
+// when the owner releases the report in his desk (payment confirmed —
+// a Stripe payment link when one is set, or any payment he takes).
+function preflightPrice() {
+  try {
+    const r = db.prepare("SELECT value FROM admin_config WHERE key = 'preflight_price'").get();
+    if (r) return String(JSON.parse(r.value));
+  } catch { /* default below */ }
+  return "9.99";
+}
+function preflightPayUrl() {
+  try {
+    const r = db.prepare("SELECT value FROM admin_config WHERE key = 'preflight_pay_url'").get();
+    if (r) return String(JSON.parse(r.value));
+  } catch { /* no link set */ }
+  return "";
+}
+function pfError(res, message) {
+  return res.status(400).send(layout("Pre-Flight Check", "", `
+  <div class="panel err"><h2 style="margin-top:0">Pre-Flight stopped</h2>
+  <p class="sub" style="color:#fff;font-size:16px">${esc(message)}</p>
+  <p><a class="btn" href="/preflight">Back to Pre-Flight</a></p></div>`));
+}
+
+app.get("/preflight", (req, res) => {
+  const price = preflightPrice();
+  const body = `
+  <h1>🛫 Pre-Flight Check</h1>
+  <p class="sub">Know before you submit. Run your record through the <b style="color:#fff">same 15-Point Scale</b> the Top 20 charts are judged on — every point measured, every point explained in writing — as a <b style="color:#fff">private report</b>. No chart entry. No public page. Nobody sees it but you.</p>
+  <div class="panel">
+    <h2 style="margin-top:0">What you get</h2>
+    <p class="sub">⚡ <b style="color:#fff">Quick Specs</b> — loudness, true peak, hook arrival, tempo, dynamics: the pure numbers, up top.<br>
+    🎚️ <b style="color:#fff">All 15 points scored</b> — Mix Quality, Mastering, Hook, Melody, Lyrics, Structure, Vocals, Production, Groove, Emotion, Dynamics, Originality, Replay, Radio Readiness, Cover Art — each with the engine's written note on YOUR record and what to fix.<br>
+    🔒 <b style="color:#fff">Private forever</b> — this lane never touches the charts. When you're ready for the charts, uploads there are FREE.</p>
+    <p class="sub">One flat fee: <b style="color:#fff;font-size:18px">$${esc(price)}</b> — the teaser (Quick Specs + your Craft Score) is free the moment your track is measured; the full report unlocks on payment.</p>
+  </div>
+  <form class="panel" method="post" action="/preflight" enctype="multipart/form-data">
+    <h2 style="margin-top:0">Run my record</h2>
+    <div class="grid">
+      <div class="field"><label for="pfname">Artist name</label><input id="pfname" name="artist_name" maxlength="80" placeholder="Your artist name"></div>
+      <div class="field"><label for="pfemail">Email</label><input id="pfemail" name="email" type="email" required placeholder="you@example.com"></div>
+      <div class="field"><label for="pftitle">Song title</label><input id="pftitle" name="title" required maxlength="120" placeholder="Song title"></div>
+      <div class="field"><label for="pfgenre">Genre</label><select id="pfgenre" name="genre" required>${GENRES.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join("")}</select></div>
+    </div>
+    <div class="field"><label for="pflyrics">Lyrics (optional — sharpens the Lyrical Quality reading)</label><textarea id="pflyrics" name="lyrics" rows="4" placeholder="Paste the lyrics if you want that point read from your words"></textarea></div>
+    <div class="grid">
+      <div class="field"><label for="pfaudio">Your track — WAV/FLAC, or MP3/M4A at 192 kbps or better</label><input id="pfaudio" type="file" name="audio" accept="audio/*,.wav,.flac,.mp3,.m4a" required></div>
+      <div class="field"><label for="pfcover">Cover art (required — it's point 15)</label><input id="pfcover" type="file" name="cover" accept="image/*" required></div>
+    </div>
+    <label class="sub" style="display:block;margin:10px 0 14px"><input type="checkbox" name="consent" required> This is my own record (or my label's), and I understand this report is a private measurement — not a chart entry, not a review by a person, and not a promise of any chart result.</label>
+    <button class="btn btn-blue btn-block" type="submit">Measure my record</button>
+    <p class="note" style="margin-top:10px">Your private report link appears on the next screen. Save it — it's the only key to your report.</p>
+  </form>`;
+  res.send(layout("Pre-Flight Check", "", body));
+});
+
+app.post("/preflight", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cover", maxCount: 1 }]), async (req, res) => {
+  const audioFile = req.files?.audio?.[0];
+  const coverFile = req.files?.cover?.[0];
+  const cleanup = () => { for (const f of [audioFile, coverFile]) if (f) fs.unlink(f.path, () => {}); };
+  if (!req.body.consent) { cleanup(); return pfError(res, "The consent box wasn't checked — a Pre-Flight report can only run on a record that's yours to submit."); }
+  if (!coverFile) { cleanup(); return pfError(res, "Cover art is required — Cover Art & Presentation is one of the 15 points, so the report needs the cover."); }
+  if (!audioFile) { cleanup(); return pfError(res, "An audio file is required to measure a record."); }
+  if (!isRadioQuality(probeAudioQuality(audioFile.path))) {
+    cleanup();
+    return pfError(res, "That file isn't radio quality. Pre-Flight takes WAV or FLAC, or MP3 / M4A at 192 kbps or better — the same quality radio stations send and accept.");
+  }
+  const { title, email, genre, lyrics, artist_name } = req.body;
+  if (!title || !email || !String(email).includes("@") || !GENRES.includes(genre)) {
+    cleanup();
+    return pfError(res, "Please fill in the song title, a real email, and a genre.");
+  }
+  let judged = null;
+  try { judged = await judgeMeasuredFile(audioFile.path, genre, coverFile.path, lyrics ? String(lyrics) : null, String(title)); } catch { judged = null; }
+  if (!judged) judged = judgeAudioFile(audioFile.path, coverFile.path);
+  const token = crypto.randomBytes(12).toString("hex");
+  const audioWeb = `/uploads/audio/${audioFile.filename}`;
+  const coverWeb = `/uploads/covers/${coverFile.filename}`;
+  db.prepare(`INSERT INTO preflight_reports (token, email, artist_name, title, genre, audio_path, cover_path, scores, notes, metrics, total_score, craft_score)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(token, String(email).trim().toLowerCase(), String(artist_name || "").trim().slice(0, 80) || null, String(title).trim().slice(0, 120), genre,
+      audioWeb, coverWeb, JSON.stringify(judged.scores), JSON.stringify(judged.notes),
+      judged.measurements ? JSON.stringify(quickSpecs(judged.measurements)) : null,
+      judged.totalScore, judged.craftScore);
+  mirrorUpload(audioFile.path); mirrorUpload(coverFile.path); snapshotDbSoon();
+  res.redirect(`/preflight/report/${token}`);
+});
+
+app.get("/preflight/report/:token", (req, res) => {
+  const row = db.prepare("SELECT * FROM preflight_reports WHERE token = ?").get(req.params.token);
+  if (!row) return res.status(404).send(layout("Report not found", "", `<div class="panel"><h2 style="margin-top:0">That report link doesn't open anything</h2><p class="sub">Check the address — a Pre-Flight report link is the only key to its report, and one wrong character closes it. <a href="/preflight">Start a Pre-Flight Check →</a></p></div>`));
+  const judgeObj = { ...JSON.parse(row.scores || "{}"), notes: row.notes, metrics: row.metrics, craft_score: row.craft_score, total_score: row.total_score };
+  const price = preflightPrice();
+  const payUrl = preflightPayUrl();
+  const head = `
+  <h1>🛫 Pre-Flight Report</h1>
+  <div class="panel">
+    <div style="display:flex;gap:14px;align-items:center">
+      <img src="${esc(row.cover_path)}" alt="" style="width:84px;height:84px;object-fit:cover;border-radius:10px;flex:none">
+      <div>
+        <p style="margin:0"><b style="color:#fff;font-size:19px">${esc(row.title)}</b></p>
+        <p class="sub" style="margin:2px 0 0">${esc(row.artist_name || "Independent artist")} · ${esc(row.genre)}</p>
+        <p class="note" style="margin:4px 0 0">🔒 Private report — this track is not on the Top 20 charts and this page is the only place it exists.</p>
+      </div>
+    </div>
+    <div style="display:flex;align-items:baseline;gap:10px;margin-top:14px">
+      <span class="craftbig">${row.craft_score}</span><span class="sub">/ 100 Craft Score · total ${row.total_score} / 150 across the 15 points</span>
+    </div>
+    ${quickSpecsHtml(judgeObj)}
+  </div>`;
+  if (row.paid) {
+    return res.send(layout("Pre-Flight Report", "", head + `
+  <div class="panel">
+    <h2 style="margin-top:0">The full 15-Point Scale</h2>
+    ${scoreBars(judgeObj)}
+    ${row.audio_path ? `<p style="margin-top:14px" class="sub">Your track, as measured:</p><audio controls preload="metadata" src="${esc(row.audio_path)}" style="width:100%"></audio>` : ""}
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">Ready to stand on it?</h2>
+    <p class="sub">This report was private. The charts are public — and uploads are <b style="color:#fff">FREE</b>. If this record is as strong as its numbers, put it where the world can rank it.</p>
+    <p><a class="btn btn-blue btn-block" href="/upload">Upload it to Top 20 — FREE</a></p>
+  </div>`));
+  }
+  res.send(layout("Pre-Flight Report", "", head + `
+  <div class="panel" style="border-color:rgba(255,196,77,.65)">
+    <h2 style="margin-top:0">Your full report is ready 🔓</h2>
+    <p class="sub">All 15 points are scored and written up for this record — ${CATEGORIES.map((c) => esc(c.label)).join(" · ")} — each with what the engine heard and what to fix before you submit anywhere.</p>
+    <p class="sub">Unlock it for <b style="color:#fff;font-size:18px">$${esc(price)}</b>. The moment your payment is confirmed, this same page opens the full report — keep this link.</p>
+    ${payUrl ? `<p><a class="btn btn-blue btn-block" href="${esc(payUrl)}" target="_blank" rel="noopener">Pay $${esc(price)} — unlock my full report</a></p>
+    <p class="note">Paid and still locked after a few minutes? The studio confirms payments by hand during launch — yours is next in line.</p>`
+    : `<p class="note">Card checkout opens with our payment launch — your report is measured, ready, and held under this link. The studio releases reports personally in the meantime; if you were sent here by the studio, your release is already being handled.</p>`}
+  </div>`));
+});
+
 /* --------------------------- Artist profiles ------------------------------ */
 
 const PHOTO_UP = path.join(PUBLIC_DIR, "uploads", "photos");
@@ -4658,6 +4799,29 @@ app.post("/admin/remeasure", requireAdmin, async (req, res) => {
   return back(`Re-measured "${song.title}" — Quick Specs are on its scorecard now: ${bits.join(" · ")}. No score was touched.`);
 });
 
+// PRE-FLIGHT desk (Nov 2, 2026): price + payment link settings, and the
+// release button that unlocks a report when its payment lands. The
+// report page is the artist's only key; releasing flips paid on the
+// row and the same link opens the full scorecard.
+app.post("/admin/preflight-settings", requireAdmin, (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const price = String(req.body.price || "").trim().replace(/[^0-9.]/g, "");
+  const payUrl = String(req.body.pay_url || "").trim().slice(0, 400);
+  if (price) db.prepare("INSERT INTO admin_config (key, value) VALUES ('preflight_price', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(price));
+  db.prepare("INSERT INTO admin_config (key, value) VALUES ('preflight_pay_url', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(payUrl));
+  return back(`Pre-Flight settings saved — price $${price || preflightPrice()}${payUrl ? ", payment link on" : ", no payment link set"}.`);
+});
+
+app.post("/admin/preflight/:id/release", requireAdmin, (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const row = db.prepare("SELECT * FROM preflight_reports WHERE id = ?").get(Number(req.params.id));
+  if (!row) return back("That report isn't on file.");
+  if (row.paid) return back(`"${row.title}" is already released.`);
+  db.prepare("UPDATE preflight_reports SET paid = 1, released_at = datetime('now') WHERE id = ?").run(row.id);
+  snapshotDb("preflight-release");
+  return back(`Released: "${row.title}" (${row.email}) — the full report is open at its link now.`);
+});
+
 // The placement tool: pick any song already uploaded and live, pick a
 // chart and a position, and the song is pinned there on every chart
 // from today until the placement ends or is removed. Scores are never
@@ -4686,6 +4850,9 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     JOIN songs s ON s.id = c.song_id JOIN users u ON u.id = s.artist_id
     ORDER BY c.id DESC LIMIT 20`).all();
   const critLabel = (k) => (CATEGORIES.find((c) => c.key === k) || {}).label || k;
+  const pfRows = db.prepare("SELECT * FROM preflight_reports ORDER BY id DESC LIMIT 20").all();
+  const pfPrice = preflightPrice();
+  const pfPayUrl = preflightPayUrl();
   // Cloudflare storage (R2): connection state + what's in the bucket, for
   // the owner's media panel. Degrades to "not set up" when storage is off.
   let mediaState = { configured: false, ok: false, error: null, objects: [], hero: null };
@@ -4790,6 +4957,23 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
       <p class="sub" style="margin:0"><b style="color:#fff">${esc(c.title)}</b> — ${esc(c.artist)} · ${esc(critLabel(c.criterion))}: <b style="color:#fff">${c.old_score} → ${c.new_score}</b> · ${esc(String(c.created_at).slice(0, 10))}
       ${c.reason ? `<br>Reason: ${esc(c.reason)}` : ""}</p>
     </div>`).join("")}` : `<p class="sub" style="margin:12px 0 0">No corrections yet — the machine's word has stood on every record so far.</p>`}
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">🛫 Pre-Flight reports</h2>
+    <p class="sub">The paid private lane: an artist pays once, gets the full 15-point scorecard as a private report — <b style="color:#fff">never charted, never public</b>. When a payment lands, release the report here and the artist's link opens the whole scorecard. Set the price, and paste a Stripe payment link when you have one (until then, artists see that the studio releases reports personally).</p>
+    <form method="post" action="/admin/preflight-settings">
+      <label class="sub">Price (USD)<br>
+      <input type="text" name="price" value="${esc(pfPrice)}" style="width:120px;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
+      <label class="sub">Stripe payment link (optional — the Pay button points here)<br>
+      <input type="text" name="pay_url" value="${esc(pfPayUrl)}" placeholder="https://buy.stripe.com/…" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
+      <button type="submit" style="padding:10px 20px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Save Pre-Flight settings</button>
+    </form>
+    ${pfRows.length ? pfRows.map((r) => `
+    <div style="border-bottom:1px solid #22304f;padding:10px 0">
+      <p class="sub" style="margin:0"><b style="color:#fff">${esc(r.title)}</b> — ${esc(r.artist_name || "")} · ${esc(r.email)}<br>
+      Craft <b style="color:#fff">${r.craft_score}</b> · ${esc(r.genre)} · ${r.paid ? `<b style="color:#9fe8b6">RELEASED</b>${r.released_at ? ` ${esc(String(r.released_at).slice(0, 10))}` : ""}` : `<b style="color:#ffd98a">HELD — awaiting payment</b>`} · <a href="/preflight/report/${esc(r.token)}" style="color:var(--accent);font-weight:700;text-decoration:none">Open report →</a></p>
+      ${r.paid ? "" : `<form method="post" action="/admin/preflight/${r.id}/release" style="margin-top:8px"><button type="submit" style="padding:8px 16px;border-radius:8px;border:0;background:var(--accent);color:#fff;font-weight:700;cursor:pointer">Release — payment received</button></form>`}
+    </div>`).join("") : `<p class="sub" style="margin:12px 0 0">No Pre-Flight reports yet. The lane is at hottop20.com/preflight.</p>`}
   </div>
   ${(() => { const pend = adsList.filter((a) => a.status === 'pending'); return pend.length ? `<div class="panel" style="border-color:rgba(255,190,60,.7)"><h2>📥 Ad submissions waiting on you (${pend.length})</h2><p class="sub" style="margin-top:0">Sent from the Advertise page. Watch each one — nothing runs until you approve it.</p>${pend.map((a) => `
     <div style="padding:10px 0;border-bottom:1px solid var(--line)">

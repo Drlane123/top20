@@ -209,6 +209,31 @@ function openDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    -- Pre-Flight Check (Nov 2, 2026): the paid private lane. An artist
+    -- pays for the full 15-point scorecard as a PRIVATE report — the
+    -- track never enters the songs table, never charts, never shows
+    -- publicly. The row holds everything the report page renders; the
+    -- token is the only key to it. paid flips when the owner releases
+    -- the report (payment confirmed in his desk).
+    CREATE TABLE IF NOT EXISTS preflight_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      token TEXT NOT NULL UNIQUE,
+      email TEXT NOT NULL,
+      artist_name TEXT,
+      title TEXT NOT NULL,
+      genre TEXT NOT NULL,
+      audio_path TEXT,
+      cover_path TEXT,
+      scores TEXT NOT NULL,                 -- JSON { categoryKey: score }
+      notes TEXT NOT NULL,                  -- JSON { categoryKey: note }
+      metrics TEXT,                         -- JSON quick specs (or NULL)
+      total_score REAL NOT NULL,
+      craft_score REAL NOT NULL,
+      paid INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      released_at TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS viewcast_episodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
