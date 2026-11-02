@@ -2540,10 +2540,28 @@ app.get("/card/:id.jpg", async (req, res) => {
   `).get(req.params.id);
   if (!song) return res.status(404).end();
   const standing = sharecard.headlineStanding(db, song.id);
-  if (!standing) return res.redirect(song.cover_path);
-  const coverAbs = [path.join(__dirname, "public", song.cover_path), path.join(__dirname, song.cover_path)]
+  if (!standing) return res.redirect(`/pcard/${song.artist_id}.jpg`);
+  // The cover must reach the renderer as bytes on THIS machine: read it
+  // locally when present, else pull it from storage server-side (the
+  // /pcard pattern). Redirecting Facebook to the raw cover path left
+  // shares blank — its scraper won't chase the storage redirect
+  // (owner report, Nov 1, 2026: a real artist's song share came out
+  // blank while his profile card worked).
+  let coverAbs = [path.join(__dirname, "public", song.cover_path), path.join(__dirname, song.cover_path)]
     .find((p) => fs.existsSync(p));
-  if (!coverAbs) return res.redirect(song.cover_path);
+  let tmpFile = null;
+  if (!coverAbs && storage.configured()) {
+    try {
+      const bytes = await storage.getObject(String(song.cover_path).replace(/^\//, ""));
+      if (bytes && bytes.length) {
+        const ext = (path.extname(song.cover_path) || ".jpg").toLowerCase();
+        tmpFile = path.join(require("node:os").tmpdir(), `card-src-${song.id}${ext}`);
+        fs.writeFileSync(tmpFile, bytes);
+        coverAbs = tmpFile;
+      }
+    } catch { /* fall through to the profile card */ }
+  }
+  if (!coverAbs) return res.redirect(`/pcard/${song.artist_id}.jpg`);
   try {
     const buf = await sharecard.renderCard({
       songId: song.id, title: song.title, artist: song.artist,
@@ -2553,7 +2571,9 @@ app.get("/card/:id.jpg", async (req, res) => {
     res.setHeader("Cache-Control", "public, max-age=3600");
     res.end(buf);
   } catch {
-    res.redirect(song.cover_path);
+    res.redirect(`/pcard/${song.artist_id}.jpg`);
+  } finally {
+    if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* temp cleanup */ } }
   }
 });
 
@@ -2795,7 +2815,7 @@ app.get("/song/:id", (req, res) => {
         ? `#${headline.rank} on the ${headlineLabel} Top ${headlineTier} — "${song.title}" by ${song.artist} on TOP 20. Craft score ${judge.craft_score}/100 across the 15 judges — judged only because it was uploaded here.`
         : `${song.artist} · ${song.genre} · ${song.city}, ${song.state}. Craft score ${judge.craft_score}/100 across the 15 judges on TOP 20 — judged only because it was uploaded here.`,
       type: "music.song",
-      image: headline ? absUrl(req, `/card/${song.id}.jpg`) : absUrl(req, song.cover_path),
+      image: headline ? absUrl(req, `/card/${song.id}.jpg`) : absUrl(req, `/pcard/${song.artist_id}.jpg`),
     },
   }));
 });
