@@ -4337,6 +4337,19 @@ app.get("/viewcast/foreground/:key.webp", (req, res) => {
   res.send(buf);
 });
 
+/* Tall (phone 9:16) versions of the sets, framed so the whole sign
+   fits a phone screen. A set without one 404s and the studio falls
+   back to its wide picture. */
+const VIEWCAST_TALL = (() => { try { return require("./viewcast-tall-data"); } catch { return {}; } })();
+const tallBuf = {};
+for (const k of Object.keys(VIEWCAST_TALL)) tallBuf[k] = Buffer.from(VIEWCAST_TALL[k].split(",")[1], "base64");
+app.get("/viewcast/backdrop-tall/:key.jpg", (req, res) => {
+  const buf = tallBuf[req.params.key];
+  if (!buf) return res.status(404).end();
+  res.set({ "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" });
+  res.send(buf);
+});
+
 const viewcastUpload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, VIEWCAST_UP),
@@ -4396,6 +4409,11 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       <button type="button" id="recBtn" onclick="startRec()" disabled style="background:#c22743;color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer;opacity:.55">● Record</button>
       <button type="button" id="stopBtn" onclick="stopRec()" disabled style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer;opacity:.55">■ Stop</button>
     </div>
+    <p style="margin:10px 0 4px"><strong>Screen:</strong><br>
+      <button type="button" class="fmtBtn" data-fmt="wide" onclick="setFormat('wide')" style="background:#1a2140;color:#e9ecf2;border:2px solid #f2c14e;border-radius:8px;padding:9px 13px;font-weight:700;cursor:pointer;margin-top:6px">📺 YouTube — wide</button>
+      <button type="button" class="fmtBtn" data-fmt="tall" onclick="setFormat('tall')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 13px;font-weight:700;cursor:pointer;margin-top:6px">📱 Phone — tall</button>
+      <span style="color:#8a8f99;font-size:12.5px;display:block;margin-top:4px">Tall sets are framed so the whole HOT TOP 20 sign fits the phone screen.</span>
+    </p>
     <p style="margin:12px 0 6px"><strong>Pick your set:</strong></p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${setBtns}</div>
     <p style="margin:14px 0 6px"><strong>✨ Effects — shape the person to fit the room:</strong></p>
@@ -4444,7 +4462,25 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   var W = 1280, H = 720, stream = null, facing = 'user', micTrack = null;
   var seg = null, segBusy = false, mode = 'virtual';
   var currentSet = 'graffiti', backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/graffiti.jpg';
-  var fgImg = new Image(); fgImg.src = '/viewcast/foreground/graffiti.webp';
+  // Screen format (owner, Nov 1): wide = YouTube 16:9, tall = phone
+  // 9:16. Tall sets are framed so the whole HOT TOP 20 sign fits the
+  // phone screen; a set without a tall version falls back to its wide
+  // picture rather than breaking.
+  var vcFormat = 'wide';
+  function loadBackdrop() {
+    var img = new Image();
+    img.onload = function () { backdropImg = img; };
+    img.onerror = function () { var f = new Image(); f.onload = function () { backdropImg = f; }; f.src = '/viewcast/backdrop/' + currentSet + '.jpg'; };
+    img.src = (vcFormat === 'tall' ? '/viewcast/backdrop-tall/' : '/viewcast/backdrop/') + currentSet + '.jpg';
+  }
+  function setFormat(f) {
+    vcFormat = f;
+    W = f === 'tall' ? 720 : 1280; H = f === 'tall' ? 1280 : 720;
+    canvas.width = W; canvas.height = H;
+    var btns = document.querySelectorAll('.fmtBtn');
+    for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-fmt') === f) ? '#f2c14e' : '#2c3a6e';
+    loadBackdrop();
+  }
   // ✨ Effects (owner, Nov 1): the host shapes their own picture to fit
   // the room — slim, step back, smooth, brighten. Saved on this phone.
   var fxSlim = 0, fxBack = 0, fxSmooth = 0, fxBright = 0;
@@ -4473,8 +4509,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
   function setStatus(t) { document.getElementById('vstatus').textContent = t; }
   function pickSet(key) {
-    currentSet = key; backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/' + key + '.jpg';
-    fgImg = new Image(); fgImg.src = '/viewcast/foreground/' + key + '.webp';
+    currentSet = key; loadBackdrop();
     var btns = document.querySelectorAll('.vset');
     for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-key') === key) ? '#f2c14e' : '#232a45';
   }
@@ -4660,30 +4695,32 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     ctx.fillStyle = '#f2c14e'; ctx.font = '800 ' + Math.round(H * 0.024) + 'px Arial'; ctx.textBaseline = 'middle';
     ctx.fillText('GUEST', x + 10, y + bh / 2 + 1);
   }
-  // Scene depth (owner, Nov 1): three layers — the wall behind, the
-  // person in the middle, and for the desk sets the desk itself in
-  // front, so the host stands BEHIND the mixer. A soft ground shadow
-  // at the desk line seats them into the room.
-  var DESK_LINE = { graffiti: 0.84, neon: 0.70, blue: 0.65, radio: 0.86 };
-  function drawDeskShadow() {
-    var f = DESK_LINE[currentSet];
-    if (!f) return;
-    var gy = H * f, R = W * 0.30;
+  // Scene depth (owner, Nov 1, REVISED same evening): Dale's phone test
+  // killed the desk-in-front idea — a frozen desk in front of a moving
+  // person reads fake. NOTHING sits in front of the person now; the
+  // room is all behind them, and only a soft shadow at their feet
+  // seats them into it.
+  function drawFeetShadow() {
+    var gy = H * 0.985, R = W * 0.26;
     var grd = ctx.createRadialGradient(W / 2, gy, 8, W / 2, gy, R);
-    grd.addColorStop(0, 'rgba(0,0,0,.40)');
+    grd.addColorStop(0, 'rgba(0,0,0,.35)');
     grd.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.save();
-    ctx.translate(W / 2, gy); ctx.scale(1, 0.15); ctx.translate(-W / 2, -gy);
+    ctx.translate(W / 2, gy); ctx.scale(1, 0.12); ctx.translate(-W / 2, -gy);
     ctx.fillStyle = grd;
     ctx.fillRect(W / 2 - R, gy - R, R * 2, R * 2);
     ctx.restore();
   }
   function drawHostInto(x, y, w, h) {
     // Step back shrinks the figure toward the floor line; Slim narrows
-    // it. Bottom-anchored, so the desk line still meets the waist.
+    // it. The camera picture is cover-cropped into the frame (never
+    // stretched), bottom-anchored so the feet stay on the floor.
     var s = 1 - fxBack * 0.28;
     var dw = w * s * (1 - fxSlim * 0.14), dh = h * s;
-    ctx.drawImage(hostC, x + (w - dw) / 2, y + (h - dh), dw, dh);
+    var iw = hostC.width, ih = hostC.height;
+    if (!iw || !ih) return;
+    var cs = Math.max(dw / iw, dh / ih), cw = dw / cs, ch = dh / cs;
+    ctx.drawImage(hostC, (iw - cw) / 2, ih - ch, cw, ch, x + (w - dw) / 2, y + (h - dh), dw, dh);
   }
   function composeFrame() {
     ctx.save(); ctx.clearRect(0, 0, W, H);
@@ -4691,10 +4728,8 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       ctx.drawImage(hostC, 0, 0, W, H);
     } else {
       drawCoverCtx(ctx, backdropImg, 0, 0, W, H);
-      drawDeskShadow();
       if (guestOn && layoutMode === 'split') drawCoverCtx(ctx, hostC, 30, 30, W * 0.52, H - 60);
-      else drawHostInto(0, 0, W, H);
-      if (fgImg && fgImg.complete && fgImg.naturalWidth) ctx.drawImage(fgImg, 0, 0, W, H);
+      else { drawFeetShadow(); drawHostInto(0, 0, W, H); }
     }
     ctx.restore();
     drawGuestWin();
@@ -4727,7 +4762,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         maskX.globalCompositeOperation = 'copy';
         maskX.drawImage(results.segmentationMask, 0, 0, W, H);
         maskX.globalCompositeOperation = 'destination-over';
-        maskX.globalAlpha = 0.45;
+        maskX.globalAlpha = 0.6;
         maskX.drawImage(prevC, 0, 0, W, H);
         maskX.restore();
         prevX.save();
