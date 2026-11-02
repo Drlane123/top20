@@ -3301,7 +3301,14 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
         fill = document.getElementById("tProgFill"),
         kick = document.getElementById("tPhaseKick"), pname = document.getElementById("tPhaseName"),
         psub = document.getElementById("tPhaseSub"), segs = document.getElementById("tSegs");
-    var DUR = 60000, startedAt = null, done = false, actx = null, raf = null, curPhase = -1;
+    var DUR = 90000, startedAt = null, done = false, actx = null, raf = null, curPhase = -1;
+    // HUMAN PACING (owner, Nov 2, 2026): a minute and a half, not a
+    // minute — nothing real moves that fast, and a human feels the
+    // work more when it takes its time. Each point carries its own
+    // weight of the 100%, and the deep points (mix, mastering, hook,
+    // lyrics, vocals, radio) PAUSE mid-read — the percent holds while
+    // the machine sits in that part longer, then moves on.
+    var PW = [7, 8, 7, 6, 7, 6, 7, 7, 6, 6, 6, 7, 6, 8, 6], PDEEP = { 0: 1, 1: 1, 2: 1, 4: 1, 6: 1, 13: 1 };
     var POINTS = ${JSON.stringify(CATEGORIES.map((c) => [c.label.toUpperCase(), THEATER_SUBS[c.key] || ""]))};
     var deck = document.getElementById("tDeck"), proc = document.getElementById("tProc"),
         count = document.getElementById("tCount"), pfill = document.getElementById("tProcFill"),
@@ -3393,9 +3400,18 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
       } catch (e) { /* meters unavailable in this browser — the reading clock still runs */ }
       (function tick() {
         if (done) return;
-        var el = Date.now() - startedAt, p = Math.min(1, el / DUR);
+        var el = Date.now() - startedAt;
+        var ph = Math.min(POINTS.length - 1, Math.floor(el / (DUR / 15)));
+        var segMs = DUR / 15, q = Math.min(1, Math.max(0, (el - ph * segMs) / segMs));
+        var base = 0; for (var k = 0; k < ph; k++) base += PW[k];
+        var holding = false, f;
+        if (PDEEP[ph]) {
+          if (q < 0.34) f = q / 0.34 * 0.55;
+          else if (q < 0.66) { f = 0.55; holding = true; }
+          else f = 0.55 + (q - 0.66) / 0.34 * 0.45;
+        } else f = q;
+        var p = Math.min(1, (base + PW[ph] * f) / 100);
         fill.style.width = (p * 100) + "%";
-        var ph = Math.min(POINTS.length - 1, Math.floor(el / 4000));
         if (ph !== curPhase) {
           curPhase = ph;
           kick.textContent = "POINT " + (ph + 1) + " OF 15 — JUDGING";
@@ -3431,6 +3447,8 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
             return;
           }
           if (p >= 0.85) { pstatus.textContent = "FINALIZING"; pstatus.style.color = "#ffc44d"; }
+          else if (holding) { pstatus.textContent = "ANALYZING"; pstatus.style.color = "#2ee6a8"; }
+          else { pstatus.textContent = "READING"; pstatus.style.color = "#2ee6a8"; }
         }
         if (p >= 1) { finish(); return; }
         setTimeout(tick, 100);
