@@ -3034,6 +3034,21 @@ const songDisk = multer.diskStorage({
 });
 const upload = multer({ storage: songDisk, limits: { fileSize: 40 * 1024 * 1024 } });
 
+// THE ANALYZER RUNS ONE RECORD AT A TIME (owner incident, Nov 2,
+// 2026): reading a full song holds serious memory for the length of
+// the read. Two records reading at once — an artist uploading while
+// the owner quick-loads, or a double-tap retry stacking on itself —
+// can push the studio's small server past its memory, kill the
+// process, and leave the whole site answering 502 until it restarts.
+// So every lane (upload, Pre-Flight, Quick Load, re-measure) waits
+// its turn here: the same read, the same numbers, never two at once.
+let analyzerChain = Promise.resolve();
+function withAnalyzerLock(fn) {
+  const run = analyzerChain.then(fn, fn);
+  analyzerChain = run.then(() => undefined, () => undefined);
+  return run;
+}
+
 app.get("/upload", (req, res) => {
   const checkEmail = String(req.query.email || "").trim().toLowerCase();
   let profileStatus = "";
@@ -3695,7 +3710,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   // genre templates score it. If a file can't be measured, Judge v1 covers
   // that one song so an upload never fails on the judging step.
   let judged = null;
-  try { judged = await judgeMeasuredFile(audioFile.path, genre, coverFile.path, lyrics ? String(lyrics) : null, title ? String(title) : null); } catch { judged = null; }
+  try { judged = await withAnalyzerLock(() => judgeMeasuredFile(audioFile.path, genre, coverFile.path, lyrics ? String(lyrics) : null, title ? String(title) : null)); } catch { judged = null; }
   if (!judged) judged = judgeAudioFile(audioFile.path, coverFile.path);
   const catCols = CATEGORIES.map((c) => c.key).join(", ");
   const placeholders = CATEGORIES.map(() => "?").join(", ");
@@ -3865,7 +3880,7 @@ app.post("/preflight", upload.fields([{ name: "audio", maxCount: 1 }, { name: "c
     return pfError(res, "Please fill in the song title, a real email, and a genre.");
   }
   let judged = null;
-  try { judged = await judgeMeasuredFile(audioFile.path, genre, coverFile.path, lyrics ? String(lyrics) : null, String(title)); } catch { judged = null; }
+  try { judged = await withAnalyzerLock(() => judgeMeasuredFile(audioFile.path, genre, coverFile.path, lyrics ? String(lyrics) : null, String(title))); } catch { judged = null; }
   if (!judged) judged = judgeAudioFile(audioFile.path, coverFile.path);
   const token = crypto.randomBytes(12).toString("hex");
   const audioWeb = `/uploads/audio/${audioFile.filename}`;
@@ -5358,7 +5373,7 @@ app.post("/admin/remeasure", requireAdmin, async (req, res) => {
       abs = tmp;
     } catch { return back("That song's audio file couldn't be pulled from storage."); }
   }
-  const m = await analyzeAudio(abs);
+  const m = await withAnalyzerLock(() => analyzeAudio(abs));
   if (tmp) { try { fs.unlinkSync(tmp); } catch { /* ignore */ } }
   if (!m || m.lufs == null) return back(`"${song.title}" couldn't be measured — the analyzer got no reading from the file.`);
   const specs = quickSpecs(m);
@@ -5424,7 +5439,7 @@ app.post("/admin/quickload", requireAdmin, qlFields, async (req, res) => {
   const title = String(req.body.title || "").trim() || String(audioFile.originalname || "Untitled").replace(/\.[^.]*$/, "");
   const lyrics = req.body.lyrics ? String(req.body.lyrics) : null;
   let judged = null;
-  try { judged = await judgeMeasuredFile(audioFile.path, genre, coverFile ? coverFile.path : null, lyrics, title); } catch { judged = null; }
+  try { judged = await withAnalyzerLock(() => judgeMeasuredFile(audioFile.path, genre, coverFile ? coverFile.path : null, lyrics, title)); } catch { judged = null; }
   if (!judged) judged = judgeAudioFile(audioFile.path, coverFile ? coverFile.path : null);
   const specs = judged.measurements ? quickSpecs(judged.measurements) : null;
   const judgeRow = { ...judged.scores, total_score: judged.totalScore, craft_score: judged.craftScore, notes: JSON.stringify(judged.notes), metrics: judged.measurements ? JSON.stringify(quickSpecs(judged.measurements)) : null };

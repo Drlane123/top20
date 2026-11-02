@@ -66,12 +66,23 @@ async function decode(absPath) {
       const buf = Buffer.concat(chunks);
       const inter = new Float32Array(buf.buffer, buf.byteOffset, Math.floor(buf.length / 4));
       const n = Math.floor(inter.length / 2);
-      const left = new Float32Array(n), right = new Float32Array(n), mono = new Float32Array(n);
+      const mono = new Float32Array(n);
+      // One pass: the mono fold the measurements run on, plus every
+      // left/right aggregate the physical checks need (means,
+      // correlation, mid/side sums). The full left/right arrays are
+      // never built — three extra copies of a six-minute song were
+      // enough to push the studio's small server past its memory
+      // and take the whole site down (owner incident, Nov 2, 2026).
+      let meanL = 0, meanR = 0, meanM = 0, sLR = 0, sLL = 0, sRR = 0, sMid = 0, sSide = 0;
       for (let i = 0; i < n; i++) {
-        const l = inter[2 * i], r = inter[2 * i + 1];
-        left[i] = l; right[i] = r; mono[i] = (l + r) / 2;
+        const l = inter[2 * i], r = inter[2 * i + 1], m = (l + r) / 2;
+        mono[i] = m;
+        meanL += l; meanR += r; meanM += m;
+        sLR += l * r; sLL += l * l; sRR += r * r;
+        sMid += m * m; sSide += ((l - r) / 2) * ((l - r) / 2);
       }
-      resolve({ left, right, mono });
+      if (n > 0) { meanL /= n; meanR /= n; meanM /= n; }
+      resolve({ mono, lr: { n, meanL, meanR, meanM, sLR, sLL, sRR, sMid, sSide } });
     });
   });
 }
@@ -79,18 +90,9 @@ async function decode(absPath) {
 // Physical placement: is everything where it should be in the file?
 // Stereo width, mono fold-down correlation (phase safety), silent holes
 // punched in the middle of the song, an ending chopped off mid-sound, DC.
-function analyzePhysical(left, right, mono, energyCurve, monoSource) {
+function analyzePhysical(lr, mono, energyCurve, monoSource) {
   const n = mono.length;
-  let meanL = 0, meanR = 0, meanM = 0;
-  let sLR = 0, sLL = 0, sRR = 0, sMid = 0, sSide = 0;
-  for (let i = 0; i < n; i++) {
-    const l = left[i], r = right[i], m = mono[i];
-    meanL += l; meanR += r; meanM += m;
-    sLR += l * r; sLL += l * l; sRR += r * r;
-    const mid = (l + r) / 2, side = (l - r) / 2;
-    sMid += mid * mid; sSide += side * side;
-  }
-  meanL /= n; meanR /= n; meanM /= n;
+  const { meanM, sLR, sLL, sRR, sMid, sSide } = lr;
   const corr = sLL > 0 && sRR > 0 ? sLR / Math.sqrt(sLL * sRR) : 1;
   const widthDb = sMid > 0 ? Math.round(10 * Math.log10((sSide + 1e-12) / sMid) * 10) / 10 : -60;
   // Dropouts: 100ms windows far below the song's body level, mid-song.
@@ -533,7 +535,7 @@ async function analyzeAudio(absPath) {
     const pcm = await decode(absPath);
     if (!pcm.mono.length) return null;
     const body = analyzePcm(pcm.mono);
-    const physical = analyzePhysical(pcm.left, pcm.right, pcm.mono, body.energyCurve, meta.channels < 2);
+    const physical = analyzePhysical(pcm.lr, pcm.mono, body.energyCurve, meta.channels < 2);
     return { ...meta, ...loud, ...body, physical };
   } catch {
     return null;
