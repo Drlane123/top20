@@ -161,6 +161,65 @@ function genBioVideo(file, songAudio) {
   ]);
 }
 
+// Media only — never touches the database. Writes any MISSING demo
+// files (covers, audio loops, avatars, the one profile video) and
+// leaves everything already on disk exactly as it is. The demo media
+// lives on the container disk, which starts empty on every deploy;
+// until Nov 1, 2026 seed.js regenerated it as a side effect of
+// rebuilding the database at every boot. When boot seeding was removed
+// (it was wiping real artists), the covers, artist photos and demo
+// audio vanished with it — the owner saw a site with no pictures.
+// server.js calls this at every boot to fill the gaps back in.
+function ensureSeedMedia() {
+  for (const dir of [COVERS_DIR, AUDIO_DIR, AVATARS_DIR, VIDEOS_DIR]) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  // Covers: generated album artwork ships with the app (cover-art.js,
+  // base64 webp per song). Fall back to the PIL gradient covers only
+  // for songs the artwork bundle doesn't cover.
+  let art = null;
+  try { art = require("./cover-art.js"); } catch { art = null; }
+  const missingCovers = [];
+  CATALOG.forEach((c, i) => {
+    const file = path.join(COVERS_DIR, `song-${i + 1}.png`);
+    if (fs.existsSync(file)) return;
+    const b64 = art && art[String(i + 1)];
+    if (b64) fs.writeFileSync(file, Buffer.from(b64, "base64"));
+    else missingCovers.push({ file, title: c[1], artist: c[2], genre: c[0] });
+  });
+  if (missingCovers.length) {
+    const manifestPath = path.join(ROOT, "tools", "covers-manifest.json");
+    fs.writeFileSync(manifestPath, JSON.stringify(missingCovers, null, 2));
+    execFileSync("python3", [path.join(ROOT, "tools", "gen_covers.py"), manifestPath], { stdio: "inherit" });
+  }
+  // Artist avatars (PIL) via manifest — only the ones not on disk.
+  const avatarManifest = CATALOG
+    .map((c, i) => ({ c, i }))
+    .filter(({ i }) => i % 5 !== 4)
+    .filter(({ i }) => !fs.existsSync(path.join(AVATARS_DIR, `artist-${i + 1}.png`)))
+    .map(({ c, i }) => ({
+      file: path.join(AVATARS_DIR, `artist-${i + 1}.png`),
+      initials: initialsFor(c[2]), genre: c[0],
+    }));
+  if (avatarManifest.length) {
+    const avatarManifestPath = path.join(ROOT, "tools", "avatars-manifest.json");
+    fs.writeFileSync(avatarManifestPath, JSON.stringify(avatarManifest, null, 2));
+    execFileSync("python3", [path.join(ROOT, "tools", "gen_avatars.py"), avatarManifestPath], { stdio: "inherit" });
+  }
+  // Audio loops (ffmpeg) — only the missing ones.
+  let wroteAudio = 0;
+  CATALOG.forEach((c, i) => {
+    const file = path.join(AUDIO_DIR, `song-${i + 1}.mp3`);
+    if (!fs.existsSync(file)) { genAudio(file, i); wroteAudio++; }
+  });
+  if (wroteAudio) console.log(`seed media: ${wroteAudio} audio loops written`);
+  // Amara Cole's profile video (needs her demo song's audio).
+  const bioFile = path.join(VIDEOS_DIR, "amara-velvet-hours-bio.mp4");
+  if (!fs.existsSync(bioFile) && fs.existsSync(path.join(AUDIO_DIR, "song-1.mp3"))) {
+    genBioVideo(bioFile, path.join(AUDIO_DIR, "song-1.mp3"));
+  }
+}
+
 function main() {
   // Reset demo state.
   for (const suffix of ["", "-wal", "-shm"]) {
@@ -174,43 +233,7 @@ function main() {
   const db = openDb();
   const rng = mulberry32(20261030);
 
-  // Covers: generated album artwork ships with the app (cover-art.js,
-  // base64 webp per song). Fall back to the PIL gradient covers only if
-  // the artwork bundle is missing.
-  let art = null;
-  try { art = require("./cover-art.js"); } catch { art = null; }
-  if (art) {
-    CATALOG.forEach((c, i) => {
-      const b64 = art[String(i + 1)];
-      if (b64) fs.writeFileSync(path.join(COVERS_DIR, `song-${i + 1}.png`), Buffer.from(b64, "base64"));
-    });
-    console.log("covers: generated artwork written");
-  } else {
-    const manifest = CATALOG.map((c, i) => ({
-      file: path.join(COVERS_DIR, `song-${i + 1}.png`),
-      title: c[1], artist: c[2], genre: c[0],
-    }));
-    const manifestPath = path.join(ROOT, "tools", "covers-manifest.json");
-    fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-    execFileSync("python3", [path.join(ROOT, "tools", "gen_covers.py"), manifestPath], { stdio: "inherit" });
-  }
-
-  // Artist avatars (PIL) via manifest — profile photos for the seed
-  // artists who have one on file (see profileFor).
-  const avatarManifest = CATALOG
-    .map((c, i) => ({ c, i }))
-    .filter(({ i }) => i % 5 !== 4)
-    .map(({ c, i }) => ({
-      file: path.join(AVATARS_DIR, `artist-${i + 1}.png`),
-      initials: initialsFor(c[2]), genre: c[0],
-    }));
-  const avatarManifestPath = path.join(ROOT, "tools", "avatars-manifest.json");
-  fs.writeFileSync(avatarManifestPath, JSON.stringify(avatarManifest, null, 2));
-  execFileSync("python3", [path.join(ROOT, "tools", "gen_avatars.py"), avatarManifestPath], { stdio: "inherit" });
-
-  // Audio loops (ffmpeg).
-  CATALOG.forEach((c, i) => genAudio(path.join(AUDIO_DIR, `song-${i + 1}.mp3`), i));
-  console.log(`audio: ${CATALOG.length} loops written`);
+  ensureSeedMedia();
 
   const insUser = db.prepare(
     `INSERT INTO users (name, email, city, state, region, buzz_score, photo_path, bio, age, history, years_in_game, genre)
@@ -274,7 +297,7 @@ function main() {
   // Amara Cole's profile video: one video_bio on her profile, attached
   // to "Velvet Hours" — generated above from her demo song's audio.
   if (firstArtistId) {
-    genBioVideo(path.join(VIDEOS_DIR, "amara-velvet-hours-bio.mp4"), path.join(AUDIO_DIR, "song-1.mp3"));
+    // The video file itself is written by ensureSeedMedia() above.
     db.prepare("INSERT INTO videos (artist_id, song_id, video_path, kind) VALUES (?, ?, ?, 'video_bio')")
       .run(firstArtistId, firstSongId, "/videos/amara-velvet-hours-bio.mp4");
     console.log("profile video: seeded video_bio for Amara Cole (Velvet Hours)");
@@ -399,4 +422,5 @@ function main() {
   console.log(`genres: ${GENRES.join(", ")} (+ Overall charts)`);
 }
 
-main();
+module.exports = { ensureSeedMedia };
+if (require.main === module) main();

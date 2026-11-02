@@ -55,6 +55,15 @@ try {
 } catch (e) { console.error("[seed] skipped:", e.message); }
 
 const db = openDb();
+
+// Demo media (seed covers, artist photos, demo audio, one profile
+// video) lives on the container disk, which starts empty on every
+// deploy. It used to come back as a side effect of the boot-time seed;
+// with that gone, fill in any missing files at boot — media only, the
+// record book is never touched (Nov 1, 2026: without this the site
+// showed no cover pictures and the demo songs would not play).
+try { require("./seed").ensureSeedMedia(); } catch (e) { console.error("[seed-media] fill failed:", e.message); }
+
 const app = express();
 app.set("trust proxy", 1); // Render terminates HTTPS — believe its forwarded protocol so absolute links (share cards) come out https
 
