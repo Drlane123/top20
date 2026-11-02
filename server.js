@@ -3039,6 +3039,7 @@ app.get("/artist/:id", (req, res) => {
         <span class="meta"><span class="t">${esc(s.title)}</span><br><span class="a">${esc(s.genre)} · Craft ${s.craft_score}</span></span>
       </a>
       <div class="chips">${standing} ${bonusChip}</div>
+      <audio class="profile-audio" controls preload="metadata" src="${esc(s.audio_path)}" data-song="${s.id}" style="width:100%;margin-top:10px"></audio>
     </div>`;
   }).join("");
   const highlights = db.prepare(`
@@ -3074,12 +3075,37 @@ app.get("/artist/:id", (req, res) => {
         .map(([k, l]) => `<a href="${esc(socialUrl(k, user[k]))}" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700;text-decoration:none">${l}</a>`);
       return links.length ? `<p class="sub" style="margin-top:8px"><b style="color:#fff">Find them:</b> ${links.join(" · ")}</p>` : "";
     })()}
+    <p style="margin:12px 0 2px"><button class="btn" type="button" id="profileShareBtn">⤴ Share this profile</button> <span class="sub" id="profileShareMsg"></span></p>
+    <p class="sub" style="margin:6px 0 0">Send this page to your people — your songs play right here on the profile, no chart needed.</p>
   </div>
   ${user.bio ? `<div class="panel"><h2 style="margin-top:0">About</h2><p class="sub" style="white-space:pre-wrap">${esc(user.bio)}</p></div>` : ""}
   ${user.history ? `<div class="panel"><h2 style="margin-top:0">History</h2><p class="sub" style="white-space:pre-wrap">${esc(user.history)}</p></div>` : ""}
   ${profileVideo ? videoDisplayHtml(profileVideo) : ""}
   <h2 style="margin:16px 2px 4px">Live songs</h2>
-  ${songCards || `<div class="panel"><p class="sub">No live songs yet — <a href="/upload">upload the first one</a> and get recognized.</p></div>`}`;
+  <p class="sub" style="margin:0 2px 8px">Press play — every song plays right here on the profile.</p>
+  ${songCards || `<div class="panel"><p class="sub">No live songs yet — <a href="/upload">upload the first one</a> and get recognized.</p></div>`}
+  <script>
+  (function () {
+    var audios = document.querySelectorAll('audio.profile-audio');
+    audios.forEach(function (a) {
+      var counted = false;
+      a.addEventListener('play', function () {
+        audios.forEach(function (o) { if (o !== a && !o.paused) o.pause(); });
+        if (!counted) { counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
+      });
+    });
+    var btn = document.getElementById('profileShareBtn');
+    if (btn) btn.addEventListener('click', function () {
+      var url = location.origin + location.pathname;
+      var msg = document.getElementById('profileShareMsg');
+      var data = { title: document.title, text: document.title + ' — press play right on the profile: ', url: url };
+      if (navigator.share) { navigator.share(data).catch(function () {}); }
+      else if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function () { if (msg) msg.textContent = 'Link copied — paste it anywhere.'; }).catch(function () { if (msg) msg.textContent = url; });
+      } else if (msg) { msg.textContent = url; }
+    });
+  })();
+  </script>`;
   res.send(layout(user.name, "profile", body, {
     meta: {
       title: `${user.name} — TOP 20 Artist`,
