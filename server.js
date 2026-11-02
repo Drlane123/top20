@@ -3275,6 +3275,8 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   const theater = `
   <div class="panel" id="theaterPanel" style="padding:0;overflow:hidden">
     <style>@keyframes tPulse { 50% { opacity: .4 } }</style>
+    <div id="tScreenView" style="overflow:hidden;aspect-ratio:2531/1613;width:100%">
+    <div id="tScreenTrack" style="transition:transform 1.15s ease">
     <div style="position:relative">
       <img src="/studio.jpg?v=30" alt="The Top 20 Mastering Analyzer" style="width:100%;display:block">
       <div id="tOvlBpm" style="position:absolute;left:68.5%;top:18%;width:14.5%;background:rgba(4,10,22,.82);border:1px solid #2ee6a8;border-radius:6px;padding:3px 6px;animation:tPulse 1.6s infinite">
@@ -3285,10 +3287,13 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
         <div style="font-size:8px;letter-spacing:1.5px;color:#57e6ff;line-height:1.1">KEY / NOTE</div>
         <div id="tOvlKeyVal" style="font-size:clamp(10px,3.1vw,16px);font-weight:800;color:#fff;line-height:1.15">···</div>
       </div>
+      </div>
+      <canvas id="tViz" width="1440" height="918" style="width:100%;height:auto;display:block;background:#0a0d12" aria-label="Top 20 Visualizer — the full spectrum of your record, live"></canvas>
+    </div>
     </div>
     <div style="padding:18px">
       <h2 style="margin:6px 0 4px">🎚️ Your record is on the analyzer</h2>
-      <p class="sub" style="margin:0 0 6px">“${esc(title.trim())}” — this is the machine that judges every record on Top 20: loudness, true peak, the full spectrum, measured against the <b style="color:#fff">${esc(genre)} reference chart</b> — the same cheat-sheet references the pros keep on their desks. Press play and watch it read <b style="color:#fff">your</b> song: the meters below are fed by your record, live — and the <b style="color:#fff">tempo and key</b> it locks onto are read from your actual file.</p>
+      <p class="sub" style="margin:0 0 6px">“${esc(title.trim())}” — this is the machine that judges every record on Top 20: loudness, true peak, the full spectrum, measured against the <b style="color:#fff">${esc(genre)} reference chart</b> — the same cheat-sheet references the pros keep on their desks. Press play and watch it read <b style="color:#fff">your</b> song: the meters below are fed by your record, live — and the <b style="color:#fff">tempo and key</b> it locks onto are read from your actual file. Halfway through, the screen rolls over to the <b style="color:#fff">Visualizer</b> — the full spectrum picture of your record — while the deep points get read.</p>
       <p style="margin:14px 0"><button class="btn btn-blue btn-block" id="tStart" type="button" style="font-size:17px;padding:14px">▶ Play my record — watch it get measured</button></p>
       <div id="tStage" style="display:none">
         <div id="tDeck">
@@ -3370,6 +3375,37 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
     var ovlBpm = document.getElementById("tOvlBpm"), ovlKey = document.getElementById("tOvlKey"),
         ovlBpmVal = document.getElementById("tOvlBpmVal"), ovlKeyVal = document.getElementById("tOvlKeyVal");
     var lockBpmEl = document.getElementById("tLockBpm"), lockKeyEl = document.getElementById("tLockKey");
+    // SCREEN ROTATION (owner, Nov 2, 2026): the monitor carries TWO
+    // screens now. Screen 1 is the studio (the mixer under the
+    // analyzer). Halfway through the pass — when the loading and
+    // analysis stretch opens — the screen SCROLLS up to screen 2,
+    // the Visualizer, and scrolls home when the reading finishes.
+    var screenTrack = document.getElementById("tScreenTrack"), vizOn = false;
+    // Paint screen 2's idle frame up front, so the Visualizer reads
+    // as a real machine even before the song starts feeding it.
+    (function paintVizIdle() {
+      var viz = document.getElementById("tViz"); if (!viz) return;
+      var c = viz.getContext("2d"); if (!c) return;
+      var W = viz.width, H = viz.height, rail = 176, plotW = W - rail - 18;
+      c.fillStyle = "#0a0d12"; c.fillRect(0, 0, W, H);
+      var topH = Math.round(H * 0.52);
+      c.strokeStyle = "rgba(120,140,160,0.20)"; c.lineWidth = 1;
+      c.fillStyle = "rgba(190,205,220,0.75)"; c.font = "600 17px sans-serif"; c.textAlign = "left";
+      var dbl = [-5, -10, -15, -20, -25, -30, -35, -40, -45];
+      for (var g = 0; g < dbl.length; g++) {
+        var gy = 18 + (topH - 48) * (g / (dbl.length - 1));
+        c.beginPath(); c.moveTo(46, gy); c.lineTo(plotW, gy); c.stroke();
+        c.fillText(String(dbl[g]) + "dB", 2, gy + 5);
+      }
+      c.fillStyle = "#131a26"; c.fillRect(W - rail + 8, 10, rail - 16, H - 20);
+      c.fillStyle = "#ffc44d"; c.font = "800 21px sans-serif"; c.fillText("TOP 20", W - rail + 22, 44);
+      c.fillStyle = "#fff"; c.font = "800 19px sans-serif"; c.fillText("VISUALIZER", W - rail + 22, 70);
+      c.fillStyle = "rgba(190,205,220,0.7)"; c.font = "600 15px sans-serif";
+      c.fillText("FULL SPECTRUM", W - rail + 22, 108);
+      c.fillText("BANDS + LEVELS", W - rail + 22, 130);
+      c.fillText("FED BY YOUR", W - rail + 22, H - 64);
+      c.fillText("RECORD, LIVE", W - rail + 22, H - 42);
+    })();
     var wheel = document.getElementById("tWheel"), wctx = wheel ? wheel.getContext("2d") : null, lastScan = -1;
     function drawWheel(activePc, root, mode) {
       if (!wctx) return;
@@ -3453,6 +3489,137 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
           sumSq += s; nSamp += buf.length; if (pk > peak) peak = pk;
           return Math.sqrt(s / buf.length);
         }
+        // SCREEN 2 — THE VISUALIZER, LIVE (owner, Nov 2, 2026): the
+        // filled spectrum curve, the band bars and the L/R level
+        // meters from the pro visualizer Dale sent — every pixel of
+        // it drawn from THIS song's live frequency data, the same
+        // feed the deck runs on. The rail carries the reading state:
+        // the point being judged, the percent, and the tempo / key /
+        // hook reads the moment they lock.
+        var viz = document.getElementById("tViz"), vctx = viz ? viz.getContext("2d") : null;
+        var vizSm = new Float32Array(256), vizPk = new Float32Array(256);
+        function drawViz(rL, rR) {
+          if (!vctx) return;
+          var W = viz.width, H = viz.height, rail = 176, plotW = W - rail - 18;
+          vctx.fillStyle = "#0a0d12"; vctx.fillRect(0, 0, W, H);
+          var bi, idx, tv;
+          // Log-frequency spacing, like the pro visualizer: each
+          // display column is an equal step from 24 Hz to 16 kHz, so
+          // the low end spreads across the width instead of piling
+          // into the first inch.
+          var srH = actx ? actx.sampleRate / 2 : 22050;
+          for (bi = 0; bi < 256; bi++) {
+            var fHz = 24 * Math.pow(16000 / 24, bi / 256);
+            idx = Math.max(0, Math.min(freq.length - 1, Math.floor(fHz / srH * freq.length)));
+            tv = freq[idx] / 255;
+            vizSm[bi] = Math.max(tv, vizSm[bi] * 0.88);
+            vizPk[bi] = Math.max(vizSm[bi], vizPk[bi] * 0.995);
+          }
+          // ---- TOP: the filled spectrum curve
+          var topH = Math.round(H * 0.52);
+          vctx.strokeStyle = "rgba(120,140,160,0.20)"; vctx.lineWidth = 1;
+          vctx.fillStyle = "rgba(190,205,220,0.75)"; vctx.font = "600 17px sans-serif"; vctx.textAlign = "left";
+          var dbl = [-5, -10, -15, -20, -25, -30, -35, -40, -45];
+          for (var g = 0; g < dbl.length; g++) {
+            var gy = 18 + (topH - 48) * (g / (dbl.length - 1));
+            vctx.beginPath(); vctx.moveTo(46, gy); vctx.lineTo(plotW, gy); vctx.stroke();
+            vctx.fillText(String(dbl[g]) + "dB", 2, gy + 5);
+          }
+          function curveY(v) { return 18 + (1 - Math.pow(Math.max(0, Math.min(1, v)), 0.72)) * (topH - 48); }
+          var grad = vctx.createLinearGradient(46, 0, plotW, 0);
+          grad.addColorStop(0, "#17d465"); grad.addColorStop(0.35, "#a8e02c"); grad.addColorStop(0.6, "#ffd23e"); grad.addColorStop(0.82, "#ff8a3d"); grad.addColorStop(1, "#ff4d6d");
+          var px, x;
+          vctx.beginPath(); vctx.moveTo(46, topH - 30);
+          for (px = 0; px <= 256; px++) { x = 46 + (plotW - 46) * (px / 256); vctx.lineTo(x, curveY(vizSm[Math.min(255, px)])); }
+          vctx.lineTo(plotW, topH - 30); vctx.closePath(); vctx.fillStyle = grad; vctx.fill();
+          vctx.beginPath();
+          for (px = 0; px <= 256; px++) {
+            x = 46 + (plotW - 46) * (px / 256);
+            var y2 = curveY(vizPk[Math.min(255, px)]);
+            if (px === 0) vctx.moveTo(x, y2); else vctx.lineTo(x, y2);
+          }
+          vctx.strokeStyle = "rgba(255,255,255,0.9)"; vctx.lineWidth = 2; vctx.stroke();
+          vctx.fillStyle = "rgba(190,205,220,0.85)"; vctx.font = "600 16px sans-serif"; vctx.textAlign = "center";
+          var fl = [[30, "30"], [60, "60"], [110, "110"], [180, "180"], [300, "300"], [500, "500"], [800, "800"], [1100, "1.10k"], [1400, "1.40k"], [1800, "1.80k"], [3000, "3k"], [6000, "6k"], [12000, "12k"]];
+          for (var f2 = 0; f2 < fl.length; f2++) {
+            var fx = 46 + (plotW - 46) * (Math.log(fl[f2][0] / 24) / Math.log(16000 / 24));
+            if (fx > 40 && fx < plotW - 6) vctx.fillText(fl[f2][1], fx, topH - 8);
+          }
+          // ---- MIDDLE: the band bars
+          var bandY0 = topH + 16, bandH = Math.round(H * 0.235), NB2 = 30;
+          var bw2 = (plotW - 46) / NB2;
+          vctx.strokeStyle = "rgba(120,140,160,0.35)";
+          vctx.beginPath(); vctx.moveTo(46, bandY0 + bandH); vctx.lineTo(plotW, bandY0 + bandH); vctx.stroke();
+          vctx.setLineDash([4, 5]); vctx.strokeStyle = "rgba(200,215,230,0.4)";
+          vctx.beginPath(); vctx.moveTo(46, bandY0 + bandH * 0.55); vctx.lineTo(plotW, bandY0 + bandH * 0.55); vctx.stroke();
+          vctx.setLineDash([]);
+          var maxBlk = Math.floor(bandH / 12);
+          for (var b2 = 0; b2 < NB2; b2++) {
+            var s0 = Math.floor(b2 / NB2 * 256), s1 = Math.floor((b2 + 1) / NB2 * 256), bv = 0;
+            for (var k2 = s0; k2 < s1; k2++) if (vizSm[k2] > bv) bv = vizSm[k2];
+            var lit = Math.round(Math.pow(bv, 0.8) * maxBlk);
+            for (var q2 = 0; q2 < lit; q2++) {
+              vctx.fillStyle = q2 === lit - 1 ? "#ffffff" : "#c9d3dd";
+              vctx.fillRect(46 + b2 * bw2 + 2, bandY0 + bandH - (q2 + 1) * 12 + 2, bw2 - 6, 9);
+            }
+          }
+          // ---- BOTTOM: L/R level meters
+          var mY0 = H - 104;
+          vctx.fillStyle = "rgba(190,205,220,0.8)"; vctx.font = "600 15px sans-serif"; vctx.textAlign = "left";
+          vctx.fillText("LEVEL METER", 46, mY0 - 10);
+          var segN = Math.floor((plotW - 46) / 13);
+          function meterRow(ry, rv, lab) {
+            var db = 20 * Math.log10(Math.max(rv, 0.0001));
+            var frac = Math.max(0, Math.min(1, (db + 60) / 60));
+            var litN = Math.round(frac * segN);
+            vctx.fillStyle = "rgba(220,230,240,0.9)"; vctx.font = "700 17px sans-serif"; vctx.fillText(lab, 10, ry + 16);
+            for (var sg = 0; sg < segN; sg++) {
+              if (sg >= litN) break;
+              var sf = sg / segN;
+              vctx.fillStyle = sf > 0.87 ? "#ff4d4d" : sf > 0.7 ? "#ffd23e" : "#2ee66b";
+              vctx.fillRect(46 + sg * 13, ry, 10, 18);
+            }
+          }
+          meterRow(mY0, rL, "L");
+          meterRow(mY0 + 30, rR, "R");
+          vctx.fillStyle = "rgba(190,205,220,0.7)"; vctx.font = "600 14px sans-serif"; vctx.textAlign = "center";
+          var scl = [-50, -40, -30, -20, -10, 0];
+          for (var s3 = 0; s3 < scl.length; s3++) {
+            var sx = 46 + (plotW - 46) * ((scl[s3] + 60) / 60);
+            if (sx < plotW) vctx.fillText(String(scl[s3]), sx, mY0 + 78);
+          }
+          // ---- RAIL: the reading state
+          var rx = W - rail + 8;
+          vctx.fillStyle = "#131a26"; vctx.fillRect(rx, 10, rail - 16, H - 20);
+          vctx.textAlign = "left";
+          vctx.fillStyle = "#ffc44d"; vctx.font = "800 21px sans-serif"; vctx.fillText("TOP 20", rx + 14, 44);
+          vctx.fillStyle = "#fff"; vctx.font = "800 19px sans-serif"; vctx.fillText("VISUALIZER", rx + 14, 70);
+          vctx.fillStyle = "rgba(190,205,220,0.7)"; vctx.font = "600 14px sans-serif"; vctx.fillText("NOW READING", rx + 14, 116);
+          vctx.fillStyle = "#fff"; vctx.font = "800 19px sans-serif";
+          var words = (curPhase >= 0 && POINTS[curPhase] ? POINTS[curPhase][0] : "YOUR RECORD").split(" "), line = "", ly = 142;
+          for (var w2 = 0; w2 < words.length; w2++) {
+            if ((line + " " + words[w2]).trim().length > 11 && line) { vctx.fillText(line.trim(), rx + 14, ly); ly += 23; line = ""; }
+            line += " " + words[w2];
+          }
+          if (line.trim()) { vctx.fillText(line.trim(), rx + 14, ly); ly += 23; }
+          vctx.fillStyle = "#2ee6a8"; vctx.font = "800 44px sans-serif"; vctx.fillText(count.textContent || "—", rx + 14, ly + 40);
+          vctx.fillStyle = "rgba(190,205,220,0.85)"; vctx.font = "700 15px sans-serif";
+          vctx.fillText(pstatus ? pstatus.textContent : "READING", rx + 14, ly + 66);
+          vctx.strokeStyle = "rgba(120,140,160,0.35)"; vctx.beginPath(); vctx.moveTo(rx + 14, ly + 84); vctx.lineTo(rx + rail - 30, ly + 84); vctx.stroke();
+          var ry2 = ly + 118;
+          function railRead(lab, val, gold) {
+            vctx.fillStyle = "rgba(190,205,220,0.7)"; vctx.font = "600 14px sans-serif"; vctx.fillText(lab, rx + 14, ry2);
+            vctx.fillStyle = gold ? "#ffc44d" : "#fff"; vctx.font = "800 19px sans-serif"; vctx.fillText(val, rx + 14, ry2 + 24);
+            ry2 += 56;
+          }
+          railRead("TEMPO", locked.bpm && READ && READ.bpm ? READ.bpm + " BPM" : "···", locked.bpm);
+          railRead("KEY", locked.key && READ && READ.keyRoot ? (READ.keyRoot + " " + (READ.keyMode || "")).toUpperCase() : "···", locked.key);
+          railRead("HOOK LANDS", locked.hook && READ && READ.hookStartSec != null ? Math.floor(READ.hookStartSec / 60) + ":" + String(Math.round(READ.hookStartSec % 60)).padStart(2, "0") : "···", locked.hook);
+          railRead("TRUE PEAK", peak > 0 ? (20 * Math.log10(peak)).toFixed(1) + " dB" : "···", false);
+          vctx.fillStyle = "rgba(190,205,220,0.7)"; vctx.font = "600 15px sans-serif";
+          vctx.fillText("FED BY YOUR", rx + 14, H - 64);
+          vctx.fillText("RECORD, LIVE", rx + 14, H - 42);
+        }
         (function loop() {
           if (done) return; raf = requestAnimationFrame(loop);
           anM.getByteFrequencyData(freq);
@@ -3514,6 +3681,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
           elS.textContent = (20 * Math.log10(Math.max(smooth, 0.0001))).toFixed(1);
           if (nSamp > 0) elI.textContent = (20 * Math.log10(Math.max(Math.sqrt(sumSq / nSamp), 0.0001))).toFixed(1);
           elP.textContent = peak > 0 ? (20 * Math.log10(peak)).toFixed(1) : "—";
+          if (vizOn) drawViz(rL, rR);
         })();
       } catch (e) { /* meters unavailable in this browser — the reading clock still runs */ }
       (function tick() {
@@ -3557,6 +3725,10 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
           procOn = true;
           deck.style.display = "none";
           proc.style.display = "block";
+          // The screen rolls over to the Visualizer for the loading
+          // and analysis stretch (owner, Nov 2, 2026).
+          vizOn = true;
+          if (screenTrack) screenTrack.style.transform = "translateY(-50%)";
         }
         if (procOn) {
           count.textContent = Math.round(p * 100) + "%";
@@ -3568,7 +3740,8 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
               pstatus.style.color = "#ffc44d";
               count.textContent = "100%";
               ppoint.textContent = "Your 15-point evaluation is ready.";
-              setTimeout(finish, 900);
+              if (screenTrack) screenTrack.style.transform = "translateY(0)";
+              setTimeout(finish, 1400);
             }
             return;
           }
