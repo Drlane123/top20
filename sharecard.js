@@ -93,4 +93,59 @@ function renderCard({ songId, title, artist, coverAbs, standing, chartDate }) {
   });
 }
 
-module.exports = { headlineStanding, chartLabelText, renderCard };
+// Profile share cards (owner, Nov 1, 2026): when an artist shares their
+// profile, Facebook was showing the generic site card — the artist's own
+// photo is served through a storage redirect Facebook's scraper won't
+// follow, so the post came out as a bare link with site branding. This
+// card is served straight from the site as one finished picture: the
+// artist's photo filling the square, their name, city and genre on the
+// lacquer band, and the line that sells the click — their songs play
+// right on the profile page. The click still lands on /artist/<id>.
+function renderProfileCard({ userId, name, city, state, genre, imageAbs, standingLine }) {
+  const key = ["pv1", userId, name, city, state, genre, imageAbs || "none", standingLine || ""].join("|");
+  if (cache.has(key)) return Promise.resolve(cache.get(key));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pcard-"));
+  const put = (n, text) => { const p = path.join(dir, n); fs.writeFileSync(p, cardText(text, 200)); return p; };
+  const fBrand = put("brand.txt", "TOP 20");
+  const fKind = put("kind.txt", "ARTIST PROFILE");
+  const fDomain = put("domain.txt", "HOTTOP20.COM");
+  const fStand = put("stand.txt", standingLine || "INDEPENDENT ARTIST");
+  const fName = put("name.txt", cardText(name, 26));
+  const fMeta = put("meta.txt", cardText([city && state ? `${city}, ${state}` : (city || state || ""), genre || ""].filter(Boolean).join(" · "), 42));
+  const fTag = put("tag.txt", "TAP TO LISTEN — SONGS PLAY ON THIS PAGE");
+  const dt = (file, size, color, x, y) =>
+    `drawtext=fontfile=${FONT}:textfile=${file}:fontsize=${size}:fontcolor=${color}:x=${x}:y=${y}`;
+  const graph = [
+    "[0:v]scale=1200:1200:force_original_aspect_ratio=increase,crop=1200:1200[bg]",
+    "[bg]drawbox=x=0:y=0:w=1200:h=190:color=0x060B1C:t=fill,"
+      + "drawbox=x=0:y=900:w=1200:h=300:color=0x060B1C:t=fill,"
+      + "drawbox=x=0:y=0:w=1200:h=1200:color=0xFFC44D:t=6,"
+      + dt(fBrand, 72, "0xFFC44D", 48, 30) + ","
+      + dt(fKind, 40, "0xFFFFFF", 50, 122) + ","
+      + dt(fDomain, 28, "0x8FA8D8", 905, 46) + ","
+      + dt(fStand, 38, "0xFFC44D", 48, 924) + ","
+      + dt(fName, 64, "0xFFFFFF", 48, 972) + ","
+      + dt(fMeta, 42, "0xCFE0FF", 48, 1054) + ","
+      + dt(fTag, 34, "0xFFC44D", 48, 1120)
+      + "[out]",
+  ].join(";");
+  const out = path.join(dir, "pcard.jpg");
+  const args = imageAbs
+    ? ["-y", "-i", imageAbs, "-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-q:v", "3", out]
+    : ["-y", "-f", "lavfi", "-i", "color=c=0x0A1230:s=1200x1200", "-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-q:v", "3", out];
+  return new Promise((resolve, reject) => {
+    execFile("ffmpeg", args, { timeout: 30000 }, (err) => {
+      let buf = null, readErr = err;
+      if (!err) {
+        try { buf = fs.readFileSync(out); } catch (e) { readErr = e; }
+      }
+      try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* temp cleanup */ }
+      if (readErr) return reject(readErr);
+      if (cache.size > 200) cache.clear();
+      cache.set(key, buf);
+      resolve(buf);
+    });
+  });
+}
+
+module.exports = { headlineStanding, chartLabelText, renderCard, renderProfileCard };

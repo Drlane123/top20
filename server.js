@@ -722,7 +722,7 @@ function layout(title, active, body, opts = {}) {
 <meta property="og:description" content="${esc(ogDesc)}">
 <meta property="og:type" content="${esc(ogType)}">
 <meta property="og:site_name" content="TOP 20">${meta.image ? `
-<meta property="og:image" content="${esc(meta.image)}">${meta.image.includes("/card/") ? `
+<meta property="og:image" content="${esc(meta.image)}">${meta.image.includes("/card/") || meta.image.includes("/pcard/") ? `
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="1200">
 <meta property="og:image:type" content="image/jpeg">` : ""}${meta.imageW ? `
@@ -2561,6 +2561,64 @@ app.get("/card/:id.jpg", async (req, res) => {
   }
 });
 
+// Profile share card (owner, Nov 1, 2026): the picture Facebook shows when
+// an artist shares their profile. The artist's raw photo is served through
+// a storage redirect that Facebook's scraper won't follow, so posts came
+// out as the generic site card; this renders one finished card straight
+// from the site (200, image bytes, no redirect) — photo, name, city,
+// genre, best standing, and "songs play on this page". The source photo
+// is read locally when present, else pulled from storage by the server
+// itself. Any failure falls back to the photo/cover path, never a
+// broken image.
+app.get("/pcard/:id.jpg", async (req, res) => {
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
+  if (!user || !hasProfile(user)) return res.status(404).end();
+  const songs = db.prepare("SELECT id, cover_path FROM songs WHERE artist_id = ? AND status = 'live' ORDER BY id").all(user.id);
+  const candidates = [user.photo_path, ...(songs.map((s) => s.cover_path))].filter(Boolean);
+  let imageAbs = null, tmpFile = null;
+  for (const cand of candidates) {
+    const local = [path.join(__dirname, "public", cand), path.join(__dirname, cand)].find((p) => fs.existsSync(p));
+    if (local) { imageAbs = local; break; }
+    if (storage.configured()) {
+      try {
+        const bytes = await storage.getObject(String(cand).replace(/^\//, ""));
+        if (bytes && bytes.length) {
+          const ext = (path.extname(cand) || ".jpg").toLowerCase();
+          tmpFile = path.join(require("node:os").tmpdir(), `pcard-src-${user.id}${ext}`);
+          fs.writeFileSync(tmpFile, bytes);
+          imageAbs = tmpFile;
+          break;
+        }
+      } catch { /* try the next candidate */ }
+    }
+  }
+  let standingLine = null;
+  try {
+    let bestRow = null, bestScore = null;
+    for (const s of songs) {
+      const row = sharecard.headlineStanding(db, s.id);
+      if (!row) continue;
+      const score = [row.level === "national" && row.genre === "Overall" ? 0 : row.level === "national" ? 1 : 2, row.rank];
+      if (!bestScore || score[0] < bestScore[0] || (score[0] === bestScore[0] && score[1] < bestScore[1])) { bestRow = row; bestScore = score; }
+    }
+    if (bestRow) standingLine = `#${bestRow.rank} · ${sharecard.chartLabelText(bestRow)} · TOP ${bestRow.rank <= 20 ? 20 : 100}`;
+  } catch { standingLine = null; }
+  try {
+    const buf = await sharecard.renderProfileCard({
+      userId: user.id, name: user.name, city: user.city, state: user.state,
+      genre: user.genre, imageAbs, standingLine,
+    });
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(buf);
+  } catch {
+    if (candidates[0]) return res.redirect(candidates[0]);
+    return res.redirect("/fb-poster.jpg");
+  } finally {
+    if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* temp cleanup */ } }
+  }
+});
+
 app.get("/song/:id", (req, res) => {
   const song = db.prepare(`
     SELECT s.*, u.name AS artist, u.city, u.state, u.email
@@ -3203,6 +3261,17 @@ app.get("/artist/:id", (req, res) => {
     user.age != null ? `Age ${user.age}` : "", // age shows ONLY when the artist set it
   ].filter(Boolean).join(" · ");
   const profileVideo = artistVideo(user.id);
+  // Profile sharing (owner fix, Nov 1, 2026): the post must open as the
+  // ARTIST — their card picture (served by /pcard, no storage redirect
+  // for Facebook to choke on) and their name — and the click lands here,
+  // where the songs play. The button opens the same pick-where-it-goes
+  // menu the song pages use; the phone's bare share sheet alone was
+  // posting a naked link with the generic site card.
+  const profileUrlAbs = absUrl(req, `/artist/${user.id}`);
+  const profileWords = `${user.name} on TOP 20 — my songs play right on my profile. Tap to listen:`;
+  const encProfileUrl = encodeURIComponent(profileUrlAbs);
+  const encProfileWords = encodeURIComponent(profileWords);
+  const encProfileWa = encodeURIComponent(`${profileWords} ${profileUrlAbs}`);
   const body = `
   ${req.query.saved ? `<div class="panel" style="border-left:3px solid #7dff9a"><p class="sub" style="margin:0;color:#c9ffd6">✓ <b style="color:#fff">Profile saved.</b> This page is yours — come back any time, and add songs whenever you're ready.</p></div>` : ""}
   <div class="panel">
@@ -3221,6 +3290,17 @@ app.get("/artist/:id", (req, res) => {
       return links.length ? `<p class="sub" style="margin-top:8px"><b style="color:#fff">Find them:</b> ${links.join(" · ")}</p>` : "";
     })()}
     <p style="margin:12px 0 2px"><button class="btn" type="button" id="profileShareBtn">⤴ Share this profile</button> <span class="sub" id="profileShareMsg"></span></p>
+    <div id="profileShareMenu" class="panel" style="display:none;padding:12px;margin-top:8px">
+      <p class="sub" style="margin:0 0 10px"><b style="color:#fff">Share my profile</b> — pick where it goes. The post shows your picture and your name, and anyone who taps it lands right here, where your songs play.</p>
+      <div style="display:grid;gap:8px">
+        <a data-dest="facebook" target="_blank" rel="noopener" href="https://www.facebook.com/sharer/sharer.php?u=${encProfileUrl}" style="display:block;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700;text-decoration:none">📘&nbsp; Share to Facebook</a>
+        <a data-dest="whatsapp" target="_blank" rel="noopener" href="https://wa.me/?text=${encProfileWa}" style="display:block;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700;text-decoration:none">💬&nbsp; Share to WhatsApp</a>
+        <a data-dest="x" target="_blank" rel="noopener" href="https://twitter.com/intent/tweet?text=${encProfileWords}&url=${encProfileUrl}" style="display:block;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700;text-decoration:none">✖️&nbsp; Share to X</a>
+        <button type="button" id="profileShareCopy" style="display:block;width:100%;font:inherit;text-align:left;cursor:pointer;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700">🔗&nbsp; Copy the link</button>
+        <button type="button" id="profileShareNative" style="display:none;width:100%;font:inherit;text-align:left;cursor:pointer;padding:13px 14px;border-radius:10px;border:1px solid #3a4a6b;background:#0d1730;color:#fff;font-weight:700">📲&nbsp; More options — Instagram and more</button>
+      </div>
+      <p class="note" style="margin:10px 0 0">Instagram sits under "More options" — that opens the share panel built into the phone, where Instagram lives.</p>
+    </div>
     <p class="sub" style="margin:6px 0 0">Send this page to your people — your songs play right here on the profile, no chart needed.</p>
   </div>
   ${user.bio ? `<div class="panel"><h2 style="margin-top:0">About</h2><p class="sub" style="white-space:pre-wrap">${esc(user.bio)}</p></div>` : ""}
@@ -3240,15 +3320,40 @@ app.get("/artist/:id", (req, res) => {
       });
     });
     var btn = document.getElementById('profileShareBtn');
-    if (btn) btn.addEventListener('click', function () {
-      var url = location.origin + location.pathname;
-      var msg = document.getElementById('profileShareMsg');
-      var data = { title: document.title, text: document.title + ' — press play right on the profile: ', url: url };
-      if (navigator.share) { navigator.share(data).catch(function () {}); }
-      else if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(url).then(function () { if (msg) msg.textContent = 'Link copied — paste it anywhere.'; }).catch(function () { if (msg) msg.textContent = url; });
-      } else if (msg) { msg.textContent = url; }
-    });
+    var menu = document.getElementById('profileShareMenu');
+    var msg = document.getElementById('profileShareMsg');
+    var url = location.origin + '/artist/${user.id}';
+    if (btn && menu) {
+      btn.addEventListener('click', function () {
+        var open = menu.style.display !== 'none';
+        menu.style.display = open ? 'none' : 'block';
+        if (!open) menu.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      });
+      var dests = menu.querySelectorAll('[data-dest]');
+      for (var i = 0; i < dests.length; i++) {
+        dests[i].addEventListener('click', function () { if (msg) msg.textContent = 'Opening your pick — your post carries your picture and your name.'; });
+      }
+      var copyBtn = document.getElementById('profileShareCopy');
+      if (copyBtn) copyBtn.addEventListener('click', function () {
+        function done() { if (msg) msg.textContent = 'Link copied — paste it anywhere.'; }
+        if (navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(url).then(done).catch(function () { fallbackCopyP(done); }); }
+        else fallbackCopyP(done);
+      });
+      function fallbackCopyP(done) {
+        var ta = document.createElement('textarea');
+        ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta); done();
+      }
+      var nativeBtn = document.getElementById('profileShareNative');
+      if (nativeBtn && navigator.share) {
+        nativeBtn.style.display = 'block';
+        nativeBtn.addEventListener('click', function () {
+          navigator.share({ title: document.title, text: ${JSON.stringify(profileWords)}, url: url }).catch(function () {});
+        });
+      }
+    }
   })();
   </script>`;
   res.send(layout(user.name, "profile", body, {
@@ -3256,7 +3361,7 @@ app.get("/artist/:id", (req, res) => {
       title: `${user.name} — TOP 20 Artist`,
       description: `${user.name} · ${user.city}, ${user.state}${user.genre ? ` · ${user.genre}` : ""}. ${user.bio ? user.bio.slice(0, 140) : "Independent artist on TOP 20 — judged on craft, ranked daily."}`,
       type: "profile",
-      image: absUrl(req, user.photo_path || (songs[0] && songs[0].cover_path) || ""),
+      image: absUrl(req, `/pcard/${user.id}.jpg`),
     },
   }));
 });
