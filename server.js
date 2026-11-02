@@ -4325,6 +4325,18 @@ app.get("/viewcast/backdrop/:key.jpg", (req, res) => {
   res.send(buf);
 });
 
+/* Foreground layers for the desk sets: the desk band of the same photo,
+   drawn over the person so they stand behind the mixer (owner, Nov 1). */
+const VIEWCAST_FG = require("./viewcast-fg-data");
+const fgBuf = {};
+for (const k of Object.keys(VIEWCAST_FG)) fgBuf[k] = Buffer.from(VIEWCAST_FG[k].split(",")[1], "base64");
+app.get("/viewcast/foreground/:key.webp", (req, res) => {
+  const buf = fgBuf[req.params.key];
+  if (!buf) return res.status(404).end();
+  res.set({ "Content-Type": "image/webp", "Cache-Control": "public, max-age=86400" });
+  res.send(buf);
+});
+
 const viewcastUpload = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => cb(null, VIEWCAST_UP),
@@ -4423,11 +4435,13 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   var video = document.getElementById('vcam'), canvas = document.getElementById('vstage'), ctx = canvas.getContext('2d');
   var W = 1280, H = 720, stream = null, facing = 'user', micTrack = null;
   var seg = null, segBusy = false, mode = 'virtual';
-  var currentSet = 'podcast', backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/podcast.jpg';
+  var currentSet = 'graffiti', backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/graffiti.jpg';
+  var fgImg = new Image(); fgImg.src = '/viewcast/foreground/graffiti.webp';
   var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
   function setStatus(t) { document.getElementById('vstatus').textContent = t; }
   function pickSet(key) {
     currentSet = key; backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/' + key + '.jpg';
+    fgImg = new Image(); fgImg.src = '/viewcast/foreground/' + key + '.webp';
     var btns = document.querySelectorAll('.vset');
     for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-key') === key) ? '#f2c14e' : '#232a45';
   }
@@ -4613,19 +4627,46 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     ctx.fillStyle = '#f2c14e'; ctx.font = '800 ' + Math.round(H * 0.024) + 'px Arial'; ctx.textBaseline = 'middle';
     ctx.fillText('GUEST', x + 10, y + bh / 2 + 1);
   }
+  // Scene depth (owner, Nov 1): three layers — the wall behind, the
+  // person in the middle, and for the desk sets the desk itself in
+  // front, so the host stands BEHIND the mixer. A soft ground shadow
+  // at the desk line seats them into the room.
+  var DESK_LINE = { graffiti: 0.84, neon: 0.70, blue: 0.65, radio: 0.86 };
+  function drawDeskShadow() {
+    var f = DESK_LINE[currentSet];
+    if (!f) return;
+    var gy = H * f, R = W * 0.30;
+    var grd = ctx.createRadialGradient(W / 2, gy, 8, W / 2, gy, R);
+    grd.addColorStop(0, 'rgba(0,0,0,.40)');
+    grd.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.save();
+    ctx.translate(W / 2, gy); ctx.scale(1, 0.15); ctx.translate(-W / 2, -gy);
+    ctx.fillStyle = grd;
+    ctx.fillRect(W / 2 - R, gy - R, R * 2, R * 2);
+    ctx.restore();
+  }
   function composeFrame() {
     ctx.save(); ctx.clearRect(0, 0, W, H);
     if (mode === 'frame') {
       ctx.drawImage(hostC, 0, 0, W, H);
     } else {
       drawCoverCtx(ctx, backdropImg, 0, 0, W, H);
+      drawDeskShadow();
       if (guestOn && layoutMode === 'split') drawCoverCtx(ctx, hostC, 30, 30, W * 0.52, H - 60);
       else ctx.drawImage(hostC, 0, 0, W, H);
+      if (fgImg && fgImg.complete && fgImg.naturalWidth) ctx.drawImage(fgImg, 0, 0, W, H);
     }
     ctx.restore();
     drawGuestWin();
     drawChrome();
   }
+  var VC_TINT = {
+    graffiti: 'brightness(.97) saturate(1.06)', neon: 'brightness(.97) saturate(1.05)',
+    led: 'brightness(.96) saturate(1.02)', rnb: 'brightness(.98) saturate(1.05)',
+    radio: 'brightness(.97) sepia(.12)', teal: 'brightness(.98)',
+    blue: 'brightness(.96) saturate(1.03)', leather: 'brightness(.97) sepia(.10)',
+    soul: 'brightness(.97) sepia(.14)'
+  };
   var maskC = document.createElement('canvas'), maskX = maskC.getContext('2d');
   var prevC = document.createElement('canvas'), prevX = prevC.getContext('2d');
   initSeg = function () {
@@ -4658,7 +4699,11 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         hctx.drawImage(maskC, 0, 0, W, H);
         try { hctx.filter = 'none'; } catch (e) {}
         hctx.globalCompositeOperation = 'source-in';
+        // Light match: grade the person with the room's own light so
+        // they read as lit BY the set, not pasted onto it.
+        try { hctx.filter = VC_TINT[currentSet] || 'none'; } catch (e) {}
         hctx.drawImage(results.image, 0, 0, W, H);
+        try { hctx.filter = 'none'; } catch (e) {}
         hctx.restore();
       });
     } catch (e) { seg = null; mode = 'frame'; }
@@ -4802,7 +4847,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
 app.post("/admin/viewcast/upload", requireAdmin, viewcastUpload.single("video"), async (req, res) => {
   if (!req.file) return res.status(400).json({ ok: false, error: "No video came through — record a take and try again." });
   const title = String(req.body.title || "").trim().slice(0, 120) || "Viewcast episode";
-  const backdrop = VIEWCAST_KEYS.includes(req.body.backdrop) ? req.body.backdrop : "podcast";
+  const backdrop = VIEWCAST_KEYS.includes(req.body.backdrop) ? req.body.backdrop : "graffiti";
   const stamp = Date.now();
   const mp4Name = `episode-${stamp}.mp4`;
   const posterName = `episode-${stamp}.jpg`;
