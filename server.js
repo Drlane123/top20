@@ -3083,7 +3083,8 @@ app.get("/upload", (req, res) => {
       <label>Your email (must match your profile)<input name="email" type="email" required maxlength="120" value="${esc(checkEmail)}"></label>
       <label>Genre<select name="genre">${GENRES.map((g) => `<option value="${esc(g)}">${esc(g)}</option>`).join("")}</select></label>
       <label>Lyrics (optional)<textarea name="lyrics" rows="4"></textarea></label>
-      <label>Audio file — required, radio quality only<input name="audio" type="file" accept="audio/*" required></label>
+      <label>Audio file — required, radio quality only<input name="audio" type="file" accept="audio/*" required onchange="t20Picked(this,'upPicked')"></label>
+      <p class="note" id="upPicked" style="font-size:15px"></p>
       <p class="note">Radio quality only: WAV or FLAC, or MP3 / M4A at 192 kbps or better — the same quality radio stations send and accept. Lower-quality files are turned away.</p>
       <label>Cover art — REQUIRED<input name="cover" type="file" accept="image/*" required></label>
       <p class="note">No cover, no upload, no judging, no chart. Every song must have its CD-style cover.</p>
@@ -3105,9 +3106,39 @@ app.get("/upload", (req, res) => {
           <span><b style="color:#fff">I agree to the Terms &amp; Conditions.</b> I am the artist or an authorized label representative for this song, and I grant Hot Top 20 exclusive permission to add and play it on this platform. My consent is recorded with this upload.</span>
         </label>
       </div>
-      <button class="btn btn-blue btn-block" type="submit">Upload &amp; get judged</button>
+      <button class="btn btn-blue btn-block" type="submit" onclick="return t20Go(this,'upStatus','upPicked')">Upload &amp; get judged</button>
+      <p class="note" id="upStatus" style="display:none;color:#9fe8b6;font-size:15px">⏳ Your song is uploading, then the analyzer reads it — a full song can take a minute or two. Keep this page open; your evaluation appears right here.</p>
+      <div id="upProg" style="display:none;margin-top:10px"><div style="height:16px;border:1px solid rgba(120,190,255,.5);border-radius:8px;overflow:hidden;background:rgba(255,255,255,.08)"><div id="upBar" style="height:100%;width:0%;background:linear-gradient(90deg,#2f7bff,#57c7ff)"></div></div><p class="note" id="upProgTxt" style="font-size:15px;color:#cfe8ff;margin-top:6px"></p></div>
     </form>
-  </div>`;
+  </div>
+  <style>@keyframes t20slide{0%{transform:translateX(-110%)}100%{transform:translateX(310%)}}</style>
+  <script>
+  function t20Picked(inp,outId){var s=document.getElementById(outId);if(!s)return;if(inp.files&&inp.files.length){var f=inp.files[0];s.textContent="✔ Picked: "+f.name+" ("+(f.size/1048576).toFixed(1)+" MB) — now tap the button below.";s.style.color="#9fe8b6";}}
+  function t20Go(btn,statusId,pickedId){
+    var form=btn.form;if(!form)return true;
+    if(window.__t20sent)return false;
+    var inp=form.querySelector('input[type=file][name=audio]');
+    if(inp&&(!inp.files||!inp.files.length)){var s=document.getElementById(pickedId);if(s){s.textContent="⚠ Pick your audio file first — tap the Audio file box and choose your record, then tap the button again.";s.style.color="#ffd98a";}if(inp.scrollIntoView)inp.scrollIntoView({block:"center"});return false;}
+    if(!form.checkValidity()){form.reportValidity();return false;}
+    window.__t20sent=true;btn.style.opacity=".65";btn.textContent="⏳ Loading your record — keep this page open…";
+    var st=document.getElementById(statusId);if(st)st.style.display="block";
+    t20Send(form,pickedId.replace("Picked",""));
+    return false;
+  }
+  function t20Send(form,pre){
+    var prog=document.getElementById(pre+"Prog"),bar=document.getElementById(pre+"Bar"),txt=document.getElementById(pre+"ProgTxt");
+    if(!window.XMLHttpRequest||!window.FormData){form.submit();return;}
+    if(prog)prog.style.display="block";
+    if(txt)txt.textContent="⬆ Uploading your record — 0%. Keep this page open.";
+    var xhr=new XMLHttpRequest();
+    xhr.open("POST",form.action,true);
+    xhr.upload.onprogress=function(e){if(e.lengthComputable){var pct=Math.round(e.loaded*100/e.total);if(bar){bar.style.animation="none";bar.style.transform="none";bar.style.width=pct+"%";}if(txt)txt.textContent="⬆ Uploading your record — "+pct+"% ("+(e.loaded/1048576).toFixed(1)+" of "+(e.total/1048576).toFixed(1)+" MB). Keep this page open.";}};
+    xhr.upload.onload=function(){if(bar){bar.style.width="35%";bar.style.animation="t20slide 1.1s ease-in-out infinite alternate";}if(txt)txt.textContent="✔ Your record is up — the analyzer is reading it now. A full song can take a minute or two; your read appears right here.";};
+    xhr.onload=function(){document.open();document.write(xhr.responseText);document.close();};
+    xhr.onerror=function(){if(txt)txt.textContent="The connection stumbled — sending the regular way…";form.submit();};
+    try{xhr.send(new FormData(form));}catch(err){form.submit();}
+  }
+  </script>`;
   res.send(layout("Upload", "upload", body));
 });
 
@@ -5397,14 +5428,45 @@ app.get("/admin/quickload", requireAdmin, (req, res) => {
   <h1>⚡ Quick Load</h1>
   <p class="sub">Your private test lane. Load a record and watch it run the full analyzer and the 15-Point Scale — <b style="color:#fff">no profile, no chart, nothing public</b>. The read is the real one, from the same machine that judges uploads.</p>
   <form class="panel" method="post" action="/admin/quickload" enctype="multipart/form-data">
-    <label>Audio file — required, radio quality (WAV or FLAC, or MP3 / M4A at 192 kbps or better)<input name="audio" type="file" accept="audio/*" required></label>
+    <label>Audio file — required, radio quality (WAV or FLAC, or MP3 / M4A at 192 kbps or better)<input name="audio" type="file" accept="audio/*" required onchange="t20Picked(this,'qlPicked')"></label>
+    <p class="note" id="qlPicked" style="font-size:15px"></p>
     <label>Song title — optional (blank = the file's name)<input name="title" maxlength="120" placeholder="Optional"></label>
     <label>Genre — the reference chart the record is measured against<select name="genre">${GENRES.map((g) => `<option value="${esc(g)}"${g === "R&B" ? " selected" : ""}>${esc(g)}</option>`).join("")}</select></label>
     <label>Cover art — optional (blank = the cover point reads as no cover)<input name="cover" type="file" accept="image/*"></label>
     <label>Lyrics — optional (paste them and the Lyrical Quality point reads your words)<textarea name="lyrics" rows="5" placeholder="Optional"></textarea></label>
-    <p style="margin-top:14px"><button class="btn btn-blue btn-block" type="submit" style="font-size:16px;padding:13px">▶ Load it — run the analyzer</button></p>
+    <p style="margin-top:14px"><button class="btn btn-blue btn-block" type="submit" style="font-size:16px;padding:13px" onclick="return t20Go(this,'qlStatus','qlPicked')">▶ Load it — run the analyzer</button></p>
+    <p class="note" id="qlStatus" style="display:none;color:#9fe8b6;font-size:15px">⏳ Your record is uploading, then the analyzer reads it — a full song can take a minute or two. Keep this page open; your read appears right here.</p>
+    <div id="qlProg" style="display:none;margin-top:10px"><div style="height:16px;border:1px solid rgba(120,190,255,.5);border-radius:8px;overflow:hidden;background:rgba(255,255,255,.08)"><div id="qlBar" style="height:100%;width:0%;background:linear-gradient(90deg,#2f7bff,#57c7ff)"></div></div><p class="note" id="qlProgTxt" style="font-size:15px;color:#cfe8ff;margin-top:6px"></p></div>
   </form>
-  <p class="note">Private to this desk: the song is not saved to the charts and nobody can find it. Load as many as you want. A full-length record can take a minute or two to read — keep this page open while it works.</p>`));
+  <p class="note">Private to this desk: the song is not saved to the charts and nobody can find it. Load as many as you want. A full-length record can take a minute or two to read — keep this page open while it works.</p>
+  <style>@keyframes t20slide{0%{transform:translateX(-110%)}100%{transform:translateX(310%)}}</style>
+  <script>
+  function t20Picked(inp,outId){var s=document.getElementById(outId);if(!s)return;if(inp.files&&inp.files.length){var f=inp.files[0];s.textContent="✔ Picked: "+f.name+" ("+(f.size/1048576).toFixed(1)+" MB) — now tap the button below.";s.style.color="#9fe8b6";}}
+  function t20Go(btn,statusId,pickedId){
+    var form=btn.form;if(!form)return true;
+    if(window.__t20sent)return false;
+    var inp=form.querySelector('input[type=file][name=audio]');
+    if(inp&&(!inp.files||!inp.files.length)){var s=document.getElementById(pickedId);if(s){s.textContent="⚠ Pick your audio file first — tap the Audio file box and choose your record, then tap the button again.";s.style.color="#ffd98a";}if(inp.scrollIntoView)inp.scrollIntoView({block:"center"});return false;}
+    if(!form.checkValidity()){form.reportValidity();return false;}
+    window.__t20sent=true;btn.style.opacity=".65";btn.textContent="⏳ Loading your record — keep this page open…";
+    var st=document.getElementById(statusId);if(st)st.style.display="block";
+    t20Send(form,pickedId.replace("Picked",""));
+    return false;
+  }
+  function t20Send(form,pre){
+    var prog=document.getElementById(pre+"Prog"),bar=document.getElementById(pre+"Bar"),txt=document.getElementById(pre+"ProgTxt");
+    if(!window.XMLHttpRequest||!window.FormData){form.submit();return;}
+    if(prog)prog.style.display="block";
+    if(txt)txt.textContent="⬆ Uploading your record — 0%. Keep this page open.";
+    var xhr=new XMLHttpRequest();
+    xhr.open("POST",form.action,true);
+    xhr.upload.onprogress=function(e){if(e.lengthComputable){var pct=Math.round(e.loaded*100/e.total);if(bar){bar.style.animation="none";bar.style.transform="none";bar.style.width=pct+"%";}if(txt)txt.textContent="⬆ Uploading your record — "+pct+"% ("+(e.loaded/1048576).toFixed(1)+" of "+(e.total/1048576).toFixed(1)+" MB). Keep this page open.";}};
+    xhr.upload.onload=function(){if(bar){bar.style.width="35%";bar.style.animation="t20slide 1.1s ease-in-out infinite alternate";}if(txt)txt.textContent="✔ Your record is up — the analyzer is reading it now. A full song can take a minute or two; your read appears right here.";};
+    xhr.onload=function(){document.open();document.write(xhr.responseText);document.close();};
+    xhr.onerror=function(){if(txt)txt.textContent="The connection stumbled — sending the regular way…";form.submit();};
+    try{xhr.send(new FormData(form));}catch(err){form.submit();}
+  }
+  </script>`));
 });
 
 // If the file can't even get through the door (over the size cap,
