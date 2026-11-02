@@ -5188,9 +5188,44 @@ async function snapshotDb(reason) {
   // one — that failure mode silently froze the record book in the past.
   if (snapBusy && Date.now() - snapSince < 60000) return;
   snapBusy = true; snapSince = Date.now();
+  const tmp = DB_PATH + ".snap";
   try {
-    db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
-    await storage.putFile("db/top20.db", DB_PATH, "application/octet-stream");
+    // Seal the book with VACUUM INTO — a consistent copy that includes
+    // everything still sitting in the write-ahead log. (The old way —
+    // checkpoint the file, then upload the file — could silently leave
+    // the newest saves out of the upload; artists' profiles vanished
+    // on the next deploy. Owner report, Nov 1.)
+    try { fs.rmSync(tmp, { force: true }); } catch { /* first run */ }
+    db.exec(`VACUUM INTO '${tmp.replace(/'/g, "''")}'`);
+    // Never let a poorer book overwrite a richer one: if the bucket's
+    // copy holds MORE artists/songs/episodes than this one, this
+    // instance lost its restore — refuse to seal that loss in.
+    try {
+      const mine = db.prepare(
+        "SELECT (SELECT COUNT(*) FROM users) + (SELECT COUNT(*) FROM songs) + (SELECT COUNT(*) FROM viewcast_episodes) AS n"
+      ).get().n;
+      const buf = await storage.getObject("db/top20.db");
+      if (buf && buf.length > 4096) {
+        const probePath = DB_PATH + ".probe";
+        fs.writeFileSync(probePath, buf);
+        try {
+          const { DatabaseSync } = require("node:sqlite");
+          const pdb = new DatabaseSync(probePath, { readOnly: true });
+          const theirs = pdb.prepare(
+            "SELECT (SELECT COUNT(*) FROM users) + (SELECT COUNT(*) FROM songs) + (SELECT COUNT(*) FROM viewcast_episodes) AS n"
+          ).get().n;
+          pdb.close();
+          if (theirs > mine) {
+            console.error(`[storage] snapshot REFUSED (${reason}): bucket book holds ${theirs} records, this one only ${mine}`);
+            try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
+            snapBusy = false;
+            return;
+          }
+        } finally { try { fs.rmSync(probePath, { force: true }); } catch { /* ignore */ } }
+      }
+    } catch (e) { console.error("[storage] snapshot guard check skipped:", e.message); }
+    await storage.putFile("db/top20.db", tmp, "application/octet-stream");
+    try { fs.rmSync(tmp, { force: true }); } catch { /* ignore */ }
     console.log(`[storage] record book snapshotted (${reason})`);
   } catch (e) { console.error("[storage] snapshot failed:", e.message); }
   snapBusy = false;
