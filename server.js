@@ -768,7 +768,7 @@ ${body}
 <footer class="site">TOP 20 — the Stage plays only the Top 20, 24/7.<br>
 Fall off the chart and the rotation moves on. Check your rank on the Dashboard.<br>
 <a href="/how-it-works" style="color:var(--accent);font-weight:700;text-decoration:none">How it works →</a> · <a href="/advertise" style="color:var(--accent);font-weight:700;text-decoration:none">Advertise →</a> · <a href="/terms" style="color:var(--accent);font-weight:700;text-decoration:none">Terms →</a><br>
-<a href="/admin/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">Staff Login</a> · <a href="/dj/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">DJ Login</a></footer>
+<a href="/admin/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">Staff Login</a> · <a href="/dj/login" style="color:#8a8f99;font-size:11.5px;text-decoration:none">DJ Login</a> · <a href="/ar" style="color:#8a8f99;font-size:11.5px;text-decoration:none">A&amp;R Mode</a></footer>
 </div>
 <div class="installbar" id="installBar" role="dialog" aria-label="Install Top 20">
   <img src="/icons/icon-192x192.png" alt="">
@@ -2561,6 +2561,101 @@ app.get("/fb-poster.jpg", (req, res) => {
   res.send(fbPosterBuf);
 });
 
+// A&R EXECUTIVE MODE (owner, Nov 2, 2026 — from the scorecard review
+// Dale brought in): the discovery engine. An executive filters the live
+// catalogue by genre, territory and the 15 points themselves — "South
+// region, Groove & Rhythm over 9, Radio Readiness over 8" — and gets
+// the matching records with their full scorecards one tap away. Every
+// figure is the song's real judged score, the same numbers on its
+// public page. Nothing here is hidden data: it is the public book,
+// searchable the way the industry actually searches.
+app.get("/ar", (req, res) => {
+  const q = req.query;
+  const genre = GENRES.includes(q.genre) ? q.genre : "";
+  const scope = ["regional", "local"].includes(q.scope) ? q.scope : "all";
+  const region = String(q.region || "");
+  const cityKey = String(q.city || "");
+  const crit1 = CATEGORIES.find((c) => c.key === q.crit1) || null;
+  const crit2 = CATEGORIES.find((c) => c.key === q.crit2) || null;
+  const min1 = Math.min(10, Math.max(0, Number(q.min1) || 0));
+  const min2 = Math.min(10, Math.max(0, Number(q.min2) || 0));
+  const minCraft = Math.min(100, Math.max(0, Number(q.craft) || 0));
+  const regions = db.prepare("SELECT DISTINCT region FROM users WHERE region IS NOT NULL AND region <> '' ORDER BY region").all().map((r) => r.region);
+  const cities = db.prepare("SELECT DISTINCT city || ', ' || state AS cs FROM users WHERE city IS NOT NULL AND city <> '' ORDER BY cs").all().map((r) => r.cs);
+  let rows = db.prepare(`
+    SELECT s.id, s.title, s.genre, s.cover_path, u.id AS artist_id, u.name AS artist, u.city, u.state, u.region,
+           j.craft_score, ${CATEGORIES.map((c) => "j." + c.key).join(", ")}
+    FROM songs s JOIN users u ON u.id = s.artist_id JOIN judge_scores j ON j.song_id = s.id
+    WHERE s.status = 'live' ORDER BY j.craft_score DESC`).all();
+  rows = rows.filter((r) =>
+    (!genre || r.genre === genre) &&
+    (scope !== "regional" || !region || r.region === region) &&
+    (scope !== "local" || !cityKey || `${r.city}, ${r.state}` === cityKey) &&
+    (!crit1 || Number(r[crit1.key]) >= min1) &&
+    (!crit2 || Number(r[crit2.key]) >= min2) &&
+    Number(r.craft_score) >= minCraft);
+  const total = rows.length;
+  rows = rows.slice(0, 50);
+  const selStyle = "width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff";
+  const critOptions = (sel) => `<option value="">Any point</option>` + CATEGORIES.map((c) => `<option value="${c.key}" ${sel === c.key ? "selected" : ""}>${esc(c.label)}</option>`).join("");
+  const scoreChips = (r) => {
+    const picks = [];
+    if (crit1) picks.push([crit1, r[crit1.key]]);
+    if (crit2 && crit2.key !== (crit1 && crit1.key)) picks.push([crit2, r[crit2.key]]);
+    if (!picks.length) {
+      const top = CATEGORIES.map((c) => [c, Number(r[c.key])]).sort((a, b) => b[1] - a[1]).slice(0, 3);
+      picks.push(...top);
+    }
+    return picks.map(([c, v]) => `<span style="display:inline-block;margin:0 5px 5px 0;padding:5px 9px;border:1px solid #3a4a6b;border-radius:999px;background:#0a1122;color:#cfe0ff;font-size:12px;white-space:nowrap">${esc(c.label)} <b style="color:#fff">${v}</b></span>`).join("");
+  };
+  const body = `
+  <h1>🎧 A&amp;R Executive Mode</h1>
+  <p class="sub">Search the live catalogue the way the industry searches: by <b style="color:#fff">territory</b> and by the <b style="color:#fff">scores themselves</b>. Every record here was uploaded by an independent artist and judged on the same 15-Point Scale — the numbers below are the numbers on its public scorecard.</p>
+  <form class="panel" method="get" action="/ar">
+    <div class="grid">
+      <div class="field"><label for="argenre">Genre</label>
+        <select id="argenre" name="genre" style="${selStyle}"><option value="">All genres</option>${GENRES.map((g) => `<option value="${esc(g)}" ${genre === g ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></div>
+      <div class="field"><label for="arscope">Territory</label>
+        <select id="arscope" name="scope" style="${selStyle}">
+          <option value="all" ${scope === "all" ? "selected" : ""}>Everywhere</option>
+          <option value="regional" ${scope === "regional" ? "selected" : ""}>By region</option>
+          <option value="local" ${scope === "local" ? "selected" : ""}>By city</option>
+        </select></div>
+      <div class="field"><label for="arregion">Region (when "By region")</label>
+        <select id="arregion" name="region" style="${selStyle}"><option value="">All regions</option>${regions.map((r) => `<option value="${esc(r)}" ${region === r ? "selected" : ""}>${esc(r)}</option>`).join("")}</select></div>
+      <div class="field"><label for="arcity">City (when "By city")</label>
+        <select id="arcity" name="city" style="${selStyle}"><option value="">All cities</option>${cities.map((c) => `<option value="${esc(c)}" ${cityKey === c ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></div>
+      <div class="field"><label for="arcrit1">Score filter 1 — point</label>
+        <select id="arcrit1" name="crit1" style="${selStyle}">${critOptions(crit1 && crit1.key)}</select></div>
+      <div class="field"><label for="armin1">…at least</label>
+        <input id="armin1" type="number" name="min1" min="0" max="10" step="0.5" value="${min1 || ""}" placeholder="e.g. 9" style="${selStyle}"></div>
+      <div class="field"><label for="arcrit2">Score filter 2 — point</label>
+        <select id="arcrit2" name="crit2" style="${selStyle}">${critOptions(crit2 && crit2.key)}</select></div>
+      <div class="field"><label for="armin2">…at least</label>
+        <input id="armin2" type="number" name="min2" min="0" max="10" step="0.5" value="${min2 || ""}" placeholder="e.g. 8" style="${selStyle}"></div>
+      <div class="field"><label for="arcraft">Craft Score at least</label>
+        <input id="arcraft" type="number" name="craft" min="0" max="100" step="1" value="${minCraft || ""}" placeholder="e.g. 75" style="${selStyle}"></div>
+    </div>
+    <button class="btn btn-blue btn-block" type="submit">Search the catalogue</button>
+  </form>
+  <p class="sub">${total} record${total === 1 ? "" : "s"} match${total === 1 ? "es" : ""}${total > 50 ? " — showing the top 50 by Craft Score" : ""}.</p>
+  ${rows.length ? rows.map((r) => {
+    const st = sharecard.headlineStanding(db, r.id);
+    return `<div class="panel" style="padding:14px 16px">
+      <a class="row" href="/song/${r.id}" style="border-bottom:none">
+        <img class="thumb" src="${esc(r.cover_path)}" alt="">
+        <span class="meta"><span class="t">${esc(r.title)}</span><br>
+        <span class="a">${esc(r.artist)} · ${esc(r.city)}, ${esc(r.state)} · ${esc(r.genre)}</span></span>
+        <span style="margin-left:auto;text-align:right;flex:none"><b style="color:#fff;font-size:20px">${r.craft_score}</b><br><span class="note">CRAFT</span></span>
+      </a>
+      <div style="margin-top:8px">${scoreChips(r)}</div>
+      <p class="note" style="margin:4px 0 0">${st ? `Standing: #${st.rank} · ${esc(sharecard.chartLabelText(st))} · ` : ""}<a href="/song/${r.id}" style="color:var(--accent);font-weight:700;text-decoration:none">Full scorecard →</a> · <a href="/artist/${r.artist_id}" style="color:var(--accent);font-weight:700;text-decoration:none">Artist profile →</a></p>
+    </div>`;
+  }).join("") : `<div class="panel"><p class="sub" style="margin:0">No records match that combination yet. Loosen a filter — the catalogue grows every day.</p></div>`}
+  <div class="panel"><p class="sub" style="margin:0">Artists: this is how executives will find you. Your profile and your uploads are <b style="color:#fff">FREE</b> — <a href="/upload" style="color:var(--accent);font-weight:700;text-decoration:none">put your record in the catalogue</a>.</p></div>`;
+  res.send(layout("A&R Executive Mode", "", body));
+});
+
 app.get("/card/:id.jpg", async (req, res) => {
   const song = db.prepare(`
     SELECT s.*, u.name AS artist FROM songs s JOIN users u ON u.id = s.artist_id WHERE s.id = ?
@@ -2599,6 +2694,51 @@ app.get("/card/:id.jpg", async (req, res) => {
     res.end(buf);
   } catch {
     res.redirect(`/pcard/${song.artist_id}.jpg`);
+  } finally {
+    if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* temp cleanup */ } }
+  }
+});
+
+// Bragging plaque (owner, Nov 2, 2026): the tall story-size picture an
+// artist posts to Instagram Stories / TikTok to brag their standing —
+// cover, platinum rank, craft score, brand. Same rules as the share
+// card: only for a song standing in a Top 100 today, cover read as
+// bytes on this machine (disk or bucket), any failure falls back to
+// the square share card rather than a broken image.
+app.get("/badge/:id.jpg", async (req, res) => {
+  const song = db.prepare(`
+    SELECT s.*, u.name AS artist FROM songs s JOIN users u ON u.id = s.artist_id WHERE s.id = ?
+  `).get(req.params.id);
+  if (!song) return res.status(404).end();
+  const standing = sharecard.headlineStanding(db, song.id);
+  if (!standing) return res.redirect(`/card/${song.id}.jpg`);
+  let coverAbs = [path.join(__dirname, "public", song.cover_path), path.join(__dirname, song.cover_path)]
+    .find((p) => fs.existsSync(p));
+  let tmpFile = null;
+  if (!coverAbs && storage.configured()) {
+    try {
+      const bytes = await storage.getObject(String(song.cover_path).replace(/^\//, ""));
+      if (bytes && bytes.length) {
+        const ext = (path.extname(song.cover_path) || ".jpg").toLowerCase();
+        tmpFile = path.join(require("node:os").tmpdir(), `badge-src-${song.id}${ext}`);
+        fs.writeFileSync(tmpFile, bytes);
+        coverAbs = tmpFile;
+      }
+    } catch { /* fall through to the share card */ }
+  }
+  if (!coverAbs) return res.redirect(`/card/${song.id}.jpg`);
+  try {
+    const judge = db.prepare("SELECT craft_score FROM judge_scores WHERE song_id = ?").get(song.id);
+    const buf = await sharecard.renderBadge({
+      songId: song.id, title: song.title, artist: song.artist,
+      coverAbs, standing, chartDate: latestChartDate(db),
+      craftScore: judge ? judge.craft_score : null,
+    });
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(buf);
+  } catch {
+    res.redirect(`/card/${song.id}.jpg`);
   } finally {
     if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* temp cleanup */ } }
   }
@@ -2833,6 +2973,8 @@ app.get("/song/:id", (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">Where it stands</h2>
     ${rankLines(ranks)}
+    ${sharecard.headlineStanding(db, song.id) ? `<p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/badge/${song.id}.jpg" download>🏆 Get my brag plaque</a></p>
+    <p class="note">A tall plaque made for Instagram Stories and TikTok — your cover, your rank, your craft score. Post it and let it brag for you.</p>` : ""}
     <p class="note" style="margin-top:10px">Only the Top 20 plays on the Stage. Any day, this song can pop in.</p>
   </div>
   ${song.lyrics ? `<div class="panel"><h2 style="margin-top:0">Lyrics</h2><p class="sub" style="white-space:pre-wrap">${esc(song.lyrics)}</p></div>` : ""}`;
@@ -3578,6 +3720,7 @@ app.get("/dashboard", (req, res) => {
             <span class="meta"><span class="t">${esc(s.title)}</span><br><span class="a">${esc(s.genre)} · Craft ${s.craft_score}</span></span>
           </a>
           ${rankLines(ranks)}
+          ${sharecard.headlineStanding(db, s.id) ? `<p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/badge/${s.id}.jpg" download>🏆 Get my brag plaque — post it everywhere</a></p>` : ""}
           <form method="post" action="/dashboard/remove" style="margin-top:10px">
             <input type="hidden" name="email" value="${esc(user.email)}">
             <input type="hidden" name="song_id" value="${s.id}">

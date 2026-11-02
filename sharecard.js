@@ -149,4 +149,65 @@ function renderProfileCard({ userId, name, city, state, genre, imageAbs, standin
   });
 }
 
-module.exports = { headlineStanding, chartLabelText, renderCard, renderProfileCard };
+// Bragging plaques (owner, Nov 2, 2026 — from the scorecard review Dale
+// brought in): a TALL 1080x1920 picture made for Instagram Stories and
+// TikTok. Artists love to brag, and every brag carries the brand: the
+// cover fills the frame, the platinum rank rides the top band like the
+// Stage, the bottom band carries title, artist and craft score, and the
+// tagline closes it. Same standing rule as the share card — no standing
+// in a Top 100, no plaque.
+function renderBadge({ songId, title, artist, coverAbs, standing, chartDate, craftScore }) {
+  const top20 = standing.rank <= 20;
+  const key = ["badge1", songId, chartDate, standing.level, standing.genre, standing.region_key, standing.rank, title, artist, craftScore].join("|");
+  if (cache.has(key)) return Promise.resolve(cache.get(key));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "badge-"));
+  const put = (name, text) => { const p = path.join(dir, name); fs.writeFileSync(p, cardText(text, 200)); return p; };
+  const fBrand = put("brand.txt", "TOP 20");
+  const fRank = put("rank.txt", "#" + standing.rank);
+  const fLabel = put("label.txt", chartLabelText(standing));
+  const fTier = put("tier.txt", top20 ? "★ OFFICIAL TOP 20" : "TOP 100");
+  const fTitle = put("title.txt", cardText(title, 22));
+  const fArtist = put("artist.txt", cardText(artist, 28));
+  const fCraft = put("craft.txt", craftScore != null ? `CRAFT SCORE ${craftScore} / 100` : "15-POINT SCALE EVALUATION");
+  const fTag = put("tag.txt", "CHARTS BY CRAFT, NOT JUST CLOUT");
+  const fDomain = put("domain.txt", "HOTTOP20.COM");
+  const rankSize = top20 ? 200 : 160;
+  const digits = String(standing.rank).length;
+  const textX = Math.round(44 + (0.52 + 0.60 * digits) * rankSize + 40);
+  const dt = (file, size, color, x, y) =>
+    `drawtext=fontfile=${FONT}:textfile=${file}:fontsize=${size}:fontcolor=${color}:x=${x}:y=${y}`;
+  const graph = [
+    "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]",
+    "[bg]drawbox=x=0:y=0:w=1080:h=310:color=0x060B1C:t=fill,"
+      + "drawbox=x=0:y=1450:w=1080:h=470:color=0x060B1C:t=fill,"
+      + "drawbox=x=0:y=0:w=1080:h=1920:color=0xFFC44D:t=6,"
+      + dt(fRank, rankSize, "0x54657F", 51, 42) + "," // platinum shadow pass
+      + dt(fRank, rankSize, "0xF4F8FF", 44, 35) + "," // platinum face
+      + dt(fBrand, 62, "0xFFC44D", textX, 44) + ","
+      + dt(fLabel, 38, "0xFFFFFF", textX, 128) + ","
+      + `drawtext=fontfile=${FONT_STAR}:textfile=${fTier}:fontsize=34:fontcolor=0xFFC44D:x=${textX}:y=188` + ","
+      + dt(fTitle, 66, "0xFFFFFF", 44, 1496) + ","
+      + dt(fArtist, 46, "0xCFE0FF", 44, 1588) + ","
+      + dt(fCraft, 40, "0xFFC44D", 44, 1680) + ","
+      + dt(fTag, 30, "0x8FA8D8", 44, 1760) + ","
+      + dt(fDomain, 28, "0x8FA8D8", 44, 1812)
+      + "[out]",
+  ].join(";");
+  const out = path.join(dir, "badge.jpg");
+  return new Promise((resolve, reject) => {
+    execFile("ffmpeg", ["-y", "-i", coverAbs, "-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-q:v", "3", out],
+      { timeout: 30000 }, (err) => {
+        let buf = null, readErr = err;
+        if (!err) {
+          try { buf = fs.readFileSync(out); } catch (e) { readErr = e; }
+        }
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* temp cleanup */ }
+        if (readErr) return reject(readErr);
+        if (cache.size > 200) cache.clear();
+        cache.set(key, buf);
+        resolve(buf);
+      });
+  });
+}
+
+module.exports = { headlineStanding, chartLabelText, renderCard, renderProfileCard, renderBadge };
