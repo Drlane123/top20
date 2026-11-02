@@ -194,6 +194,21 @@ function openDb() {
       removed_at TEXT                       -- set when the owner removes it
     );
 
+    -- Engineer's score corrections (owner, Nov 2, 2026): when a record's
+    -- style doesn't fit the template one of the 15 points is measured
+    -- against, the owner-engineer corrects that ONE point by ear. Every
+    -- correction is written here with its reason — the audit trail that
+    -- keeps the desk honest: what changed, from what, to what, and why.
+    CREATE TABLE IF NOT EXISTS score_corrections (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      song_id INTEGER NOT NULL REFERENCES songs(id),
+      criterion TEXT NOT NULL,              -- CATEGORIES key, e.g. 'mix'
+      old_score REAL NOT NULL,
+      new_score REAL NOT NULL,
+      reason TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS viewcast_episodes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,

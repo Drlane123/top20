@@ -4413,6 +4413,45 @@ app.post("/admin/spotlight", requireAdmin, (req, res) => {
   return back("Spotlight set — it's live on the home page now. Name the next one whenever the 16th Law moves you.");
 });
 
+// ENGINEER'S SCORE CORRECTION (owner, Nov 2, 2026) — the owner's ear over
+// the machine for the one case the analyzer can't hear: a record whose
+// style doesn't fit the template a point is measured against (the first
+// case: a modern dance mix whose low-end design reads "off the curve"
+// against the Dance template band — the owner, 30 years mastering,
+// judged the mix by ear at 8.6 where the template said 4). This corrects
+// ONE of the 15 points; the total and craft score recompute with the
+// judge's own formula, the criterion's note is replaced with the
+// correction note, and the change is written to score_corrections with
+// its reason — on record, never silent. Chart standing follows at the
+// next midnight recalculation, like every score.
+app.post("/admin/score-fix", requireAdmin, (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const songId = Number(req.body.song_id);
+  const key = String(req.body.criterion || "");
+  const cat = CATEGORIES.find((c) => c.key === key);
+  const val = Number(req.body.score);
+  const reason = String(req.body.reason || "").trim().slice(0, 400);
+  if (!cat) return back("Pick one of the 15 points to correct.");
+  if (!(val >= 0 && val <= 10)) return back("The corrected score has to be between 0 and 10.");
+  const row = db.prepare("SELECT * FROM judge_scores WHERE song_id = ?").get(songId);
+  const song = db.prepare("SELECT s.title, u.name AS artist FROM songs s JOIN users u ON u.id = s.artist_id WHERE s.id = ?").get(songId);
+  if (!row || !song) return back("That song has no evaluation on file to correct.");
+  const old = row[key];
+  if (old === val) return back(`"${song.title}" already sits at ${val} on ${cat.label} — nothing changed.`);
+  let notes = {};
+  try { notes = JSON.parse(row.notes || "{}"); } catch { notes = {}; }
+  notes[key] = `Corrected by the owner-engineer (30 years mastering): ${reason || "the measurement template doesn't fit this record's style — judged by ear against the record itself."}`;
+  const total = CATEGORIES.reduce((sum, c) => sum + (c.key === key ? val : Number(row[c.key]) || 0), 0);
+  const totalScore = Math.round(total * 10) / 10;
+  const craftScore = Math.round((totalScore / 150) * 1000) / 10;
+  db.prepare(`UPDATE judge_scores SET ${key} = ?, total_score = ?, craft_score = ?, notes = ? WHERE song_id = ?`)
+    .run(val, totalScore, craftScore, JSON.stringify(notes), songId);
+  db.prepare("INSERT INTO score_corrections (song_id, criterion, old_score, new_score, reason) VALUES (?, ?, ?, ?, ?)")
+    .run(songId, key, old, val, reason);
+  snapshotDb("score-fix");
+  return back(`Corrected: "${song.title}" by ${song.artist} — ${cat.label} ${old} → ${val}. Craft score is now ${craftScore}/100 (total ${totalScore}/150). The new standing lands at the next midnight chart change, and the correction is on record with your reason.`);
+});
+
 // The placement tool: pick any song already uploaded and live, pick a
 // chart and a position, and the song is pinned there on every chart
 // from today until the placement ends or is removed. Scores are never
@@ -4436,6 +4475,11 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   const statusOf = (p) => p.ends_on && latest && p.ends_on < latest ? "ended"
     : latest && p.starts_on > latest ? "starts at midnight tonight" : "on the chart now";
   const adsList = db.prepare("SELECT * FROM ads ORDER BY id DESC").all();
+  const corrections = db.prepare(`
+    SELECT c.*, s.title, u.name AS artist FROM score_corrections c
+    JOIN songs s ON s.id = c.song_id JOIN users u ON u.id = s.artist_id
+    ORDER BY c.id DESC LIMIT 20`).all();
+  const critLabel = (k) => (CATEGORIES.find((c) => c.key === k) || {}).label || k;
   // Cloudflare storage (R2): connection state + what's in the bucket, for
   // the owner's media panel. Degrades to "not set up" when storage is off.
   let mediaState = { configured: false, ok: false, error: null, objects: [], hero: null };
@@ -4506,6 +4550,32 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
         style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
       <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Set the spotlight</button>
     </form>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">🎚️ Engineer's score correction</h2>
+    <p class="sub">Your ear over the machine — for the one case the analyzer can't hear: a record whose <b style="color:#fff">style doesn't fit the template</b> a point is measured against. A modern dance mix reads "off the curve" to the machine and gets a 4 for a mix your ear knows is an 8. Correct that <b style="color:#fff">one point</b> here: the total and craft score recompute on the spot, the new standing lands at the next midnight chart change, the point's note is replaced with your correction note, and the change goes <b style="color:#fff">on record below with your reason</b> — never silent.</p>
+    <form method="post" action="/admin/score-fix">
+      <label class="sub">Song<br>
+      <select name="song_id" required style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        ${songs.map((s) => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
+      </select></label>
+      <label class="sub">The one point to correct<br>
+      <select name="criterion" required style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        ${CATEGORIES.map((c) => `<option value="${c.key}">${esc(c.label)}</option>`).join("")}
+      </select></label>
+      <label class="sub">Corrected score (0–10)<br>
+      <input type="number" name="score" min="0" max="10" step="0.1" required
+        style="width:120px;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
+      <label class="sub">Your reason (goes on record and into the point's note)<br>
+      <input type="text" name="reason" maxlength="400" placeholder="e.g. A modern dance mix — the low-end design is the record's style, not a balance error"
+        style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
+      <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Correct the score</button>
+    </form>
+    ${corrections.length ? `<h3 style="margin:18px 0 4px">Corrections on record</h3>${corrections.map((c) => `
+    <div style="border-bottom:1px solid #22304f;padding:8px 0">
+      <p class="sub" style="margin:0"><b style="color:#fff">${esc(c.title)}</b> — ${esc(c.artist)} · ${esc(critLabel(c.criterion))}: <b style="color:#fff">${c.old_score} → ${c.new_score}</b> · ${esc(String(c.created_at).slice(0, 10))}
+      ${c.reason ? `<br>Reason: ${esc(c.reason)}` : ""}</p>
+    </div>`).join("")}` : `<p class="sub" style="margin:12px 0 0">No corrections yet — the machine's word has stood on every record so far.</p>`}
   </div>
   ${(() => { const pend = adsList.filter((a) => a.status === 'pending'); return pend.length ? `<div class="panel" style="border-color:rgba(255,190,60,.7)"><h2>📥 Ad submissions waiting on you (${pend.length})</h2><p class="sub" style="margin-top:0">Sent from the Advertise page. Watch each one — nothing runs until you approve it.</p>${pend.map((a) => `
     <div style="padding:10px 0;border-bottom:1px solid var(--line)">
