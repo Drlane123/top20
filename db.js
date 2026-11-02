@@ -239,6 +239,7 @@ function openDb() {
   addUserCol("history", "history TEXT");
   addUserCol("years_in_game", "years_in_game INTEGER");
   addUserCol("genre", "genre TEXT");
+  addUserCol("genres", "genres TEXT");
   addUserCol("facebook", "facebook TEXT");
   addUserCol("instagram", "instagram TEXT");
   addUserCol("tiktok", "tiktok TEXT");

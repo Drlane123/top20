@@ -923,6 +923,22 @@ function hasProfile(user) {
   return !!(user && String(user.name || "").trim() && String(user.city || "").trim());
 }
 
+// Artist genres (owner, Nov 1, 2026): a profile carries up to THREE
+// genres — plenty of records live in more than one lane (a rap record
+// can ride Southern Soul too). users.genres holds the comma-joined
+// picks; users.genre stays the FIRST pick (the primary) for every spot
+// that still expects one genre. Profiles saved before the picks existed
+// read as their single primary.
+function genreList(user) {
+  const raw = String((user && user.genres) || "").split(",").map((g) => g.trim()).filter((g) => GENRES.includes(g));
+  const list = [...new Set(raw)].slice(0, 3);
+  if (!list.length && user && GENRES.includes(user.genre)) list.push(user.genre);
+  return list;
+}
+function genreDisplay(user) {
+  return genreList(user).join(", ");
+}
+
 const PROFILE_FIELDS = [
   ["name", "Artist name"], ["city", "Home city"], ["state", "Home state"],
   ["genre", "Genre"], ["photo_path", "Photo"], ["bio", "Bio"],
@@ -2606,7 +2622,7 @@ app.get("/pcard/:id.jpg", async (req, res) => {
   try {
     const buf = await sharecard.renderProfileCard({
       userId: user.id, name: user.name, city: user.city, state: user.state,
-      genre: user.genre, imageAbs, standingLine,
+      genre: genreDisplay(user), imageAbs, standingLine,
     });
     res.setHeader("Content-Type", "image/jpeg");
     res.setHeader("Cache-Control", "public, max-age=3600");
@@ -3095,7 +3111,24 @@ app.get("/profile", (req, res) => {
       <label>Artist name<input name="name" required maxlength="80" value="${esc(user.name || "")}"></label>
       <label>Home city<input name="city" required maxlength="60" value="${esc(user.city || "")}"></label>
       <label>Home state (2 letters)<input name="state" required maxlength="2" style="text-transform:uppercase" value="${esc(user.state || "")}"></label>
-      <label>Your genre<select name="genre"><option value="">— choose —</option>${GENRES.map((g) => `<option value="${esc(g)}" ${user.genre === g ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></label>
+      <div style="margin:14px 0 4px">
+        <p class="sub" style="margin:0 0 4px"><b style="color:#fff">Your genres</b> — pick up to 3 that your music fits. Plenty of records live in more than one lane: if your rap also rides Southern Soul, claim both.</p>
+        ${GENRES.map((g) => `<label style="display:inline-flex;align-items:center;gap:7px;margin:4px 10px 4px 0;font-weight:600"><input type="checkbox" name="genres" value="${esc(g)}" ${genreList(user).includes(g) ? "checked" : ""} style="width:20px;height:20px;accent-color:#f5b921"> ${esc(g)}</label>`).join("")}
+        <p class="note" id="genreCapNote" style="margin:4px 0 0"></p>
+      </div>
+      <script>
+      (function () {
+        var boxes = document.querySelectorAll('input[name="genres"]');
+        var note = document.getElementById('genreCapNote');
+        function cap() {
+          var n = 0; boxes.forEach(function (b) { if (b.checked) n++; });
+          boxes.forEach(function (b) { b.disabled = !b.checked && n >= 3; });
+          if (note) note.textContent = n >= 3 ? 'That is the max — 3 genres. Uncheck one to swap it.' : '';
+        }
+        boxes.forEach(function (b) { b.addEventListener('change', cap); });
+        cap();
+      })();
+      </script>
       <div style="border:1px solid rgba(255,190,60,.45);border-radius:12px;padding:12px 12px 4px;margin:14px 0;background:rgba(255,170,40,.05)">
         <p class="sub" style="margin:0 0 6px"><b style="color:#ffd98a">Where the judging system finds you.</b> Before your songs are judged, the system searches the platforms below to locate you and your music — have your <b style="color:#fff">Facebook, Instagram and TikTok</b> on file before you upload (paste the full link or just your handle). Your profile saves either way — add these whenever you're ready.</p>
         <label>Facebook profile<input name="facebook" maxlength="160" placeholder="facebook.com/yourname or your page link" value="${esc(user.facebook || "")}"></label>
@@ -3149,7 +3182,7 @@ app.get("/my-profile", (req, res) => {
     result = `<div class="panel" style="border-left:3px solid #ffd98a"><p class="sub" style="margin:0;color:#ffe1a8"><b style="color:#fff">Your profile is started, but it isn't public yet.</b> Add your artist name and home city and it goes live.</p><p style="margin:10px 0 0"><a class="btn btn-blue" href="/profile?email=${encodeURIComponent(email)}">Finish my profile</a></p></div>`;
   } else {
     result = `<div class="panel" style="border-left:3px solid #7dff9a">
-      <div style="display:flex;gap:14px;align-items:center">${avatarHtml(user)}<div style="min-width:0"><p class="sub" style="margin:0;color:#c9ffd6">✓ <b style="color:#fff">Your profile is live.</b></p><h2 style="margin:4px 0 0">${esc(user.name)}</h2><p class="sub" style="margin:4px 0 0">${esc(user.city)}, ${esc(user.state)}${user.genre ? ` · ${esc(user.genre)}` : ""}</p></div></div>
+      <div style="display:flex;gap:14px;align-items:center">${avatarHtml(user)}<div style="min-width:0"><p class="sub" style="margin:0;color:#c9ffd6">✓ <b style="color:#fff">Your profile is live.</b></p><h2 style="margin:4px 0 0">${esc(user.name)}</h2><p class="sub" style="margin:4px 0 0">${esc(user.city)}, ${esc(user.state)}${genreList(user).length ? ` · ${esc(genreDisplay(user))}` : ""}</p></div></div>
       <p style="margin:12px 0 0"><a class="btn btn-blue" href="/artist/${user.id}">Open my profile →</a> <a class="btn" href="/profile?email=${encodeURIComponent(email)}" style="margin-left:8px">Edit my profile</a></p>
       <p class="sub" style="margin:8px 0 0">That page is yours — your songs play right on it, and that link works anywhere you share it.</p>
     </div>`;
@@ -3166,7 +3199,14 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
     const n = parseInt(String(v ?? "").trim(), 10);
     return Number.isFinite(n) ? n : null;
   };
-  const genre = GENRES.includes(req.body.genre) ? req.body.genre : user.genre;
+  // Genre picks (owner, Nov 1, 2026): up to 3 checkboxes. The first
+  // pick stays the primary (users.genre) for every one-genre spot; the
+  // full set rides in users.genres. No picks on the form = keep what's
+  // already on file (a save never wipes the artist's genres).
+  const rawGenres = req.body.genres == null ? [] : (Array.isArray(req.body.genres) ? req.body.genres : [req.body.genres]);
+  const picks = [...new Set(rawGenres.map((g) => String(g).trim()).filter((g) => GENRES.includes(g)))].slice(0, 3);
+  const genre = picks.length ? picks[0] : (GENRES.includes(req.body.genre) ? req.body.genre : user.genre);
+  const genresStr = picks.length ? picks.join(",") : (user.genres || null);
   const photoPath = req.file ? `/uploads/photos/${req.file.filename}` : user.photo_path;
   const socials = {
     facebook: String(req.body.facebook || "").trim().slice(0, 160),
@@ -3179,7 +3219,7 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
   // always lands; the artist adds the rest whenever they're ready, and
   // comes back to put songs on the profile whenever a song is ready.
   db.prepare(
-    `UPDATE users SET name = ?, city = ?, state = ?, region = ?, genre = ?, bio = ?,
+    `UPDATE users SET name = ?, city = ?, state = ?, region = ?, genre = ?, genres = ?, bio = ?,
        age = ?, years_in_game = ?, history = ?, photo_path = ?,
        facebook = ?, instagram = ?, tiktok = ?, youtube = ? WHERE id = ?`
   ).run(
@@ -3188,6 +3228,7 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
     state,
     regionForState(state),
     genre || null,
+    genresStr,
     String(req.body.bio || "").trim().slice(0, 600) || null,
     parseOptInt(req.body.age),
     parseOptInt(req.body.years_in_game),
@@ -3256,7 +3297,7 @@ app.get("/artist/:id", (req, res) => {
     : `<p class="sub"><b style="color:#fff">Chart highlights:</b> the first Top 20 entry is still ahead — charts recalculate daily.</p>`;
   const metaBits = [
     `${esc(user.city)}, ${esc(user.state)}`,
-    user.genre ? esc(user.genre) : "",
+    genreList(user).length ? esc(genreDisplay(user)) : "",
     user.years_in_game != null ? `${user.years_in_game} year${user.years_in_game === 1 ? "" : "s"} in the game` : "",
     user.age != null ? `Age ${user.age}` : "", // age shows ONLY when the artist set it
   ].filter(Boolean).join(" · ");
@@ -3359,7 +3400,7 @@ app.get("/artist/:id", (req, res) => {
   res.send(layout(user.name, "profile", body, {
     meta: {
       title: `${user.name} — TOP 20 Artist`,
-      description: `${user.name} · ${user.city}, ${user.state}${user.genre ? ` · ${user.genre}` : ""}. ${user.bio ? user.bio.slice(0, 140) : "Independent artist on TOP 20 — judged on craft, ranked daily."}`,
+      description: `${user.name} · ${user.city}, ${user.state}${genreList(user).length ? ` · ${genreDisplay(user)}` : ""}. ${user.bio ? user.bio.slice(0, 140) : "Independent artist on TOP 20 — judged on craft, ranked daily."}`,
       type: "profile",
       image: absUrl(req, `/pcard/${user.id}.jpg`),
     },

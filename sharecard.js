@@ -111,7 +111,7 @@ function renderProfileCard({ userId, name, city, state, genre, imageAbs, standin
   const fDomain = put("domain.txt", "HOTTOP20.COM");
   const fStand = put("stand.txt", standingLine || "INDEPENDENT ARTIST");
   const fName = put("name.txt", cardText(name, 26));
-  const fMeta = put("meta.txt", cardText([city && state ? `${city}, ${state}` : (city || state || ""), genre || ""].filter(Boolean).join(" · "), 42));
+  const fMeta = put("meta.txt", cardText([city && state ? `${city}, ${state}` : (city || state || ""), genre || ""].filter(Boolean).join(" · "), 48));
   const fTag = put("tag.txt", "TAP TO LISTEN — SONGS PLAY ON THIS PAGE");
   const dt = (file, size, color, x, y) =>
     `drawtext=fontfile=${FONT}:textfile=${file}:fontsize=${size}:fontcolor=${color}:x=${x}:y=${y}`;
