@@ -691,6 +691,7 @@ function layout(title, active, body, opts = {}) {
     ["/charts", "charts", "Charts"],
     ["/upload", "upload", "Upload"],
     ["/profile", "profile", "Profile"],
+    ["/my-profile", "myprofile", "My Profile"],
     ["/dashboard", "dashboard", "Dashboard"],
     ["/djs", "djs", "DJs"],
     ["/viewcast", "viewcast", "Viewcast"],
@@ -2965,8 +2966,48 @@ app.get("/profile", (req, res) => {
     </form>
   </div>
   ${hasProfile(user) ? videoPanelHtml(user, "profile") : ""}
-  ${RULES_PANEL}`;
+  ${RULES_PANEL}
+  <script>try { localStorage.setItem('t20-my-email', ${JSON.stringify(email)}); } catch (e) {}</script>`;
   res.send(layout("Profile", "profile", body));
+});
+
+/* --------------------- My Profile (owner, Nov 1, 2026) ---------------------
+   A check-it-yourself door, right next to Profile in the nav: an artist
+   enters the email they saved with and is told plainly whether their
+   profile is on the site — live (with the door to it), started but not
+   public yet, or not there — instead of guessing why a link 404s. The
+   email is remembered on the phone so the check is one tap next time. */
+app.get("/my-profile", (req, res) => {
+  const email = String(req.query.email || "").trim().toLowerCase();
+  const intro = `
+  <h1>My profile</h1>
+  <p class="sub">Check your artist profile is on TOP 20 — enter the email you saved it with.</p>`;
+  const form = (val) => `
+    <div class="panel">
+      <form method="get" action="/my-profile">
+        <label>Your email<input name="email" type="email" required placeholder="you@example.com" value="${esc(val || "")}"></label>
+        <button class="btn btn-blue btn-block" type="submit">Check my profile</button>
+      </form>
+    </div>`;
+  if (!email) {
+    return res.send(layout("My Profile", "myprofile", `${intro}${form("")}
+  <script>try { var em = localStorage.getItem('t20-my-email'); if (em && !location.search) location.replace('/my-profile?email=' + encodeURIComponent(em)); } catch (e) {}</script>`));
+  }
+  const stash = `<script>try { localStorage.setItem('t20-my-email', ${JSON.stringify(email)}); } catch (e) {}</script>`;
+  const user = db.prepare("SELECT * FROM users WHERE LOWER(email) = ?").get(email);
+  let result;
+  if (!user) {
+    result = `<div class="panel" style="border-left:3px solid #ff9d9d"><p class="sub" style="margin:0;color:#ffb3b3"><b style="color:#fff">No profile under that email yet.</b> If you saved one before, the email has to match the one you used — or create yours now.</p><p style="margin:10px 0 0"><a class="btn btn-blue" href="/profile?email=${encodeURIComponent(email)}">Create my profile</a></p></div>`;
+  } else if (!hasProfile(user)) {
+    result = `<div class="panel" style="border-left:3px solid #ffd98a"><p class="sub" style="margin:0;color:#ffe1a8"><b style="color:#fff">Your profile is started, but it isn't public yet.</b> Add your artist name and home city and it goes live.</p><p style="margin:10px 0 0"><a class="btn btn-blue" href="/profile?email=${encodeURIComponent(email)}">Finish my profile</a></p></div>`;
+  } else {
+    result = `<div class="panel" style="border-left:3px solid #7dff9a">
+      <div style="display:flex;gap:14px;align-items:center">${avatarHtml(user)}<div style="min-width:0"><p class="sub" style="margin:0;color:#c9ffd6">✓ <b style="color:#fff">Your profile is live.</b></p><h2 style="margin:4px 0 0">${esc(user.name)}</h2><p class="sub" style="margin:4px 0 0">${esc(user.city)}, ${esc(user.state)}${user.genre ? ` · ${esc(user.genre)}` : ""}</p></div></div>
+      <p style="margin:12px 0 0"><a class="btn btn-blue" href="/artist/${user.id}">Open my profile →</a> <a class="btn" href="/profile?email=${encodeURIComponent(email)}" style="margin-left:8px">Edit my profile</a></p>
+      <p class="sub" style="margin:8px 0 0">That page is yours — your songs play right on it, and that link works anywhere you share it.</p>
+    </div>`;
+  }
+  res.send(layout("My Profile", "myprofile", `${intro}${result}${form(email)}${stash}`));
 });
 
 app.post("/profile", photoUpload.single("photo"), (req, res) => {
