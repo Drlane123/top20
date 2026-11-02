@@ -10,6 +10,7 @@ const { openDb, DB_PATH } = require("./db");
 const { GENRES, OVERALL, CATEGORIES, regionForState, localKey } = require("./config");
 const { judgeAudioFile } = require("./judge");
 const { judgeMeasuredFile } = require("./judge2");
+const { analyzeAudio, quickSpecs } = require("./analyze");
 const storage = require("./storage");
 const VIEWCAST_SETS = require("./viewcast-data");
 const sharecard = require("./sharecard");
@@ -973,6 +974,32 @@ function profileCompleteness(user) {
     return v !== null && v !== undefined && String(v).trim() !== "";
   }).length;
   return { filled, total: PROFILE_FIELDS.length };
+}
+
+// QUICK SPECS (owner + A&R feedback, Nov 2, 2026): the dense prose under
+// each point stays — but a busy executive reads numbers first. This strip
+// renders the analyzer's pure figures as bold badges above the 15 bars
+// wherever a scorecard shows: Loudness, True Peak, Hook arrival, BPM,
+// Peak/Average, Dynamics, Length. Renders nothing for songs judged
+// before the numbers were kept (the owner can re-measure those from his
+// admin desk; the seed showcase songs were never truly measured).
+function quickSpecsHtml(judge) {
+  if (!judge || !judge.metrics) return "";
+  let m = null;
+  try { m = JSON.parse(judge.metrics); } catch { m = null; }
+  if (!m) return "";
+  const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+  const chip = (label, val) => `<span style="display:inline-block;margin:0 6px 6px 0;padding:7px 11px;border:1px solid #3a4a6b;border-radius:999px;background:#0a1122;color:#cfe0ff;font-size:12.5px;white-space:nowrap">${label} <b style="color:#fff;font-size:13.5px">${val}</b></span>`;
+  const chips = [];
+  if (m.lufs != null) chips.push(chip("🔊 Loudness", `${m.lufs} LUFS`));
+  if (m.truePeak != null) chips.push(chip("📈 True peak", `${m.truePeak} dBTP`));
+  if (m.hookStartSec != null) chips.push(chip("🎯 Hook lands", mmss(m.hookStartSec)));
+  if (m.bpm) chips.push(chip("🥁 Tempo", `${m.bpm} BPM`));
+  if (m.crestDb != null) chips.push(chip("📊 Peak/Average", `${m.crestDb} dB`));
+  if (m.lra != null) chips.push(chip("🎚 Dynamics", `${m.lra} LU`));
+  if (m.durationSec != null) chips.push(chip("⏱ Length", mmss(m.durationSec)));
+  if (!chips.length) return "";
+  return `<div style="margin:14px 0 2px"><div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px;margin-bottom:8px">⚡ Quick Specs — the pure numbers</div>${chips.join("")}</div>`;
 }
 
 function scoreBars(judge, { withNotes = true } = {}) {
@@ -2800,6 +2827,7 @@ app.get("/song/:id", (req, res) => {
     <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px">
       <span class="craftbig">${judge.craft_score}</span><span class="sub">/ 100 · total ${judge.total_score} / 150 across the 15 judges</span>
     </div>
+    ${quickSpecsHtml(judge)}
     ${scoreBars(judge)}
   </div>
   <div class="panel">
@@ -3007,8 +3035,9 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   const catCols = CATEGORIES.map((c) => c.key).join(", ");
   const placeholders = CATEGORIES.map(() => "?").join(", ");
   db.prepare(
-    `INSERT INTO judge_scores (song_id, ${catCols}, total_score, craft_score, notes) VALUES (?, ${placeholders}, ?, ?, ?)`
-  ).run(songId, ...CATEGORIES.map((c) => judged.scores[c.key]), judged.totalScore, judged.craftScore, JSON.stringify(judged.notes));
+    `INSERT INTO judge_scores (song_id, ${catCols}, total_score, craft_score, notes, metrics) VALUES (?, ${placeholders}, ?, ?, ?, ?)`
+  ).run(songId, ...CATEGORIES.map((c) => judged.scores[c.key]), judged.totalScore, judged.craftScore, JSON.stringify(judged.notes),
+    judged.measurements ? JSON.stringify(quickSpecs(judged.measurements)) : null);
   db.prepare("INSERT INTO engagements (song_id, type, count) VALUES (?, 'play', 0), (?, 'like', 0), (?, 'share', 0), (?, 'save', 0)")
     .run(songId, songId, songId, songId);
 
@@ -3037,6 +3066,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
     <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px">
       <span class="craftbig">${judge.craft_score}</span><span class="sub">/ 100 · total ${judge.total_score} / 150</span>
     </div>
+    ${quickSpecsHtml(judge)}
     ${scoreBars(judge)}
     <p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/song/${songId}">Open your song page</a></p>
   </div>
@@ -4452,6 +4482,39 @@ app.post("/admin/score-fix", requireAdmin, (req, res) => {
   return back(`Corrected: "${song.title}" by ${song.artist} — ${cat.label} ${old} → ${val}. Craft score is now ${craftScore}/100 (total ${totalScore}/150). The new standing lands at the next midnight chart change, and the correction is on record with your reason.`);
 });
 
+// RE-MEASURE (Nov 2, 2026): fills a song's Quick Specs numbers WITHOUT
+// touching a single score — for songs judged before the numbers were
+// kept. Reads the song's real audio (the container's disk, or the
+// bucket copy when the disk file is gone), runs the same analyzer the
+// judge uses, and stores only the display numbers. Scores, notes and
+// corrections are never touched here.
+app.post("/admin/remeasure", requireAdmin, async (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const songId = Number(req.body.song_id);
+  const song = db.prepare("SELECT * FROM songs WHERE id = ?").get(songId);
+  if (!song) return back("Pick a song to re-measure.");
+  let abs = path.join(PUBLIC_DIR, String(song.audio_path).replace(/^\//, ""));
+  let tmp = null;
+  if (!fs.existsSync(abs)) {
+    try {
+      const bytes = await storage.getObject(String(song.audio_path).replace(/^\//, ""));
+      if (!bytes) return back("That song's audio file couldn't be found on disk or in the bucket.");
+      tmp = path.join(require("node:os").tmpdir(), `remeasure-${songId}${path.extname(String(song.audio_path)) || ".mp3"}`);
+      fs.writeFileSync(tmp, bytes);
+      abs = tmp;
+    } catch { return back("That song's audio file couldn't be pulled from storage."); }
+  }
+  const m = await analyzeAudio(abs);
+  if (tmp) { try { fs.unlinkSync(tmp); } catch { /* ignore */ } }
+  if (!m || m.lufs == null) return back(`"${song.title}" couldn't be measured — the analyzer got no reading from the file.`);
+  const specs = quickSpecs(m);
+  db.prepare("UPDATE judge_scores SET metrics = ? WHERE song_id = ?").run(JSON.stringify(specs), songId);
+  snapshotDb("remeasure");
+  const bits = [`${specs.lufs} LUFS`, `true peak ${specs.truePeak} dBTP`, `hook at ${specs.hookStartSec}s`];
+  if (specs.bpm) bits.push(`${specs.bpm} BPM`);
+  return back(`Re-measured "${song.title}" — Quick Specs are on its scorecard now: ${bits.join(" · ")}. No score was touched.`);
+});
+
 // The placement tool: pick any song already uploaded and live, pick a
 // chart and a position, and the song is pinned there on every chart
 // from today until the placement ends or is removed. Scores are never
@@ -4570,6 +4633,14 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
       <input type="text" name="reason" maxlength="400" placeholder="e.g. A modern dance mix — the low-end design is the record's style, not a balance error"
         style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
       <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Correct the score</button>
+    </form>
+    <form method="post" action="/admin/remeasure" style="margin-top:16px;border-top:1px solid #22304f;padding-top:14px">
+      <p class="sub" style="margin:0 0 6px"><b style="color:#fff">⚡ Quick Specs re-measure</b> — songs judged before the numbers were kept show no Quick Specs strip on their scorecard. Re-measure runs the analyzer over the song's real file and fills the numbers in. <b style="color:#fff">No score is touched.</b></p>
+      <label class="sub">Song<br>
+      <select name="song_id" required style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        ${songs.map((s) => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
+      </select></label>
+      <button type="submit" style="padding:10px 20px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;font-weight:800;cursor:pointer">Re-measure this song</button>
     </form>
     ${corrections.length ? `<h3 style="margin:18px 0 4px">Corrections on record</h3>${corrections.map((c) => `
     <div style="border-bottom:1px solid #22304f;padding:8px 0">

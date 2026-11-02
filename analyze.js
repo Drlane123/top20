@@ -397,4 +397,23 @@ async function analyzeAudio(absPath) {
   }
 }
 
-module.exports = { analyzeAudio, BANDS };
+// The scorecard's Quick Specs (owner + A&R feedback, Nov 2, 2026): the
+// pure numbers a busy executive reads before the prose — pulled from one
+// measurement so the song page, the upload result and any future report
+// all show the same figures the judge scored from.
+function quickSpecs(m) {
+  if (!m) return null;
+  const n = (v) => (typeof v === "number" && isFinite(v) ? Math.round(v * 10) / 10 : null);
+  return {
+    lufs: n(m.lufs),
+    lra: n(m.lra),
+    truePeak: n(m.truePeak),
+    crestDb: n(m.crestDb),
+    bpm: m.bpm ? Math.round(m.bpm) : null,
+    hookStartSec: m.hook && typeof m.hook.startSec === "number" ? Math.round(m.hook.startSec) : null,
+    hookLiftDb: m.hook ? n(m.hook.liftDb) : null,
+    durationSec: n(m.durationSec),
+  };
+}
+
+module.exports = { analyzeAudio, BANDS, quickSpecs };

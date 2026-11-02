@@ -263,6 +263,13 @@ function openDb() {
   if (!scoreCols.includes("cover_art")) {
     db.exec("ALTER TABLE judge_scores ADD COLUMN cover_art REAL NOT NULL DEFAULT 5");
   }
+  if (!scoreCols.includes("metrics")) {
+    // Quick Specs (Nov 2, 2026): the analyzer's display numbers as JSON
+    // ({lufs, lra, truePeak, crestDb, bpm, hookStartSec, hookLiftDb,
+    // durationSec}) — stored at judging time; older rows stay NULL until
+    // the owner re-measures the song from his admin desk.
+    db.exec("ALTER TABLE judge_scores ADD COLUMN metrics TEXT");
+  }
   const ceCols = db.prepare("PRAGMA table_info(chart_entries)").all().map((r) => r.name);
   if (!ceCols.includes("dj_pick")) {
     db.exec("ALTER TABLE chart_entries ADD COLUMN dj_pick INTEGER NOT NULL DEFAULT 0");
