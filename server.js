@@ -4174,6 +4174,8 @@ app.get("/how-it-works", (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">Part 2 — The Judging</h2>
     <p class="sub">Every song uploaded to TOP 20 is scored on <b style="color:#fff">15 points, 1–10 each</b> (total /150) — the same 15 for every song, fitted genre by genre:</p>
+    <img src="/studio.jpg" alt="The TOP 20 mastering analyzer — the studio screen that reads every record against the 15-Point Scale" style="width:100%;border-radius:12px;border:1px solid #22304f;display:block;margin:12px 0 8px">
+    <p class="sub"><b style="color:#fff">The Analyzer.</b> This is the machine that reads every record on TOP 20 — loudness, true peak, the full spectrum — measured against the same professional reference charts engineers keep on their desks. And you don't just get a number back: upload a song and you <b style="color:#fff">watch it work</b> — your record on the meters, point by point, until your 15-point evaluation lands.</p>
     <ul class="rules">${CATEGORIES.map((c, i) => `<li><b>${i + 1}. ${esc(c.label)}</b></li>`).join("")}</ul>
     <p class="sub">Yes — the cover is one of the points. Quality artwork helps your score; anything slapped together will hurt it. The craft score is then blended with real engagement (60% craft / 40% engagement, social buzz capped at about 10% of the total) to set the charts — chart position is never popularity alone, and the craft score can't be bought.</p>
     <p class="sub">Launch genres: <b style="color:#fff">${GENRES.join(" · ")}</b> — plus a cross-genre Overall chart at every level.</p>
