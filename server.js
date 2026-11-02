@@ -3276,12 +3276,12 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   <div class="panel" id="theaterPanel" style="padding:0;overflow:hidden">
     <style>@keyframes tPulse { 50% { opacity: .4 } }</style>
     <div style="position:relative">
-      <img src="/studio.jpg?v=11" alt="The Top 20 Mastering Analyzer" style="width:100%;display:block">
-      <div id="tOvlBpm" style="position:absolute;left:64.6%;top:21.6%;width:16.2%;background:rgba(4,10,22,.82);border:1px solid #2ee6a8;border-radius:6px;padding:3px 6px;animation:tPulse 1.6s infinite">
+      <img src="/studio.jpg?v=27" alt="The Top 20 Mastering Analyzer" style="width:100%;display:block">
+      <div id="tOvlBpm" style="position:absolute;left:65.5%;top:18%;width:14.5%;background:rgba(4,10,22,.82);border:1px solid #2ee6a8;border-radius:6px;padding:3px 6px;animation:tPulse 1.6s infinite">
         <div style="font-size:8px;letter-spacing:1.5px;color:#57e6ff;line-height:1.1">TEMPO / BPM</div>
         <div id="tOvlBpmVal" style="font-size:clamp(10px,3.1vw,16px);font-weight:800;color:#fff;line-height:1.15">···</div>
       </div>
-      <div id="tOvlKey" style="position:absolute;left:64.6%;top:34.6%;width:16.2%;background:rgba(4,10,22,.82);border:1px solid #2ee6a8;border-radius:6px;padding:3px 6px;animation:tPulse 1.6s infinite">
+      <div id="tOvlKey" style="position:absolute;left:65.5%;top:29%;width:14.5%;background:rgba(4,10,22,.82);border:1px solid #2ee6a8;border-radius:6px;padding:3px 6px;animation:tPulse 1.6s infinite">
         <div style="font-size:8px;letter-spacing:1.5px;color:#57e6ff;line-height:1.1">KEY / NOTE</div>
         <div id="tOvlKeyVal" style="font-size:clamp(10px,3.1vw,16px);font-weight:800;color:#fff;line-height:1.15">···</div>
       </div>
@@ -4300,7 +4300,7 @@ app.get("/how-it-works", (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">Part 2 — The Judging</h2>
     <p class="sub">Every song uploaded to TOP 20 is scored on <b style="color:#fff">15 points, 1–10 each</b> (total /150) — the same 15 for every song, fitted genre by genre:</p>
-    <img src="/studio.jpg?v=11" alt="The TOP 20 mastering analyzer — the studio screen that reads every record against the 15-Point Scale" style="width:100%;border-radius:12px;border:1px solid #22304f;display:block;margin:12px 0 8px">
+    <img src="/studio.jpg?v=27" alt="The TOP 20 mastering analyzer — the studio screen that reads every record against the 15-Point Scale" style="width:100%;border-radius:12px;border:1px solid #22304f;display:block;margin:12px 0 8px">
     <p class="sub"><b style="color:#fff">The Analyzer.</b> This is the machine that reads every record on TOP 20 — loudness, true peak, the full spectrum — measured against the same professional reference charts engineers keep on their desks. And you don't just get a number back: upload a song and you <b style="color:#fff">watch it work</b> — your record on the meters, point by point, until your 15-point evaluation lands.</p>
     <ul class="rules">${CATEGORIES.map((c, i) => `<li><b>${i + 1}. ${esc(c.label)}</b></li>`).join("")}</ul>
     <p class="sub">Yes — the cover is one of the points. Quality artwork helps your score; anything slapped together will hurt it. The craft score is then blended with real engagement (60% craft / 40% engagement, social buzz capped at about 10% of the total) to set the charts — chart position is never popularity alone, and the craft score can't be bought.</p>
