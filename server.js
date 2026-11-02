@@ -5695,9 +5695,17 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     </div>`).join("")}` : `<p class="sub" style="margin:12px 0 0">No corrections yet — the machine's word has stood on every record so far.</p>`}
   </div>
   <div class="panel" style="border-color:rgba(46,230,168,.55)">
-    <h2 style="margin-top:0">⚡ Quick Load — test any record</h2>
-    <p class="sub">Just the audio. <b style="color:#fff">No profile, no chart, nothing public</b> — load a record and it runs the full analyzer, the Theater and the 15-Point Scale, private to you. Made for testing records before anybody uploads for real.</p>
-    <p><a class="btn btn-blue" href="/admin/quickload">Open Quick Load →</a></p>
+    <h2 style="margin-top:0">⚡ Audio Tester — load a record right here</h2>
+    <p class="sub">Your private tester, right on this panel — it isn't anywhere else on the site. Pick a record, tap the button, and it runs straight into the analyzer: <b style="color:#fff">no profile, no chart, nothing public</b>, and it isn't saved anywhere. The read shows up on this same screen.</p>
+    <form method="post" action="/admin/quickload" enctype="multipart/form-data">
+      <label>Audio file — radio quality (WAV or FLAC, or MP3 / M4A at 192 kbps or better)<input name="audio" type="file" accept="audio/*" required onchange="t20Picked(this,'apPicked')"></label>
+      <p class="note" id="apPicked" style="font-size:15px"></p>
+      <label>Genre — the chart the record is measured against<select name="genre">${GENRES.map((g) => `<option value="${esc(g)}"${g === "R&B" ? " selected" : ""}>${esc(g)}</option>`).join("")}</select></label>
+      <p style="margin-top:14px"><button class="btn btn-blue btn-block" type="submit" style="font-size:16px;padding:13px" onclick="return t20Go(this,'apStatus','apPicked')">▶ Test it in the analyzer</button></p>
+      <p class="note" id="apStatus" style="display:none;color:#9fe8b6;font-size:15px">⏳ Your record is uploading, then the analyzer reads it — a full song can take a minute or two. Keep this page open; your read appears right here.</p>
+      <div id="apProg" style="display:none;margin-top:10px"><div style="height:16px;border:1px solid rgba(120,190,255,.5);border-radius:8px;overflow:hidden;background:rgba(255,255,255,.08)"><div id="apBar" style="height:100%;width:0%;background:linear-gradient(90deg,#2f7bff,#57c7ff)"></div></div><p class="note" id="apProgTxt" style="font-size:15px;color:#cfe8ff;margin-top:6px"></p></div>
+    </form>
+    <p class="note">Need the cover art or the lyrics read too? The <a href="/admin/quickload" style="color:var(--accent);font-weight:700">full Quick Load page</a> has those extra boxes — same analyzer, same read.</p>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">🛫 Pre-Flight reports</h2>
@@ -5804,7 +5812,35 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     <form method="post" action="/admin/logout" style="margin-top:14px">
       <button type="submit" style="padding:8px 16px;border-radius:8px;border:1px solid #3a4a6b;background:transparent;color:#bcd;font-weight:700;cursor:pointer">Log out</button>
     </form>
-  </div>`;
+  </div>
+  <style>@keyframes t20slide{0%{transform:translateX(-110%)}100%{transform:translateX(310%)}}</style>
+  <script>
+  function t20Picked(inp,outId){var s=document.getElementById(outId);if(!s)return;if(inp.files&&inp.files.length){var f=inp.files[0];s.textContent="✔ Picked: "+f.name+" ("+(f.size/1048576).toFixed(1)+" MB) — now tap the button below.";s.style.color="#9fe8b6";}}
+  function t20Go(btn,statusId,pickedId){
+    var form=btn.form;if(!form)return true;
+    if(window.__t20sent)return false;
+    var inp=form.querySelector('input[type=file][name=audio]');
+    if(inp&&(!inp.files||!inp.files.length)){var s=document.getElementById(pickedId);if(s){s.textContent="⚠ Pick your audio file first — tap the Audio file box and choose your record, then tap the button again.";s.style.color="#ffd98a";}if(inp.scrollIntoView)inp.scrollIntoView({block:"center"});return false;}
+    if(!form.checkValidity()){form.reportValidity();return false;}
+    window.__t20sent=true;btn.style.opacity=".65";btn.textContent="⏳ Loading your record — keep this page open…";
+    var st=document.getElementById(statusId);if(st)st.style.display="block";
+    t20Send(form,pickedId.replace("Picked",""));
+    return false;
+  }
+  function t20Send(form,pre){
+    var prog=document.getElementById(pre+"Prog"),bar=document.getElementById(pre+"Bar"),txt=document.getElementById(pre+"ProgTxt");
+    if(!window.XMLHttpRequest||!window.FormData){form.submit();return;}
+    if(prog)prog.style.display="block";
+    if(txt)txt.textContent="⬆ Uploading your record — 0%. Keep this page open.";
+    var xhr=new XMLHttpRequest();
+    xhr.open("POST",form.action,true);
+    xhr.upload.onprogress=function(e){if(e.lengthComputable){var pct=Math.round(e.loaded*100/e.total);if(bar){bar.style.animation="none";bar.style.transform="none";bar.style.width=pct+"%";}if(txt)txt.textContent="⬆ Uploading your record — "+pct+"% ("+(e.loaded/1048576).toFixed(1)+" of "+(e.total/1048576).toFixed(1)+" MB). Keep this page open.";}};
+    xhr.upload.onload=function(){if(bar){bar.style.width="35%";bar.style.animation="t20slide 1.1s ease-in-out infinite alternate";}if(txt)txt.textContent="✔ Your record is up — the analyzer is reading it now. A full song can take a minute or two; your read appears right here.";};
+    xhr.onload=function(){document.open();document.write(xhr.responseText);document.close();};
+    xhr.onerror=function(){if(txt)txt.textContent="The connection stumbled — sending the regular way…";form.submit();};
+    try{xhr.send(new FormData(form));}catch(err){form.submit();}
+  }
+  </script>`;
   res.send(layout("Chart placements", "", body));
 });
 
