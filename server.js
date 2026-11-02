@@ -3241,6 +3241,18 @@ function preflightPayUrl() {
   } catch { /* no link set */ }
   return "";
 }
+// Parked until the owner opens the lane (Dale, Nov 2, 2026): the price
+// is set — $9.99, "a good price" — but Pre-Flight takes no reports
+// until after the rollout is running. Parked is the DEFAULT: the page
+// shows its pitch and a Coming Soon panel, and the owner flips the
+// lane live from his desk when he's ready.
+function preflightParked() {
+  try {
+    const r = db.prepare("SELECT value FROM admin_config WHERE key = 'preflight_parked'").get();
+    if (r) return !!JSON.parse(r.value);
+  } catch { /* default parked */ }
+  return true;
+}
 function pfError(res, message) {
   return res.status(400).send(layout("Pre-Flight Check", "", `
   <div class="panel err"><h2 style="margin-top:0">Pre-Flight stopped</h2>
@@ -3250,6 +3262,7 @@ function pfError(res, message) {
 
 app.get("/preflight", (req, res) => {
   const price = preflightPrice();
+  const parked = preflightParked();
   const body = `
   <h1>🛫 Pre-Flight Check</h1>
   <p class="sub">Know before you submit. Run your record through the <b style="color:#fff">same 15-Point Scale</b> the Top 20 charts are judged on — every point measured, every point explained in writing — as a <b style="color:#fff">private report</b>. No chart entry. No public page. Nobody sees it but you.</p>
@@ -3260,7 +3273,12 @@ app.get("/preflight", (req, res) => {
     🔒 <b style="color:#fff">Private forever</b> — this lane never touches the charts. When you're ready for the charts, uploads there are FREE.</p>
     <p class="sub">One flat fee: <b style="color:#fff;font-size:18px">$${esc(price)}</b> — the teaser (Quick Specs + your Craft Score) is free the moment your track is measured; the full report unlocks on payment.</p>
   </div>
-  <form class="panel" method="post" action="/preflight" enctype="multipart/form-data">
+  ${parked ? `<div class="panel" style="border-color:rgba(255,196,77,.65)">
+    <h2 style="margin-top:0">🚧 Coming soon</h2>
+    <p class="sub">Pre-Flight Check opens <b style="color:#fff">right after the Top 20 rollout lands — December 16, 2026</b> — at <b style="color:#fff">$${esc(price)}</b> a record. Park the record you're not sure about; when this opens, you'll know exactly where it stands before anybody else hears it.</p>
+    <p class="sub">The charts are live <b style="color:#fff">now</b>, and uploads there are FREE — get your profile and your songs on the boards while the rollout fills them.</p>
+    <p><a class="btn btn-blue btn-block" href="/upload">Upload to the charts — FREE</a></p>
+  </div>` : `<form class="panel" method="post" action="/preflight" enctype="multipart/form-data">
     <h2 style="margin-top:0">Run my record</h2>
     <div class="grid">
       <div class="field"><label for="pfname">Artist name</label><input id="pfname" name="artist_name" maxlength="80" placeholder="Your artist name"></div>
@@ -3276,7 +3294,7 @@ app.get("/preflight", (req, res) => {
     <label class="sub" style="display:block;margin:10px 0 14px"><input type="checkbox" name="consent" required> This is my own record (or my label's), and I understand this report is a private measurement — not a chart entry, not a review by a person, and not a promise of any chart result.</label>
     <button class="btn btn-blue btn-block" type="submit">Measure my record</button>
     <p class="note" style="margin-top:10px">Your private report link appears on the next screen. Save it — it's the only key to your report.</p>
-  </form>`;
+  </form>`}`;
   res.send(layout("Pre-Flight Check", "", body));
 });
 
@@ -3284,6 +3302,7 @@ app.post("/preflight", upload.fields([{ name: "audio", maxCount: 1 }, { name: "c
   const audioFile = req.files?.audio?.[0];
   const coverFile = req.files?.cover?.[0];
   const cleanup = () => { for (const f of [audioFile, coverFile]) if (f) fs.unlink(f.path, () => {}); };
+  if (preflightParked()) { cleanup(); return pfError(res, "Pre-Flight Check opens right after the Top 20 rollout lands — December 16, 2026. The charts are live now, and uploads there are FREE."); }
   if (!req.body.consent) { cleanup(); return pfError(res, "The consent box wasn't checked — a Pre-Flight report can only run on a record that's yours to submit."); }
   if (!coverFile) { cleanup(); return pfError(res, "Cover art is required — Cover Art & Presentation is one of the 15 points, so the report needs the cover."); }
   if (!audioFile) { cleanup(); return pfError(res, "An audio file is required to measure a record."); }
@@ -4807,9 +4826,11 @@ app.post("/admin/preflight-settings", requireAdmin, (req, res) => {
   const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
   const price = String(req.body.price || "").trim().replace(/[^0-9.]/g, "");
   const payUrl = String(req.body.pay_url || "").trim().slice(0, 400);
+  const parked = String(req.body.parked || "1") !== "0";
   if (price) db.prepare("INSERT INTO admin_config (key, value) VALUES ('preflight_price', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(price));
   db.prepare("INSERT INTO admin_config (key, value) VALUES ('preflight_pay_url', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(payUrl));
-  return back(`Pre-Flight settings saved — price $${price || preflightPrice()}${payUrl ? ", payment link on" : ", no payment link set"}.`);
+  db.prepare("INSERT INTO admin_config (key, value) VALUES ('preflight_parked', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(parked));
+  return back(`Pre-Flight settings saved — price $${price || preflightPrice()}${payUrl ? ", payment link on" : ", no payment link set"}; the lane is ${parked ? "PARKED (Coming Soon)" : "LIVE"}.`);
 });
 
 app.post("/admin/preflight/:id/release", requireAdmin, (req, res) => {
@@ -4853,6 +4874,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   const pfRows = db.prepare("SELECT * FROM preflight_reports ORDER BY id DESC LIMIT 20").all();
   const pfPrice = preflightPrice();
   const pfPayUrl = preflightPayUrl();
+  const pfParked = preflightParked();
   // Cloudflare storage (R2): connection state + what's in the bucket, for
   // the owner's media panel. Degrades to "not set up" when storage is off.
   let mediaState = { configured: false, ok: false, error: null, objects: [], hero: null };
@@ -4962,6 +4984,11 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     <h2 style="margin-top:0">🛫 Pre-Flight reports</h2>
     <p class="sub">The paid private lane: an artist pays once, gets the full 15-point scorecard as a private report — <b style="color:#fff">never charted, never public</b>. When a payment lands, release the report here and the artist's link opens the whole scorecard. Set the price, and paste a Stripe payment link when you have one (until then, artists see that the studio releases reports personally).</p>
     <form method="post" action="/admin/preflight-settings">
+      <label class="sub">Lane status<br>
+      <select name="parked" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        <option value="1" ${pfParked ? "selected" : ""}>⏸ Parked — Coming Soon (price shown, no reports taken)</option>
+        <option value="0" ${pfParked ? "" : "selected"}>▶ LIVE — taking reports</option>
+      </select></label>
       <label class="sub">Price (USD)<br>
       <input type="text" name="price" value="${esc(pfPrice)}" style="width:120px;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
       <label class="sub">Stripe payment link (optional — the Pay button points here)<br>
