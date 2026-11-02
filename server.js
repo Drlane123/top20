@@ -3744,7 +3744,7 @@ app.get("/my-profile", (req, res) => {
   const email = String(req.query.email || "").trim().toLowerCase();
   const intro = `
   <h1>My profile</h1>
-  <p class="sub">Check your artist profile is on TOP 20 — enter the email you saved it with.</p>`;
+  <p class="sub">Check for your artist profile — see if you're on hottop20.com. Enter the email you saved it with. On Top 20 doesn't only mean the Top 20 chart: your songs can be riding in the rest of the Top 100 too.</p>`;
   const form = (val) => `
     <div class="panel">
       <form method="get" action="/my-profile">
