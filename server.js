@@ -4366,7 +4366,7 @@ function buildEpisodeFiles(rawPath, mp4Path, posterPath) {
 app.get("/admin/viewcast", requireAdmin, (req, res) => {
   const eps = db.prepare("SELECT * FROM viewcast_episodes ORDER BY id DESC").all();
   const setBtns = VIEWCAST_KEYS.map((k) => `
-    <button type="button" class="vset${k === "podcast" ? " on" : ""}" data-key="${k}" onclick="pickSet('${k}')" style="background:#0a0f22;border:2px solid ${k === "podcast" ? "#f2c14e" : "#232a45"};border-radius:10px;padding:6px;cursor:pointer;color:#e9ecf2;width:132px">
+    <button type="button" class="vset${k === "graffiti" ? " on" : ""}" data-key="${k}" onclick="pickSet('${k}')" style="background:#0a0f22;border:2px solid ${k === "graffiti" ? "#f2c14e" : "#232a45"};border-radius:10px;padding:6px;cursor:pointer;color:#e9ecf2;width:132px">
       <img src="/viewcast/backdrop/${k}.jpg" alt="" style="width:100%;border-radius:6px;display:block">
       <span style="font-size:12.5px;font-weight:700">${esc(VIEWCAST_SETS[k].label)}</span>
     </button>`).join("");
@@ -4398,6 +4398,14 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     </div>
     <p style="margin:12px 0 6px"><strong>Pick your set:</strong></p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${setBtns}</div>
+    <p style="margin:14px 0 6px"><strong>✨ Effects — shape the person to fit the room:</strong></p>
+    <div style="display:grid;gap:6px;max-width:560px">
+      <label style="color:#c9cdd6;font-size:14px">Slim — narrow the figure a touch<input type="range" id="fxSlimR" min="0" max="100" value="0" oninput="setFx('slim', this.value)" style="width:100%"></label>
+      <label style="color:#c9cdd6;font-size:14px">Step back — smaller in the room, deeper behind the desk<input type="range" id="fxBackR" min="0" max="100" value="0" oninput="setFx('back', this.value)" style="width:100%"></label>
+      <label style="color:#c9cdd6;font-size:14px">Smooth — soften the skin, keep the edge crisp<input type="range" id="fxSmoothR" min="0" max="100" value="0" oninput="setFx('smooth', this.value)" style="width:100%"></label>
+      <label style="color:#c9cdd6;font-size:14px">Brighten — lift a dim room's light on the face<input type="range" id="fxBrightR" min="0" max="100" value="0" oninput="setFx('bright', this.value)" style="width:100%"></label>
+      <p style="margin:2px 0"><button type="button" onclick="resetFx()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Reset effects</button></p>
+    </div>
     <div style="display:grid;gap:8px;margin-top:14px;max-width:560px">
       <input id="vtitle" placeholder="Episode title — e.g. This Week's Uploads" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
       <input id="vname" placeholder="Name on screen — e.g. Dale · Top 20 (optional)" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
@@ -4437,6 +4445,31 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   var seg = null, segBusy = false, mode = 'virtual';
   var currentSet = 'graffiti', backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/graffiti.jpg';
   var fgImg = new Image(); fgImg.src = '/viewcast/foreground/graffiti.webp';
+  // ✨ Effects (owner, Nov 1): the host shapes their own picture to fit
+  // the room — slim, step back, smooth, brighten. Saved on this phone.
+  var fxSlim = 0, fxBack = 0, fxSmooth = 0, fxBright = 0;
+  try {
+    var savedFx = JSON.parse(localStorage.getItem('vcfx') || '{}');
+    fxSlim = (savedFx.slim || 0) / 100; fxBack = (savedFx.back || 0) / 100;
+    fxSmooth = (savedFx.smooth || 0) / 100; fxBright = (savedFx.bright || 0) / 100;
+  } catch (e) {}
+  function saveFx() { try { localStorage.setItem('vcfx', JSON.stringify({ slim: fxSlim * 100, back: fxBack * 100, smooth: fxSmooth * 100, bright: fxBright * 100 })); } catch (e) {} }
+  function setFx(which, v) {
+    var f = Math.max(0, Math.min(100, +v || 0)) / 100;
+    if (which === 'slim') fxSlim = f; else if (which === 'back') fxBack = f;
+    else if (which === 'smooth') fxSmooth = f; else if (which === 'bright') fxBright = f;
+    saveFx();
+  }
+  function resetFx() {
+    fxSlim = fxBack = fxSmooth = fxBright = 0;
+    var ids = ['fxSlimR', 'fxBackR', 'fxSmoothR', 'fxBrightR'];
+    for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.value = 0; }
+    saveFx();
+  }
+  (function initFxSliders() {
+    var pairs = [['fxSlimR', fxSlim], ['fxBackR', fxBack], ['fxSmoothR', fxSmooth], ['fxBrightR', fxBright]];
+    for (var i = 0; i < pairs.length; i++) { var el = document.getElementById(pairs[i][0]); if (el) el.value = Math.round(pairs[i][1] * 100); }
+  })();
   var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
   function setStatus(t) { document.getElementById('vstatus').textContent = t; }
   function pickSet(key) {
@@ -4645,6 +4678,13 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     ctx.fillRect(W / 2 - R, gy - R, R * 2, R * 2);
     ctx.restore();
   }
+  function drawHostInto(x, y, w, h) {
+    // Step back shrinks the figure toward the floor line; Slim narrows
+    // it. Bottom-anchored, so the desk line still meets the waist.
+    var s = 1 - fxBack * 0.28;
+    var dw = w * s * (1 - fxSlim * 0.14), dh = h * s;
+    ctx.drawImage(hostC, x + (w - dw) / 2, y + (h - dh), dw, dh);
+  }
   function composeFrame() {
     ctx.save(); ctx.clearRect(0, 0, W, H);
     if (mode === 'frame') {
@@ -4653,7 +4693,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       drawCoverCtx(ctx, backdropImg, 0, 0, W, H);
       drawDeskShadow();
       if (guestOn && layoutMode === 'split') drawCoverCtx(ctx, hostC, 30, 30, W * 0.52, H - 60);
-      else ctx.drawImage(hostC, 0, 0, W, H);
+      else drawHostInto(0, 0, W, H);
       if (fgImg && fgImg.complete && fgImg.naturalWidth) ctx.drawImage(fgImg, 0, 0, W, H);
     }
     ctx.restore();
@@ -4699,10 +4739,21 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         hctx.drawImage(maskC, 0, 0, W, H);
         try { hctx.filter = 'none'; } catch (e) {}
         hctx.globalCompositeOperation = 'source-in';
-        // Light match: grade the person with the room's own light so
-        // they read as lit BY the set, not pasted onto it.
-        try { hctx.filter = VC_TINT[currentSet] || 'none'; } catch (e) {}
+        // Light match + effects: grade the person with the room's own
+        // light so they read as lit BY the set, not pasted onto it.
+        // Smooth lays a soft blurred copy under the sharp one — the
+        // mask keeps the cut edge crisp while skin softens. Brighten
+        // lifts a dim room.
+        var tintStr = VC_TINT[currentSet] || '';
+        if (fxSmooth > 0) {
+          try { hctx.filter = (tintStr + ' blur(3px) brightness(1.04)').trim() || 'none'; } catch (e) {}
+          hctx.globalAlpha = 1;
+          hctx.drawImage(results.image, 0, 0, W, H);
+        }
+        try { hctx.filter = (tintStr + (fxBright > 0 ? ' brightness(' + (1 + fxBright * 0.18).toFixed(3) + ')' : '')).trim() || 'none'; } catch (e) {}
+        hctx.globalAlpha = fxSmooth > 0 ? 1 - 0.45 * fxSmooth : 1;
         hctx.drawImage(results.image, 0, 0, W, H);
+        hctx.globalAlpha = 1;
         try { hctx.filter = 'none'; } catch (e) {}
         hctx.restore();
       });
