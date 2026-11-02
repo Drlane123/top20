@@ -1852,7 +1852,7 @@ app.get("/", (req, res) => {
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   const ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-  const ANN_V = 3; // announcement voice generation (Take B radio voice; v3 adds the climb-21..100 bucket openers + climb-closer) — bump on every re-record so phones fetch the new clips instead of playing a cached old voice
+  const ANN_V = 4; // announcement voice generation (Take B radio voice; v4 adds title-47 + days up to 100, with the fade-out ending) — bump on every re-record so phones fetch the new clips instead of playing a cached old voice
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -1863,17 +1863,6 @@ app.get("/", (req, res) => {
   let djOn = true;
   try { djOn = localStorage.getItem('djVoice') !== '0'; } catch (e) {}
   function djLabel(){ const b = $('djBtn'); if (b) b.textContent = djOn ? '🎙️ DJ VOICE ON' : '🎙️ DJ VOICE OFF'; }
-  function djText(t){
-    const d = t.fresh ? 'A brand new entry — day one on the chart.' : (t.days === 1 ? 'Day one on the chart.' : (t.days || 0) + ' days on the chart.');
-    return 'The number ' + t.rank + ' song on Top 20 is "' + t.title + '" by ' + t.artist + '. ' + d + " Hot Top 20 — non-stop!";
-  }
-  // The bucket blessing (owner, Nov 1, 2026): ranks 21-100 get the same
-  // announcement, same buildup, their own number — but no "Top 20":
-  // it closes "Non-stop and climbing!" instead.
-  function djTextBucket(t){
-    const d = t.fresh ? 'A brand new entry — day one on the chart.' : (t.days === 1 ? 'Day one on the chart.' : (t.days || 0) + ' days on the chart.');
-    return 'The number ' + t.rank + ' song is "' + t.title + '" by ' + t.artist + '. ' + d + ' Non-stop and climbing!';
-  }
   // Stage ad slots (owner feature): after every 5 songs in the rotation,
   // one active ad plays (image for its seconds, video to its end — hard
   // capped at 30s). When the ad finishes, the rotation resumes with the
@@ -1927,51 +1916,52 @@ app.get("/", (req, res) => {
     }
     box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
-  function djSpeak(t, done, bucket){
-    if (!djOn || !t || !('speechSynthesis' in window)) { done(); return; }
-    try {
-      speechSynthesis.cancel();
-      const u = new SpeechSynthesisUtterance(bucket ? djTextBucket(t) : djText(t));
-      u.rate = 0.98; u.pitch = 0.6; u.volume = 1;
-      const vs = speechSynthesis.getVoices().filter((v) => /^en([-_]|$)/i.test(v.lang));
-      const pick = vs.find((v) => /male|david|daniel|guy|christopher|george/i.test(v.name)) || vs[0];
-      if (pick) u.voice = pick;
-      let fired = false; const go = () => { if (!fired) { fired = true; done(); } };
-      u.onend = go; u.onerror = go;
-      setTimeout(go, 6000); // never hold the music hostage to a stuck voice
-      speechSynthesis.speak(u);
-    } catch (e) { done(); }
-  }
-  // Recorded DJ announcements (the owner's chosen voice): rank clip +
-  // "title by artist" clip + days clip + the "Hot Top 20 — non-stop!"
-  // closer, played in order before the song ON THE STAGE PLAYER ITSELF.
+  // Recorded DJ announcements (the owner's chosen voice — the ONE
+  // narrator of Top 20): Top 20 = rank clip + "title by artist" clip +
+  // days clip + the "Hot Top 20 — non-stop!" closer; the bucket =
+  // number clip + "artist — title" line + "Non-stop and climbing!",
+  // played in order before the song ON THE STAGE PLAYER ITSELF.
   // (A separate DJ audio element got blocked by phone autoplay rules at
   // automatic song changes — the tap that starts it is long past — which
   // left the DJ silent; the player element the listener started with a
-  // tap stays allowed.) If any clip is missing (a brand-new song, a
-  // chart run past 60 days), the phone voice reads it instead.
+  // tap stays allowed.) If any clip is missing, the song simply plays
+  // with no call — never a different voice (owner, Nov 1, 2026).
   let djChain = 0, announcing = false, annStep = null;
-  function djStop(){ djChain++; announcing = false; annStep = null; }
+  function djStop(){ djChain++; announcing = false; annStep = null; try { audio.ontimeupdate = null; audio.volume = 1; } catch (e) {} }
   function djAnnounce(t, done, bucket){
     if (!djOn || !t) { done(); return; }
-    const daysKey = t.fresh ? 'days-fresh' : (t.days === 1 ? 'days-one' : (t.days >= 2 && t.days <= 60 ? 'days-' + t.days : null));
+    const daysKey = t.fresh ? 'days-fresh' : (t.days === 1 ? 'days-one' : (t.days >= 2 && t.days <= 100 ? 'days-' + t.days : null));
+    // The bucket call is the owner's one clean line (Nov 1, 2026):
+    // "Number 47 — Mike millzz — Get low — non-stop and climbing!"
+    // No days line, no "brand new entry". The Top 20 call keeps its
+    // full Stage format with the days line.
     const keys = bucket
-      ? ['climb-' + t.rank, 'title-' + t.id, daysKey, 'climb-closer']
+      ? ['climb-' + t.rank, 'line-' + t.id, 'climb-closer']
       : ['rank-' + t.rank, 'title-' + t.id, daysKey, 'closer'];
-    if (keys.some((k) => !k || ANN_KEYS.indexOf(k) === -1)) { djSpeak(t, done, bucket); return; }
+    // ONE narrator, always (owner, Nov 1, 2026): the recorded voice or
+    // no call at all. A phone robot voice once read a fresh song's name
+    // and the song cut in over it — that fallback is gone for good.
+    if (keys.some((k) => !k || ANN_KEYS.indexOf(k) === -1)) { done(); return; }
     const my = ++djChain;
     let i = 0, fired = false;
     const hard = setTimeout(() => { if (my === djChain) finish(); }, 12000);
     function finish(){
       if (fired) return; fired = true;
       clearTimeout(hard);
-      if (my === djChain) { announcing = false; annStep = null; audio.onerror = null; audio.src = t.audio; }
-      done();
+      if (my === djChain) { announcing = false; annStep = null; audio.onerror = null; audio.ontimeupdate = null; audio.volume = 1; audio.src = t.audio; }
+      setTimeout(done, 450); // the narrator fully ends — a beat of quiet — then the song (owner, Nov 1)
     }
     const step = () => {
       if (fired || my !== djChain) return;
       if (i >= keys.length) { finish(); return; }
+      audio.ontimeupdate = null; audio.volume = 1;
       audio.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++;
+      if (i === keys.length) { // last clip: fade its tail out so the call ends clean, never clipped by the song
+        audio.ontimeupdate = () => {
+          const d = audio.duration || 0, c = audio.currentTime || 0;
+          if (d > 0 && d - c < 0.35) audio.volume = Math.max(0, (d - c) / 0.35);
+        };
+      }
       const p = audio.play(); if (p && p.catch) p.catch(() => finish());
     };
     announcing = true;
@@ -2430,7 +2420,7 @@ app.get("/charts", (req, res) => {
   (function(){
     var Q = ${JSON.stringify(chartQ).replace(/</g, "\\u003c")};
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 3;
+    var ANN_V = 4;
     var byId = {}; Q.forEach(function(s, i){ byId[s.id] = i; });
     var audio = document.getElementById('cAudio');
     var btn = document.getElementById('cPlayBtn');
@@ -2439,35 +2429,24 @@ app.get("/charts", (req, res) => {
       document.getElementById('cBarThumb').src = s.cover;
       document.getElementById('cBarTitle').textContent = s.title;
       document.getElementById('cBarArtist').textContent = s.artist; }
-    // The bucket blessing (owner, Nov 1, 2026): a song at ranks 21-100
-    // gets the narrator before it plays — same buildup as the Top 20,
-    // its own number, closing "Non-stop and climbing!" The recorded
-    // clips play through this page's own player; if a clip is missing
-    // the phone voice reads the same words. The DJ VOICE switch on the
-    // Stage home page is the same switch here (one stored preference).
+    // The bucket blessing, simplified by the owner (Nov 1, 2026): a
+    // song at ranks 21-100 gets ONE clean call before it plays —
+    // "Number 47 — Mike millzz — Get low — non-stop and climbing!"
+    // No days line, no "brand new entry". Recorded clips only, through
+    // this page's own player; if a clip isn't ready the song just
+    // plays — ONE narrator on this site, never a phone robot voice.
+    // The DJ VOICE switch on the Stage home page is the same switch
+    // here (one stored preference).
     var annChain = 0, announcingC = false, annStepC = null;
-    function daysKeyFor(s){ return s.fresh ? 'days-fresh' : (s.days === 1 ? 'days-one' : (s.days >= 2 && s.days <= 60 ? 'days-' + s.days : null)); }
-    function speakBucket(s, done){
-      if (!('speechSynthesis' in window)) { done(); return; }
-      try {
-        speechSynthesis.cancel();
-        var d = s.fresh ? 'A brand new entry — day one on the chart.' : (s.days === 1 ? 'Day one on the chart.' : (s.days || 0) + ' days on the chart.');
-        var u = new SpeechSynthesisUtterance('The number ' + s.rank + ' song is "' + s.title + '" by ' + s.artist + '. ' + d + ' Non-stop and climbing!');
-        u.rate = 0.98; u.pitch = 0.6; u.volume = 1;
-        var fired = false; var go = function(){ if (!fired) { fired = true; done(); } };
-        u.onend = go; u.onerror = go; setTimeout(go, 6000);
-        speechSynthesis.speak(u);
-      } catch (e) { done(); }
-    }
     function announceBucket(s, done){
       var on = true; try { on = localStorage.getItem('djVoice') !== '0'; } catch (e) {}
       if (!on) { done(); return; }
-      var keys = ['climb-' + s.rank, 'title-' + s.id, daysKeyFor(s), 'climb-closer'];
-      if (keys.some(function(k){ return !k || ANN_KEYS.indexOf(k) === -1; })) { speakBucket(s, done); return; }
+      var keys = ['climb-' + s.rank, 'line-' + s.id, 'climb-closer'];
+      if (keys.some(function(k){ return !k || ANN_KEYS.indexOf(k) === -1; })) { done(); return; }
       var my = ++annChain, i = 0, fired = false;
       var hard = setTimeout(function(){ if (my === annChain) finish(); }, 12000);
-      function finish(){ if (fired) return; fired = true; clearTimeout(hard); if (my === annChain) { announcingC = false; annStepC = null; audio.onerror = null; } done(); }
-      var step = function(){ if (fired || my !== annChain) return; if (i >= keys.length) { finish(); return; } audio.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++; var p = audio.play(); if (p && p.catch) p.catch(function(){ finish(); }); };
+      function finish(){ if (fired) return; fired = true; clearTimeout(hard); if (my === annChain) { announcingC = false; annStepC = null; audio.onerror = null; audio.ontimeupdate = null; audio.volume = 1; } setTimeout(done, 450); }
+      var step = function(){ if (fired || my !== annChain) return; if (i >= keys.length) { finish(); return; } audio.ontimeupdate = null; audio.volume = 1; audio.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++; if (i === keys.length) { audio.ontimeupdate = function(){ var d = audio.duration || 0, c = audio.currentTime || 0; if (d > 0 && d - c < 0.35) audio.volume = Math.max(0, (d - c) / 0.35); }; } var p = audio.play(); if (p && p.catch) p.catch(function(){ finish(); }); };
       announcingC = true; annStepC = step;
       audio.onerror = function(){ if (announcingC && my === annChain) finish(); };
       step();
@@ -2479,6 +2458,7 @@ app.get("/charts", (req, res) => {
     function playAt(i){ if (i < 0 || i >= Q.length || !Q[i].audio) return; cur = i;
       var tk = ++playToken;
       annChain++; announcingC = false; annStepC = null;
+      audio.ontimeupdate = null; audio.volume = 1;
       paint();
       var s = Q[i];
       if (s.rank >= 21 && s.rank <= 100) { announceBucket(s, function(){ if (playToken === tk && cur === i) startSong(i); }); }
@@ -3394,53 +3374,42 @@ app.get("/artist/:id", (req, res) => {
     // what a visiting artist hears when an artist posts their profile.
     // The Stage's DJ VOICE switch is the same switch here.
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 3;
+    var ANN_V = 4;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     function countPlay(a) { if (a._counted) return; a._counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
     function cancelAnnounce(a) {
       if (!a._announcing) return;
       annChain++; a._announcing = false; a._announced = true; a._annStep = null;
+      a.ontimeupdate = null; a.volume = 1;
       if (a._songSrc) a.src = a._songSrc;
-    }
-    function speakProfile(a, mode, done) {
-      if (!('speechSynthesis' in window)) { done(); return; }
-      try {
-        speechSynthesis.cancel();
-        var days = parseInt(a.getAttribute('data-days') || '0', 10);
-        var fresh = a.getAttribute('data-fresh') === '1';
-        var d = fresh ? 'A brand new entry — day one on the chart.' : (days === 1 ? 'Day one on the chart.' : days + ' days on the chart.');
-        var text = mode === 'top20'
-          ? 'The number ' + a.getAttribute('data-rank') + ' song on Top 20 is "' + a.getAttribute('data-title') + '" by ' + a.getAttribute('data-artist') + '. ' + d + ' Hot Top 20 — non-stop!'
-          : 'The number ' + a.getAttribute('data-rank') + ' song is "' + a.getAttribute('data-title') + '" by ' + a.getAttribute('data-artist') + '. ' + d + ' Non-stop and climbing!';
-        var u = new SpeechSynthesisUtterance(text);
-        u.rate = 0.98; u.pitch = 0.6; u.volume = 1;
-        var fired = false; var go = function () { if (!fired) { fired = true; done(); } };
-        u.onend = go; u.onerror = go; setTimeout(go, 6000);
-        speechSynthesis.speak(u);
-      } catch (e) { done(); }
     }
     function announceProfile(a, done) {
       var mode = a.getAttribute('data-mode');
       if (!djOnP() || !mode) { done(); return; }
       var days = parseInt(a.getAttribute('data-days') || '0', 10);
       var fresh = a.getAttribute('data-fresh') === '1';
-      var daysKey = fresh ? 'days-fresh' : (days === 1 ? 'days-one' : (days >= 2 && days <= 60 ? 'days-' + days : null));
+      var daysKey = fresh ? 'days-fresh' : (days === 1 ? 'days-one' : (days >= 2 && days <= 100 ? 'days-' + days : null));
+      // Bucket call = the owner's one clean line (Nov 1, 2026):
+      // number — artist — title — "Non-stop and climbing!", no days
+      // line. Recorded voice or no call — never a phone robot voice.
       var keys = mode === 'top20'
         ? ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), daysKey, 'closer']
-        : ['climb-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), daysKey, 'climb-closer'];
-      if (keys.some(function (k) { return !k || ANN_KEYS.indexOf(k) === -1; })) { speakProfile(a, mode, done); return; }
+        : ['climb-' + a.getAttribute('data-rank'), 'line-' + a.getAttribute('data-song'), 'climb-closer'];
+      if (keys.some(function (k) { return !k || ANN_KEYS.indexOf(k) === -1; })) { done(); return; }
       var my = ++annChain, i = 0, fired = false;
       var hard = setTimeout(function () { if (my === annChain) finish(); }, 12000);
       function finish() {
         if (fired) return; fired = true; clearTimeout(hard);
-        if (my === annChain) { a._announcing = false; a._annStep = null; a.src = a._songSrc; }
-        done();
+        if (my === annChain) { a._announcing = false; a._annStep = null; a.ontimeupdate = null; a.volume = 1; a.src = a._songSrc; }
+        setTimeout(done, 450);
       }
       var step = function () {
         if (fired || my !== annChain) return;
         if (i >= keys.length) { finish(); return; }
+        a.ontimeupdate = null; a.volume = 1;
         a.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++;
+        if (i === keys.length) { a.ontimeupdate = function () { var d = a.duration || 0, c = a.currentTime || 0; if (d > 0 && d - c < 0.35) a.volume = Math.max(0, (d - c) / 0.35); }; }
         var p = a.play(); if (p && p.catch) p.catch(function () { finish(); });
       };
       a._announcing = true; a._annStep = step;
