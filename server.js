@@ -259,6 +259,7 @@ if (ICONS) {
   });
   iconRoute("/icons/icon-512x512.png", "icon-512x512.png");
   iconRoute("/icons/icon-192x192.png", "icon-192x192.png");
+  iconRoute("/icons/icon-48x48.png", "icon-48x48.png");
   iconRoute("/icons/icon-maskable-512x512.png", "icon-maskable-512x512.png");
   iconRoute("/icons/apple-touch-icon.png", "apple-touch-icon.png");
   iconRoute("/apple-touch-icon.png", "apple-touch-icon.png");
@@ -266,6 +267,18 @@ if (ICONS) {
   // directly, and it 404'd — the new mark now answers there too.
   iconRoute("/favicon.ico", "icon-192x192.png");
 }
+// Search engines (owner, Nov 2, 2026): a real robots.txt and a
+// sitemap, so Google's crawlers come back clean and pick up the
+// platinum favicon and the public pages. The site 404'd robots.txt
+// before, which left Google holding its generic placeholder icon.
+app.get("/robots.txt", (req, res) => {
+  res.type("text/plain").send("User-agent: *\nAllow: /\n\nSitemap: https://hottop20.com/sitemap.xml\n");
+});
+app.get("/sitemap.xml", (req, res) => {
+  const pages = ["", "charts", "upload", "profile", "djs", "viewcast", "how-it-works", "advertise", "ar", "terms"];
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${pages.map((p) => `  <url><loc>https://hottop20.com/${p}</loc></url>`).join("\n")}\n</urlset>\n`;
+  res.type("application/xml").send(xml);
+});
 // Pages always re-fetch fresh HTML (owner hit a stale cached page more
 // than once — new features like the DJ voice never reached his phone).
 // Media and data files keep their normal caching.
@@ -746,7 +759,9 @@ function layout(title, active, body, opts = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#000000">
-<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png">
+<link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48x48.png?v=2">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png?v=2">
+<link rel="shortcut icon" href="/favicon.ico?v=2">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
