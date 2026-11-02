@@ -3237,6 +3237,23 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   // at the end of the pass, the 15-point evaluation reveals below.
   // The official numbers are the server's; the theater is the artist
   // watching their record on the machine. Skip link for the impatient.
+  const THEATER_SUBS = {
+    mix: "How the low end, mids and highs sit against each other",
+    mastering: "Loudness, true peak and polish — the radio finish",
+    hook: "When the hook lands — and how hard it hits",
+    melody: "The tune the ear carries out the door",
+    lyrics: "Your words — clarity, craft and weight",
+    structure: "Verses, hooks and turns in the right places",
+    vocals: "Delivery, presence and performance",
+    production: "The instruments and the arrangement behind you",
+    groove: "The pocket — drums, bass and bounce",
+    emotion: "Whether the record makes anybody feel something",
+    dynamics: "Energy, lift and breathing room",
+    originality: "A sound that's yours, not a copy",
+    replay: "Would they run it back?",
+    radio_readiness: "Could radio play it exactly as it sits?",
+    cover_art: "The picture that sells the song",
+  };
   const theater = `
   <div class="panel" id="theaterPanel" style="padding:0;overflow:hidden">
     <img src="/studio.jpg" alt="The Top 20 Mastering Analyzer" style="width:100%;display:block">
@@ -3250,12 +3267,14 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
           <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">INTEGRATED</div><div id="tInt" style="font-size:21px;font-weight:800;color:#ff5a5a">—</div></div>
           <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">TRUE PEAK</div><div id="tPeak" style="font-size:21px;font-weight:800;color:#ffc44d">—</div></div>
         </div>
-        <canvas id="tSpec" width="920" height="230" style="width:100%;height:auto;display:block;background:#060b18;border:1px solid #22304f;border-radius:10px"></canvas>
+        <canvas id="tLevels" width="1440" height="460" style="width:100%;height:auto;display:block;background:#060b18;border:1px solid #22304f;border-radius:10px"></canvas>
         <div style="display:flex;align-items:center;gap:8px;margin:10px 0 4px"><span class="note" style="width:14px">L</span><div style="flex:1;height:12px;background:#0a1122;border:1px solid #22304f;border-radius:6px;overflow:hidden"><div id="tML" style="height:100%;width:0%;background:linear-gradient(90deg,#2ee6a8,#ffc44d,#ff5a5a)"></div></div><span class="note" id="tLvl" style="width:74px;text-align:right">— dB</span></div>
-        <div style="display:flex;align-items:center;gap:8px;margin:0 0 10px"><span class="note" style="width:14px">R</span><div style="flex:1;height:12px;background:#0a1122;border:1px solid #22304f;border-radius:6px;overflow:hidden"><div id="tMR" style="height:100%;width:0%;background:linear-gradient(90deg,#2ee6a8,#ffc44d,#ff5a5a)"></div></div><span class="note" style="width:74px"></span></div>
-        <canvas id="tHist" width="920" height="90" style="width:100%;height:auto;display:block;background:#060b18;border:1px solid #22304f;border-radius:10px"></canvas>
+        <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px"><span class="note" style="width:14px">R</span><div style="flex:1;height:12px;background:#0a1122;border:1px solid #22304f;border-radius:6px;overflow:hidden"><div id="tMR" style="height:100%;width:0%;background:linear-gradient(90deg,#2ee6a8,#ffc44d,#ff5a5a)"></div></div><span class="note" style="width:74px"></span></div>
+        <div id="tSegs" style="display:flex;gap:3px;margin:2px 0 10px">${CATEGORIES.map(() => `<div style="flex:1;height:6px;border-radius:3px;background:#22304f"></div>`).join("")}</div>
+        <p class="note" id="tPhaseKick" style="margin:0;letter-spacing:2px">THE 15-POINT SCALE — READING YOUR RECORD</p>
+        <p id="tPhaseName" style="margin:2px 0 0;font-size:23px;font-weight:800;color:#fff">Warming up the analyzer…</p>
+        <p class="sub" id="tPhaseSub" style="margin:2px 0 0">Every point gets read off your actual mix.</p>
         <div style="height:6px;background:#0a1122;border-radius:3px;overflow:hidden;margin:14px 0 8px"><div id="tProgFill" style="height:100%;width:0%;background:linear-gradient(90deg,#ffc44d,#ff5a5a)"></div></div>
-        <p class="sub" id="tStageLabel" style="margin:0">Warming up the analyzer…</p>
         <p class="note" style="margin:6px 0 0">Live feed — your song as it plays. The official readings land with your evaluation below.</p>
       </div>
       <p style="margin:12px 0 2px"><a href="#" id="tSkip" style="color:var(--accent);font-weight:700;text-decoration:none">Skip to my 15-point evaluation →</a></p>
@@ -3266,10 +3285,12 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
   (function () {
     var btn = document.getElementById("tStart"), stage = document.getElementById("tStage"),
         skip = document.getElementById("tSkip"), panel = document.getElementById("theaterPanel"),
-        audio = document.getElementById("tAudio"), label = document.getElementById("tStageLabel"),
-        fill = document.getElementById("tProgFill");
-    var DUR = 60000, startedAt = null, done = false, actx = null, raf = null, hist = [];
-    var stages = ["Reading loudness & true peak…", "Mapping the spectrum — comparing it to the ${esc(genre)} reference chart…", "Finding the hook — testing structure, groove & dynamics…", "Scoring all 15 points — mix to cover art…"];
+        audio = document.getElementById("tAudio"),
+        fill = document.getElementById("tProgFill"),
+        kick = document.getElementById("tPhaseKick"), pname = document.getElementById("tPhaseName"),
+        psub = document.getElementById("tPhaseSub"), segs = document.getElementById("tSegs");
+    var DUR = 60000, startedAt = null, done = false, actx = null, raf = null, curPhase = -1;
+    var POINTS = ${JSON.stringify(CATEGORIES.map((c) => [c.label.toUpperCase(), THEATER_SUBS[c.key] || ""]))};
     function finish() {
       if (done) return; done = true;
       try {
@@ -3295,8 +3316,9 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
         anM.fftSize = 512; anL.fftSize = 256; anR.fftSize = 256;
         src.connect(split); src.connect(anM); anM.connect(actx.destination);
         split.connect(anL, 0); split.connect(anR, 1);
-        var spec = document.getElementById("tSpec"), sctx = spec.getContext("2d");
-        var histC = document.getElementById("tHist"), hctx = histC.getContext("2d");
+        var lv = document.getElementById("tLevels"), lctx = lv.getContext("2d");
+        var NB = 16, barV = [], barP = [];
+        for (var bi = 0; bi < NB; bi++) { barV.push(0); barP.push(0); }
         var freq = new Uint8Array(anM.frequencyBinCount), tdL = new Uint8Array(anL.fftSize), tdR = new Uint8Array(anR.fftSize), tdM = new Uint8Array(anM.fftSize);
         var mL = document.getElementById("tML"), mR = document.getElementById("tMR"), lvl = document.getElementById("tLvl");
         var elS = document.getElementById("tShort"), elI = document.getElementById("tInt"), elP = document.getElementById("tPeak");
@@ -3310,14 +3332,36 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
         (function loop() {
           if (done) return; raf = requestAnimationFrame(loop);
           anM.getByteFrequencyData(freq);
-          var W = spec.width, H = spec.height;
-          sctx.fillStyle = "#060b18"; sctx.fillRect(0, 0, W, H);
-          var bars = 72, bw = W / bars;
-          for (var i = 0; i < bars; i++) {
-            var v = freq[Math.floor(i * freq.length / bars * 0.82)] / 255;
-            var h = Math.max(2, v * H);
-            sctx.fillStyle = "hsl(" + (240 - i / bars * 240) + ",100%," + (45 + v * 20) + "%)";
-            sctx.fillRect(i * bw + 1, H - h, bw - 2, h);
+          // THE LEVELS DECK (owner, Nov 2, 2026 — from Dale's Insight
+          // screenshot): segmented vertical meters pumping per band,
+          // peak-hold ticks, dB scale down the side. Not a printout —
+          // the song's real energy, shown the way pro meters show it.
+          var W = lv.width, H = lv.height;
+          lctx.fillStyle = "#060b18"; lctx.fillRect(0, 0, W, H);
+          lctx.strokeStyle = "rgba(70,100,150,0.28)"; lctx.lineWidth = 1;
+          lctx.fillStyle = "rgba(160,180,210,0.8)"; lctx.font = "600 19px sans-serif";
+          var grows = [0, -10, -20, -30, -40];
+          for (var g = 0; g < grows.length; g++) {
+            var gy = 26 + (H - 70) * (g / (grows.length - 1));
+            lctx.beginPath(); lctx.moveTo(64, gy); lctx.lineTo(W - 16, gy); lctx.stroke();
+            lctx.fillText(grows[g] === 0 ? "0" : String(grows[g]), 14, gy + 6);
+          }
+          var bw = (W - 100) / NB;
+          for (var i = 0; i < NB; i++) {
+            var idx = Math.floor(Math.pow(i / NB, 1.55) * freq.length * 0.85);
+            var target = Math.min(1, freq[idx] / 255 * 1.3);
+            barV[i] = Math.max(target, barV[i] * 0.86);
+            if (barV[i] > barP[i]) barP[i] = barV[i]; else barP[i] = Math.max(barV[i], barP[i] - 0.0035);
+            var x = 72 + i * bw, bwid = bw * 0.62, top = 26, bot = H - 44, bh = bot - top;
+            var segsN = 26, sh = bh / segsN;
+            for (var s2 = 0; s2 < segsN; s2++) {
+              var frac = s2 / segsN;
+              if (frac > barV[i]) break;
+              lctx.fillStyle = frac > 0.86 ? "#ff5a5a" : frac > 0.68 ? "#ffc44d" : "#2ee6a8";
+              lctx.fillRect(x, bot - (s2 + 1) * sh + 2, bwid, sh - 4);
+            }
+            lctx.fillStyle = "#ffffff";
+            lctx.fillRect(x, bot - barP[i] * bh - 3, bwid, 3);
           }
           var rL = stats(anL, tdL), rR = stats(anR, tdR); stats(anM, tdM);
           smooth = smooth * 0.82 + Math.max(rL, rR) * 0.18;
@@ -3327,22 +3371,20 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
           elS.textContent = (20 * Math.log10(Math.max(smooth, 0.0001))).toFixed(1);
           if (nSamp > 0) elI.textContent = (20 * Math.log10(Math.max(Math.sqrt(sumSq / nSamp), 0.0001))).toFixed(1);
           elP.textContent = peak > 0 ? (20 * Math.log10(peak)).toFixed(1) : "—";
-          hist.push((rL + rR) / 2); if (hist.length > 220) hist.shift();
-          var hW = histC.width, hH = histC.height;
-          hctx.fillStyle = "#060b18"; hctx.fillRect(0, 0, hW, hH);
-          hctx.strokeStyle = "#57e6ff"; hctx.lineWidth = 2; hctx.beginPath();
-          for (var j = 0; j < hist.length; j++) {
-            var x = j / 219 * hW, y = hH - 4 - Math.min(1, hist[j] * 2.6) * (hH - 10);
-            if (j) hctx.lineTo(x, y); else hctx.moveTo(x, y);
-          }
-          hctx.stroke();
         })();
       } catch (e) { /* meters unavailable in this browser — the reading clock still runs */ }
       (function tick() {
         if (done) return;
         var el = Date.now() - startedAt, p = Math.min(1, el / DUR);
         fill.style.width = (p * 100) + "%";
-        label.textContent = stages[Math.min(stages.length - 1, Math.floor(p * stages.length))];
+        var ph = Math.min(POINTS.length - 1, Math.floor(el / 4000));
+        if (ph !== curPhase) {
+          curPhase = ph;
+          kick.textContent = "POINT " + (ph + 1) + " OF 15 — JUDGING";
+          pname.textContent = POINTS[ph][0];
+          psub.textContent = POINTS[ph][1];
+          for (var si = 0; si < segs.children.length; si++) segs.children[si].style.background = si < ph ? "#ffc44d" : si === ph ? "#ff5a5a" : "#22304f";
+        }
         if (p >= 1) { finish(); return; }
         setTimeout(tick, 200);
       })();
