@@ -98,7 +98,8 @@ function renderCard({ songId, title, artist, coverAbs, standing, chartDate }) {
 // photo is served through a storage redirect Facebook's scraper won't
 // follow, so the post came out as a bare link with site branding. This
 // card is served straight from the site as one finished picture: the
-// artist's photo filling the square, their name, city and genre on the
+// record's album cover filling the square (the artist's photo when no
+// song is live yet), their name, city and genre on the
 // lacquer band, and the line that sells the click — their songs play
 // right on the profile page. The click still lands on /artist/<id>.
 function renderProfileCard({ userId, name, city, state, genre, imageAbs, standingLine }) {

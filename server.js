@@ -2590,7 +2590,26 @@ app.get("/pcard/:id.jpg", async (req, res) => {
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
   if (!user || !hasProfile(user)) return res.status(404).end();
   const songs = db.prepare("SELECT id, cover_path FROM songs WHERE artist_id = ? AND status = 'live' ORDER BY id").all(user.id);
-  const candidates = [user.photo_path, ...(songs.map((s) => s.cover_path))].filter(Boolean);
+  // The card's face (owner, Nov 1, 2026): the ALBUM COVER of the artist's
+  // record on Top 20 leads — that's the artwork people recognize and
+  // look the artist up by, the way real labels push the cover, not the
+  // profile picture (which for some artists is just a label logo). The
+  // best-standing song's cover goes first; the profile photo is the
+  // fallback for an artist with no song live yet.
+  let standingLine = null, bestSongId = null;
+  try {
+    let bestRow = null, bestScore = null;
+    for (const s of songs) {
+      const row = sharecard.headlineStanding(db, s.id);
+      if (!row) continue;
+      const score = [row.level === "national" && row.genre === "Overall" ? 0 : row.level === "national" ? 1 : 2, row.rank];
+      if (!bestScore || score[0] < bestScore[0] || (score[0] === bestScore[0] && score[1] < bestScore[1])) { bestRow = row; bestScore = score; bestSongId = s.id; }
+    }
+    if (bestRow) standingLine = `#${bestRow.rank} · ${sharecard.chartLabelText(bestRow)} · TOP ${bestRow.rank <= 20 ? 20 : 100}`;
+    if (!bestSongId && songs.length) bestSongId = songs[0].id;
+  } catch { standingLine = null; }
+  const bestCover = bestSongId ? (songs.find((s) => s.id === bestSongId) || {}).cover_path : null;
+  const candidates = [bestCover, ...songs.map((s) => s.cover_path), user.photo_path].filter((v, i, a) => v && a.indexOf(v) === i);
   let imageAbs = null, tmpFile = null;
   for (const cand of candidates) {
     const local = [path.join(__dirname, "public", cand), path.join(__dirname, cand)].find((p) => fs.existsSync(p));
@@ -2608,17 +2627,6 @@ app.get("/pcard/:id.jpg", async (req, res) => {
       } catch { /* try the next candidate */ }
     }
   }
-  let standingLine = null;
-  try {
-    let bestRow = null, bestScore = null;
-    for (const s of songs) {
-      const row = sharecard.headlineStanding(db, s.id);
-      if (!row) continue;
-      const score = [row.level === "national" && row.genre === "Overall" ? 0 : row.level === "national" ? 1 : 2, row.rank];
-      if (!bestScore || score[0] < bestScore[0] || (score[0] === bestScore[0] && score[1] < bestScore[1])) { bestRow = row; bestScore = score; }
-    }
-    if (bestRow) standingLine = `#${bestRow.rank} · ${sharecard.chartLabelText(bestRow)} · TOP ${bestRow.rank <= 20 ? 20 : 100}`;
-  } catch { standingLine = null; }
   try {
     const buf = await sharecard.renderProfileCard({
       userId: user.id, name: user.name, city: user.city, state: user.state,
