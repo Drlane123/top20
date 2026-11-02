@@ -63,7 +63,10 @@ async function request(method, key, { query, body, contentType } = {}) {
   if (!c) throw new Error("R2 is not configured (environment variables missing).");
   const payloadHash = body ? sha256hex(body) : EMPTY_SHA256;
   const { url, headers } = signHeaders({ method, key, query, payloadHash, contentType });
-  const res = await fetch(url, { method, headers, body: body || undefined });
+  // Hard timeout: a hung request must never wedge the snapshot chain —
+  // a stuck snapshot silently disables every later one, and the next
+  // deploy then restores an old record book (artists' profiles lost).
+  const res = await fetch(url, { method, headers, body: body || undefined, signal: AbortSignal.timeout(30000) });
   return res;
 }
 

@@ -2994,7 +2994,10 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
     user.id
   );
   const saved = db.prepare("SELECT * FROM users WHERE id = ?").get(user.id);
+  // A profile save seals the record book NOW, not on a timer — an
+  // artist's profile must survive even a deploy minutes later.
   snapshotDbSoon();
+  snapshotDb("profile-save");
   if (hasProfile(saved)) return res.redirect(`/artist/${user.id}?saved=1`);
   return res.redirect(`/profile?email=${encodeURIComponent(emailLc)}&saved=1`);
 });
@@ -5178,10 +5181,13 @@ function sweepUploads() {
   }
 }
 
-let snapBusy = false;
+let snapBusy = false, snapSince = 0;
 async function snapshotDb(reason) {
-  if (!storage.configured() || snapBusy) return;
-  snapBusy = true;
+  if (!storage.configured()) return;
+  // Wedge guard: a snapshot stuck over 60s must not block every later
+  // one — that failure mode silently froze the record book in the past.
+  if (snapBusy && Date.now() - snapSince < 60000) return;
+  snapBusy = true; snapSince = Date.now();
   try {
     db.exec("PRAGMA wal_checkpoint(TRUNCATE);");
     await storage.putFile("db/top20.db", DB_PATH, "application/octet-stream");
@@ -5200,8 +5206,14 @@ if (storage.configured()) {
   setInterval(() => { sweepUploads(); snapshotDb("interval"); }, 5 * 60 * 1000);
   process.on("SIGTERM", () => {
     // Render gives a short grace window on deploy/stop — use it to seal
-    // the record book into the bucket before the process goes.
-    Promise.race([snapshotDb("shutdown"), new Promise((r) => setTimeout(r, 8000))]).finally(() => process.exit(0));
+    // the record book into the bucket before the process goes. If a
+    // snapshot is already in flight, WAIT for it instead of exiting
+    // over the top of it (that lost artists' fresh saves, Nov 1).
+    (async () => {
+      const deadline = Date.now() + 6000;
+      while (snapBusy && Date.now() < deadline) await new Promise((r) => setTimeout(r, 250));
+      await Promise.race([snapshotDb("shutdown"), new Promise((r) => setTimeout(r, 8000))]);
+    })().finally(() => process.exit(0));
   });
 }
 

@@ -23,10 +23,12 @@ const { DB_PATH } = require("./db");
     if (fs.existsSync(DB_PATH)) return;
     if (!storage.configured()) return;
     const buf = await storage.getObject("db/top20.db");
-    if (buf && buf.length > 0) {
+    if (buf && buf.length > 4096 && buf.subarray(0, 16).toString("latin1").startsWith("SQLite format 3")) {
       fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
       fs.writeFileSync(DB_PATH, buf);
       console.log(`[restore] record book restored from storage (${buf.length} bytes)`);
+    } else if (buf) {
+      console.error("[restore] snapshot failed its sanity check — starting from the local book instead");
     }
   } catch (e) {
     console.error("[restore] snapshot not restored:", e.message);
