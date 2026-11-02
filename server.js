@@ -1756,7 +1756,7 @@ app.get("/", (req, res) => {
       if (!btn || !menu) return;
       var cur = { id: ${first.id}, title: ${JSON.stringify(first.title)}, artist: ${JSON.stringify(first.artist)}, shares: ${Number(first.shares || 0)} };
       var countedFor = 0;
-      function songUrl(){ return location.origin + '/song/' + cur.id; }
+      function songUrl(){ return location.origin + '/song/' + cur.id + '?s=2'; } // ?s= share-version tail: Facebook caches a page's share card the first time it sees the link — the tail makes it fetch the current card (bump the number when share plumbing changes)
       function words(){ return '"' + cur.title + '" by ' + cur.artist + ' — playing now on the TOP 20 Stage'; }
       function refresh(){
         var u = encodeURIComponent(songUrl());
@@ -2666,7 +2666,7 @@ app.get("/song/:id", (req, res) => {
     ? `${headline.rank <= 20 ? "🔥" : "🎵"} #${headline.rank} on the ${headlineLabel} Top ${headlineTier} — "${song.title}" by ${song.artist}. Listen on TOP 20:`
     : null;
   const standingBadge = headline ? `<p style="margin:2px 0 10px"><span style="display:inline-block;background:linear-gradient(180deg,#ffdf8e,#f5b921);color:#231a00;font-weight:900;padding:${headline.rank <= 20 ? "9px 18px" : "6px 13px"};border-radius:999px;font-size:${headline.rank <= 20 ? "17px" : "13.5px"};letter-spacing:.4px">🏆 #${headline.rank} · ${esc(headlineLabel)} TOP ${headlineTier}</span></p>` : "";
-  const songUrlAbs = absUrl(req, `/song/${song.id}`);
+  const songUrlAbs = absUrl(req, `/song/${song.id}?s=2`); // ?s= share-version tail: forces Facebook to fetch the current share card instead of its cached first scrape (bump when share plumbing changes)
   const shareWords = shareText || `"${song.title}" by ${song.artist} — TOP 20`;
   const encSongUrl = encodeURIComponent(songUrlAbs);
   const encShareWords = encodeURIComponent(shareWords);
@@ -2748,7 +2748,7 @@ app.get("/song/:id", (req, res) => {
       });
     }
     if (!form || !menu) return;
-    var url = location.origin + '/song/${song.id}';
+    var url = location.origin + '/song/${song.id}?s=2';
     var shareCount = ${Number(eng.share || 0)};
     var counted = false;
     function count(){
@@ -3337,7 +3337,7 @@ app.get("/artist/:id", (req, res) => {
   // where the songs play. The button opens the same pick-where-it-goes
   // menu the song pages use; the phone's bare share sheet alone was
   // posting a naked link with the generic site card.
-  const profileUrlAbs = absUrl(req, `/artist/${user.id}`);
+  const profileUrlAbs = absUrl(req, `/artist/${user.id}?s=2`); // ?s= share-version tail: forces Facebook to fetch the current profile card instead of its cached first scrape (bump when share plumbing changes)
   const profileWords = `${user.name} on TOP 20 — my songs play right on my profile. Tap to listen. Artists — your own TOP 20 profile and song uploads are FREE:`;
   const encProfileUrl = encodeURIComponent(profileUrlAbs);
   const encProfileWords = encodeURIComponent(profileWords);
@@ -3454,7 +3454,7 @@ app.get("/artist/:id", (req, res) => {
     var btn = document.getElementById('profileShareBtn');
     var menu = document.getElementById('profileShareMenu');
     var msg = document.getElementById('profileShareMsg');
-    var url = location.origin + '/artist/${user.id}';
+    var url = location.origin + '/artist/${user.id}?s=2';
     if (btn && menu) {
       btn.addEventListener('click', function () {
         var open = menu.style.display !== 'none';
