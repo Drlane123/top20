@@ -3262,6 +3262,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
       <p class="sub" style="margin:0 0 6px">“${esc(title.trim())}” — this is the machine that judges every record on Top 20: loudness, true peak, the full spectrum, measured against the <b style="color:#fff">${esc(genre)} reference chart</b> — the same cheat-sheet references the pros keep on their desks. Press play and watch it read <b style="color:#fff">your</b> song: the meters below are fed by your record, live.</p>
       <p style="margin:14px 0"><button class="btn btn-blue btn-block" id="tStart" type="button" style="font-size:17px;padding:14px">▶ Play my record — watch it get measured</button></p>
       <div id="tStage" style="display:none">
+        <div id="tDeck">
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:6px 0 10px">
           <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">SHORT TERM</div><div id="tShort" style="font-size:21px;font-weight:800;color:#57e6ff">—</div></div>
           <div style="background:#0a1122;border:1px solid #22304f;border-radius:10px;padding:8px 10px"><div class="note" style="letter-spacing:1.5px">INTEGRATED</div><div id="tInt" style="font-size:21px;font-weight:800;color:#ff5a5a">—</div></div>
@@ -3274,6 +3275,17 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
         <p class="note" id="tPhaseKick" style="margin:0;letter-spacing:2px">THE 15-POINT SCALE — READING YOUR RECORD</p>
         <p id="tPhaseName" style="margin:2px 0 0;font-size:23px;font-weight:800;color:#fff">Warming up the analyzer…</p>
         <p class="sub" id="tPhaseSub" style="margin:2px 0 0">Every point gets read off your actual mix.</p>
+        </div>
+        <div id="tProc" style="display:none;text-align:center;padding:26px 6px 8px">
+          <div id="tCount" style="font-size:52px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums;line-height:1">50%</div>
+          <p id="tProcStatus" style="margin:10px 0 0;font-size:21px;font-weight:800;letter-spacing:3px;color:#2ee6a8">READING</p>
+          <p class="sub" id="tProcPoint" style="margin:4px 0 0">Reading your record…</p>
+          <div style="height:16px;background:#0a1122;border:1px solid #22304f;border-radius:8px;overflow:hidden;margin:16px 0 12px"><div id="tProcFill" style="height:100%;width:50%;background:#2ee6a8"></div></div>
+          <div style="max-width:440px;margin:0 auto 4px">
+            <div style="height:8px;background:#0a1122;border:1px solid #22304f;border-radius:5px;overflow:hidden;margin-bottom:5px"><div id="tPML" style="height:100%;width:0%;background:linear-gradient(90deg,#2ee6a8,#ffc44d,#ff5a5a)"></div></div>
+            <div style="height:8px;background:#0a1122;border:1px solid #22304f;border-radius:5px;overflow:hidden"><div id="tPMR" style="height:100%;width:0%;background:linear-gradient(90deg,#2ee6a8,#ffc44d,#ff5a5a)"></div></div>
+          </div>
+        </div>
         <div style="height:6px;background:#0a1122;border-radius:3px;overflow:hidden;margin:14px 0 8px"><div id="tProgFill" style="height:100%;width:0%;background:linear-gradient(90deg,#ffc44d,#ff5a5a)"></div></div>
         <p class="note" style="margin:6px 0 0">Live feed — your song as it plays. The official readings land with your evaluation below.</p>
       </div>
@@ -3291,6 +3303,10 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
         psub = document.getElementById("tPhaseSub"), segs = document.getElementById("tSegs");
     var DUR = 60000, startedAt = null, done = false, actx = null, raf = null, curPhase = -1;
     var POINTS = ${JSON.stringify(CATEGORIES.map((c) => [c.label.toUpperCase(), THEATER_SUBS[c.key] || ""]))};
+    var deck = document.getElementById("tDeck"), proc = document.getElementById("tProc"),
+        count = document.getElementById("tCount"), pfill = document.getElementById("tProcFill"),
+        pstatus = document.getElementById("tProcStatus"), ppoint = document.getElementById("tProcPoint");
+    var procOn = false, finishing = false;
     function finish() {
       if (done) return; done = true;
       try {
@@ -3321,6 +3337,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
         for (var bi = 0; bi < NB; bi++) { barV.push(0); barP.push(0); }
         var freq = new Uint8Array(anM.frequencyBinCount), tdL = new Uint8Array(anL.fftSize), tdR = new Uint8Array(anR.fftSize), tdM = new Uint8Array(anM.fftSize);
         var mL = document.getElementById("tML"), mR = document.getElementById("tMR"), lvl = document.getElementById("tLvl");
+        var pmL = document.getElementById("tPML"), pmR = document.getElementById("tPMR");
         var elS = document.getElementById("tShort"), elI = document.getElementById("tInt"), elP = document.getElementById("tPeak");
         var sumSq = 0, nSamp = 0, peak = 0, smooth = 0;
         function stats(an, buf) {
@@ -3367,6 +3384,7 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
           smooth = smooth * 0.82 + Math.max(rL, rR) * 0.18;
           mL.style.width = Math.min(100, rL * 260) + "%";
           mR.style.width = Math.min(100, rR * 260) + "%";
+          if (pmL) { pmL.style.width = Math.min(100, rL * 260) + "%"; pmR.style.width = Math.min(100, rR * 260) + "%"; }
           lvl.textContent = (20 * Math.log10(Math.max(smooth, 0.0001))).toFixed(1) + " dB";
           elS.textContent = (20 * Math.log10(Math.max(smooth, 0.0001))).toFixed(1);
           if (nSamp > 0) elI.textContent = (20 * Math.log10(Math.max(Math.sqrt(sumSq / nSamp), 0.0001))).toFixed(1);
@@ -3383,10 +3401,39 @@ app.post("/upload", upload.fields([{ name: "audio", maxCount: 1 }, { name: "cove
           kick.textContent = "POINT " + (ph + 1) + " OF 15 — JUDGING";
           pname.textContent = POINTS[ph][0];
           psub.textContent = POINTS[ph][1];
+          ppoint.textContent = "Judging point " + (ph + 1) + " of 15 — " + POINTS[ph][0];
           for (var si = 0; si < segs.children.length; si++) segs.children[si].style.background = si < ph ? "#ffc44d" : si === ph ? "#ff5a5a" : "#22304f";
         }
+        // THE PROCESSING STRETCH (owner, Nov 2, 2026): the full screen
+        // doesn't run the whole way. Halfway through, the deck steps
+        // back and it's the green loading bar with a percent readout
+        // climbing — 10%, 20%, 35%, 45%… — a slim live meter still
+        // reading their song underneath, the judging point still
+        // cycling. At 85% it flips to FINALIZING, then FINISHED, and
+        // the 15-point evaluation pops up.
+        if (!procOn && el >= DUR / 2) {
+          procOn = true;
+          deck.style.display = "none";
+          proc.style.display = "block";
+        }
+        if (procOn) {
+          count.textContent = Math.round(p * 100) + "%";
+          pfill.style.width = (p * 100) + "%";
+          if (p >= 1) {
+            if (!finishing) {
+              finishing = true;
+              pstatus.textContent = "FINISHED";
+              pstatus.style.color = "#ffc44d";
+              count.textContent = "100%";
+              ppoint.textContent = "Your 15-point evaluation is ready.";
+              setTimeout(finish, 900);
+            }
+            return;
+          }
+          if (p >= 0.85) { pstatus.textContent = "FINALIZING"; pstatus.style.color = "#ffc44d"; }
+        }
         if (p >= 1) { finish(); return; }
-        setTimeout(tick, 200);
+        setTimeout(tick, 100);
       })();
     });
   })();
