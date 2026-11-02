@@ -3275,6 +3275,26 @@ app.get("/artist/:id", (req, res) => {
   const where = (r) => r.level === "national" ? "National"
     : r.level === "regional" ? `Regional · ${r.region_key}` : `Local · ${r.region_key}`;
   const support = supportBySong(db);
+  // Narrator data per song (owner, Nov 1, 2026): when a visitor presses
+  // play on this profile, a charted song gets the narrator's call first —
+  // Top 20 wording at ranks 1-20, the climbing wording at 21-100, both
+  // read off the National Overall chart, the one the Stage plays.
+  const annFor = (songId) => {
+    if (!date) return { mode: "", rank: 0, days: 0, fresh: false };
+    const r = db.prepare(
+      "SELECT rank FROM chart_entries WHERE song_id = ? AND chart_date = ? AND level = 'national' AND genre = 'Overall' AND region_key = 'ALL'"
+    ).get(songId, date);
+    if (!r) return { mode: "", rank: 0, days: 0, fresh: false };
+    if (r.rank <= 20) {
+      const dc = daysCharted(songId);
+      return { mode: "top20", rank: r.rank, days: dc.days, fresh: dc.days > 0 && dc.first === date };
+    }
+    if (r.rank <= 100) {
+      const dc = daysOnChart(songId, "national", OVERALL, "ALL", 100, date);
+      return { mode: "bucket", rank: r.rank, days: dc.days, fresh: dc.fresh };
+    }
+    return { mode: "", rank: r.rank, days: 0, fresh: false };
+  };
   const songCards = songs.map((s) => {
     const sup = support.get(s.id) || { likes: 0, shares: 0 };
     const bonusChip = `<span class="chip">🔥 Fan Bonus <b>+${supportBonus(sup.likes, sup.shares).toFixed(1)}</b></span>`;
@@ -3285,13 +3305,14 @@ app.get("/artist/:id", (req, res) => {
       : any && any.best != null
         ? `<span class="chip">Best rank today <b>#${any.best}</b></span>`
         : `<span class="chip">Not ranked yet</span>`;
+    const ann = annFor(s.id);
     return `<div class="panel">
       <a class="row" href="/song/${s.id}" style="border-bottom:none">
         <img class="thumb" src="${esc(s.cover_path)}" alt="">
         <span class="meta"><span class="t">${esc(s.title)}</span><br><span class="a">${esc(s.genre)} · Craft ${s.craft_score}</span></span>
       </a>
       <div class="chips">${standing} ${bonusChip}</div>
-      <audio class="profile-audio" controls preload="metadata" src="${esc(s.audio_path)}" data-song="${s.id}" style="width:100%;margin-top:10px"></audio>
+      <audio class="profile-audio" controls preload="metadata" src="${esc(s.audio_path)}" data-song="${s.id}" data-mode="${ann.mode}" data-rank="${ann.rank}" data-days="${ann.days}" data-fresh="${ann.fresh ? 1 : 0}" data-title="${esc(s.title)}" data-artist="${esc(user.name)}" style="width:100%;margin-top:10px"></audio>
     </div>`;
   }).join("");
   const highlights = db.prepare(`
@@ -3356,16 +3377,84 @@ app.get("/artist/:id", (req, res) => {
   ${user.history ? `<div class="panel"><h2 style="margin-top:0">History</h2><p class="sub" style="white-space:pre-wrap">${esc(user.history)}</p></div>` : ""}
   ${profileVideo ? videoDisplayHtml(profileVideo) : ""}
   <h2 style="margin:16px 2px 4px">Live songs</h2>
-  <p class="sub" style="margin:0 2px 8px">Press play — every song plays right here on the profile.</p>
+  <p class="sub" style="margin:0 2px 8px">Press play — every song plays right here on the profile, and a charted song gets the narrator's call first.</p>
   ${songCards || `<div class="panel"><p class="sub">No live songs yet — <a href="/upload">upload the first one</a> and get recognized.</p></div>`}
   <script>
   (function () {
     var audios = document.querySelectorAll('audio.profile-audio');
+    // The narrator on the profile (owner, Nov 1, 2026): the first time a
+    // charted song is pressed on this page, the DJ calls it before it
+    // plays — Top 20 wording at ranks 1-20, "Non-stop and climbing!" at
+    // 21-100 — through the song's own player, same as the Stage. This is
+    // what a visiting artist hears when an artist posts their profile.
+    // The Stage's DJ VOICE switch is the same switch here.
+    var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
+    var ANN_V = 3;
+    var annChain = 0;
+    function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
+    function countPlay(a) { if (a._counted) return; a._counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
+    function cancelAnnounce(a) {
+      if (!a._announcing) return;
+      annChain++; a._announcing = false; a._announced = true; a._annStep = null;
+      if (a._songSrc) a.src = a._songSrc;
+    }
+    function speakProfile(a, mode, done) {
+      if (!('speechSynthesis' in window)) { done(); return; }
+      try {
+        speechSynthesis.cancel();
+        var days = parseInt(a.getAttribute('data-days') || '0', 10);
+        var fresh = a.getAttribute('data-fresh') === '1';
+        var d = fresh ? 'A brand new entry — day one on the chart.' : (days === 1 ? 'Day one on the chart.' : days + ' days on the chart.');
+        var text = mode === 'top20'
+          ? 'The number ' + a.getAttribute('data-rank') + ' song on Top 20 is "' + a.getAttribute('data-title') + '" by ' + a.getAttribute('data-artist') + '. ' + d + ' Hot Top 20 — non-stop!'
+          : 'The number ' + a.getAttribute('data-rank') + ' song is "' + a.getAttribute('data-title') + '" by ' + a.getAttribute('data-artist') + '. ' + d + ' Non-stop and climbing!';
+        var u = new SpeechSynthesisUtterance(text);
+        u.rate = 0.98; u.pitch = 0.6; u.volume = 1;
+        var fired = false; var go = function () { if (!fired) { fired = true; done(); } };
+        u.onend = go; u.onerror = go; setTimeout(go, 6000);
+        speechSynthesis.speak(u);
+      } catch (e) { done(); }
+    }
+    function announceProfile(a, done) {
+      var mode = a.getAttribute('data-mode');
+      if (!djOnP() || !mode) { done(); return; }
+      var days = parseInt(a.getAttribute('data-days') || '0', 10);
+      var fresh = a.getAttribute('data-fresh') === '1';
+      var daysKey = fresh ? 'days-fresh' : (days === 1 ? 'days-one' : (days >= 2 && days <= 60 ? 'days-' + days : null));
+      var keys = mode === 'top20'
+        ? ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), daysKey, 'closer']
+        : ['climb-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), daysKey, 'climb-closer'];
+      if (keys.some(function (k) { return !k || ANN_KEYS.indexOf(k) === -1; })) { speakProfile(a, mode, done); return; }
+      var my = ++annChain, i = 0, fired = false;
+      var hard = setTimeout(function () { if (my === annChain) finish(); }, 12000);
+      function finish() {
+        if (fired) return; fired = true; clearTimeout(hard);
+        if (my === annChain) { a._announcing = false; a._annStep = null; a.src = a._songSrc; }
+        done();
+      }
+      var step = function () {
+        if (fired || my !== annChain) return;
+        if (i >= keys.length) { finish(); return; }
+        a.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++;
+        var p = a.play(); if (p && p.catch) p.catch(function () { finish(); });
+      };
+      a._announcing = true; a._annStep = step;
+      a.onerror = function () { if (a._announcing && my === annChain) finish(); };
+      step();
+    }
     audios.forEach(function (a) {
-      var counted = false;
+      a._songSrc = a.getAttribute('src');
+      a.addEventListener('ended', function () { if (a._announcing && a._annStep) a._annStep(); });
       a.addEventListener('play', function () {
-        audios.forEach(function (o) { if (o !== a && !o.paused) o.pause(); });
-        if (!counted) { counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
+        audios.forEach(function (o) { if (o !== a) { cancelAnnounce(o); if (!o.paused) o.pause(); } });
+        if (a._announcing) return;
+        if (a._announced) { countPlay(a); return; }
+        if (!a.getAttribute('data-mode') || !djOnP()) { a._announced = true; countPlay(a); return; }
+        a.pause();
+        announceProfile(a, function () {
+          a._announced = true;
+          a.play().catch(function () {});
+        });
       });
     });
     var btn = document.getElementById('profileShareBtn');
@@ -3405,10 +3494,18 @@ app.get("/artist/:id", (req, res) => {
     }
   })();
   </script>`;
+  // The shared post carries the artist's FULL profile description
+  // (owner, Nov 1, 2026): their own bio leads — cut clean at a word,
+  // never mid-word — so the post reads like their profile, not a stub.
+  const bioText = String(user.bio || "").replace(/\s+/g, " ").trim();
+  const bioCut = bioText.length > 300 ? bioText.slice(0, 300).replace(/\s+\S*$/, "") + "…" : bioText;
+  const profileDesc = bioCut
+    ? `${bioCut} — ${user.name} · ${user.city}, ${user.state}${genreList(user).length ? ` · ${genreDisplay(user)}` : ""} on TOP 20. Songs play right on the profile.`
+    : `${user.name} · ${user.city}, ${user.state}${genreList(user).length ? ` · ${genreDisplay(user)}` : ""}. Independent artist on TOP 20 — judged on craft, ranked daily. Songs play right on the profile.`;
   res.send(layout(user.name, "profile", body, {
     meta: {
       title: `${user.name} — TOP 20 Artist`,
-      description: `${user.name} · ${user.city}, ${user.state}${genreList(user).length ? ` · ${genreDisplay(user)}` : ""}. ${user.bio ? user.bio.slice(0, 140) : "Independent artist on TOP 20 — judged on craft, ranked daily."}`,
+      description: profileDesc,
       type: "profile",
       image: absUrl(req, `/pcard/${user.id}.jpg`),
     },
