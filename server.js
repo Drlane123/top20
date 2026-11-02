@@ -39,6 +39,21 @@ try {
   if (rr && rr.error) console.error("[restore] skipped:", rr.error.message);
 } catch (e) { console.error("[restore] skipped:", e.message); }
 
+// First boot EVER (no local book, and nothing in storage to restore):
+// build the demo catalogue. On every later boot the restored book is
+// already on disk and the seed must never run — it resets all data.
+// Until Nov 1, 2026 the seed ran in the container's start command,
+// ahead of this restore, so every deploy wiped artists' profiles and
+// songs back to the demo catalogue (owner's artists reported it; the
+// stored book in the bucket held the real data the whole time).
+try {
+  if (!fs.existsSync(DB_PATH)) {
+    const { spawnSync: seedSpawn } = require("node:child_process");
+    const sr = seedSpawn(process.execPath, [path.join(__dirname, "seed.js")], { stdio: "inherit", timeout: 300000 });
+    if (sr && sr.error) console.error("[seed] skipped:", sr.error.message);
+  }
+} catch (e) { console.error("[seed] skipped:", e.message); }
+
 const db = openDb();
 const app = express();
 app.set("trust proxy", 1); // Render terminates HTTPS — believe its forwarded protocol so absolute links (share cards) come out https

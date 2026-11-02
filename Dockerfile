@@ -15,6 +15,10 @@ COPY . .
 
 EXPOSE 8077
 
-# Icons are drawn fresh (they are not in git), then the seed rebuilds the
-# demo catalogue (covers, avatars, audio, database) before serving.
-CMD ["sh", "-c", "python3 tools/gen_icons.py && cp -f public/icons/apple-touch-icon.png public/apple-touch-icon.png; node seed.js; node server.js"]
+# Icons are drawn fresh (they are not in git) before serving. The seed
+# is NOT run here: server.js restores the record book from storage
+# first and only seeds when no book exists anywhere — running the seed
+# in the start command rebuilt the demo catalogue on EVERY container
+# start and wiped artists' profiles and songs on every deploy (owner
+# report, Nov 1, 2026; root-caused the same evening).
+CMD ["sh", "-c", "python3 tools/gen_icons.py && cp -f public/icons/apple-touch-icon.png public/apple-touch-icon.png; node server.js"]
