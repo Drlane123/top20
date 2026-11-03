@@ -5709,6 +5709,11 @@ app.get("/dj", requireDj, (req, res) => {
       </select>`;
   const body = `
   <h1>🎧 DJ's Hot Picks — panel</h1>
+  <div class="panel">
+    <h2 style="margin-top:0">🎧 Your DJ profile</h2>
+    <p class="sub">The picks are above board on Fridays — your <b style="color:#fff">DJ profile</b> is your face on the panel the rest of the week. Build it with the <b style="color:#fff">8-digit DJ profile code</b> (separate from this panel's password), and show it on the DJs page only if you flip it public.</p>
+    <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj-profile">Open the DJ profile creator →</a></p>
+  </div>
   <p class="sub">Every Friday the panel picks up to <b style="color:#fff">3 songs</b> that are already hot. Those picks step into the <b style="color:#fff">National Overall Top 20</b> when Friday's chart lands at midnight, wearing the gold 🎧 DJ Pick badge. From the next day the algorithm treats a pick like any other song. Picks can be changed any time before that Friday midnight.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
   <div class="panel">
@@ -6442,6 +6447,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">🎧🤝 DJ &amp; A&amp;R profiles — your executive controls</h2>
     <p class="sub">DJs and A&amp;Rs each have their <b style="color:#fff">own profile creator</b> and their <b style="color:#fff">own 8-digit code</b> — one number for the DJs, one for the A&amp;Rs. They log in, build a profile (picture optional), and it stays <b style="color:#fff">hidden until they flip it public</b>: public DJs show on the DJs page as panel members; public A&amp;Rs show on the A&amp;R page. You hold the executive rights here: <b style="color:#fff">change either code</b> (that logs that whole group out) or <b style="color:#fff">delete any profile</b> to kick somebody out.</p>
+    <p class="sub" style="margin:10px 0 0"><a href="/dj-profile" style="color:var(--accent);font-weight:700;text-decoration:none">Open the DJ profile creator →</a> · <a href="/ar-profile" style="color:var(--accent);font-weight:700;text-decoration:none">Open the A&amp;R profile creator →</a> <span class="note">(you're the owner — these doors open straight for you, no code needed)</span></p>
     <form method="post" action="/admin/panel-code" style="margin-top:12px">
       <input type="hidden" name="role" value="dj">
       <label class="sub">DJ profile code — new 8-digit number<br>
