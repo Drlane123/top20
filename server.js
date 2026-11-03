@@ -5696,13 +5696,30 @@ app.get("/dj", (req, res) => {
   // or a profile-carrying DJ/A&R — but MAKING picks takes a profile
   // (or the owner): see canPick.
   if (!isDj(req) && !panelIdentity(req)) return res.redirect("/dj/login");
-  const picker = canPick(req);
   const who = panelIdentity(req);
+  const isOwner = isAdmin(req);
   const target = nextFridayStr();
+  // Only songs whose ARTIST has a profile can be voted on (owner's
+  // rule) — a record has to be loaded into Top 20 behind a real
+  // profile before the panel can put it in.
   const songs = db.prepare(`
     SELECT s.id, s.title, s.genre, u.name AS artist FROM songs s
-    JOIN users u ON u.id = s.artist_id WHERE s.status = 'live' ORDER BY s.title`).all();
-  const saved = db.prepare("SELECT song_id FROM dj_picks WHERE pick_date = ? ORDER BY id").all(target).map((r) => r.song_id);
+    JOIN users u ON u.id = s.artist_id
+    WHERE s.status = 'live' AND u.name IS NOT NULL AND u.name <> '' AND u.city IS NOT NULL AND u.city <> ''
+    ORDER BY s.title`).all();
+  const myBallot = who
+    ? db.prepare("SELECT song_id FROM pick_votes WHERE pick_date = ? AND profile_id = ? ORDER BY id").all(target, who.profile.id).map((r) => r.song_id)
+    : [];
+  const standings = db.prepare(`
+    SELECT s.id, s.title, u.name AS artist, COUNT(*) AS votes
+    FROM pick_votes v
+    JOIN panel_profiles p ON p.id = v.profile_id
+    JOIN songs s ON s.id = v.song_id AND s.status = 'live'
+    JOIN users u ON u.id = s.artist_id
+    WHERE v.pick_date = ?
+    GROUP BY v.song_id ORDER BY votes DESC, s.title ASC LIMIT 12`).all(target);
+  const ballotsCast = db.prepare("SELECT COUNT(DISTINCT profile_id) AS c FROM pick_votes WHERE pick_date = ?").get(target).c;
+  const saved = myBallot;
   const current = db.prepare(`
     SELECT p.pick_date, s.title, u.name AS artist FROM dj_picks p
     JOIN songs s ON s.id = p.song_id JOIN users u ON u.id = s.artist_id
@@ -5720,22 +5737,30 @@ app.get("/dj", (req, res) => {
     <p class="sub">The picks are above board on Fridays — your <b style="color:#fff">DJ profile</b> is your face on the panel the rest of the week. Build it with the <b style="color:#fff">8-digit DJ profile code</b> (separate from this panel's password), and show it on the DJs page only if you flip it public.</p>
     <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj-profile">Open the DJ profile creator →</a></p>
   </div>
-  <p class="sub">Every Friday the panel picks up to <b style="color:#fff">3 songs</b> that are already hot. Those picks step into the <b style="color:#fff">National Overall Top 20</b> when Friday's chart lands at midnight, wearing the gold 🎧 DJ Pick badge. From the next day the algorithm treats a pick like any other song. Picks can be changed any time before that Friday midnight.</p>
+  <p class="sub">The Weekly Pick 3 is a <b style="color:#fff">panel vote</b>. Every DJ and A&amp;R with a profile casts a ballot of up to <b style="color:#fff">3 songs</b> — only songs whose artist has a profile and a record loaded in Top 20 can be voted on. When Friday's chart lands at midnight, the <b style="color:#fff">top 3 vote-getters</b> step into the <b style="color:#fff">National Overall Top 20</b> wearing the gold 🎧 DJ Pick badge. From the next day the algorithm treats a pick like any other song. Ballots can be changed any time before that Friday midnight.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
-  ${picker ? `<div class="panel">
-    <h2 style="margin-top:0">Picks for ${esc(prettyDate(target))}</h2>
-    <p class="sub" style="margin-top:0">${who ? `Picking as <b style="color:#fff">${esc(who.profile.name)}</b> — your ${who.role === "dj" ? "🎧 DJ" : "🤝 A&R"} profile is on file.` : "You're in as the owner."}</p>
-    <form method="post" action="/dj/picks">
-      <label class="sub">Pick 1<br>${sel(1)}</label>
-      <label class="sub">Pick 2<br>${sel(2)}</label>
-      <label class="sub">Pick 3<br>${sel(3)}</label>
-      <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Save the picks</button>
+  ${who ? `<div class="panel">
+    <h2 style="margin-top:0">🗳️ Your ballot — for ${esc(prettyDate(target))}</h2>
+    <p class="sub" style="margin-top:0">Voting as <b style="color:#fff">${esc(who.profile.name)}</b> — your ${who.role === "dj" ? "🎧 DJ" : "🤝 A&R"} profile is your pass. Pick up to 3 songs; your ballot joins the panel's tally below.</p>
+    <form method="post" action="/dj/vote">
+      <label class="sub">Vote 1<br>${sel(1)}</label>
+      <label class="sub">Vote 2<br>${sel(2)}</label>
+      <label class="sub">Vote 3<br>${sel(3)}</label>
+      <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Save my ballot</button>
     </form>
+  </div>` : isOwner ? `<div class="panel" style="border-left:3px solid var(--accent)">
+    <h2 style="margin-top:0">🗳️ Ballots for ${esc(prettyDate(target))} — owner view</h2>
+    <p class="sub">The panel votes with their profiles — there is no owner ballot on this page. The standings below are the live tally; the top 3 when Friday's chart lands become the Hot Picks automatically. If you want a vote of your own, make yourself a DJ or A&amp;R profile from your Chart placements card and vote like a panel member.</p>
   </div>` : `<div class="panel" style="border-left:3px solid var(--accent)">
-    <h2 style="margin-top:0">🔒 Picks for ${esc(prettyDate(target))} — profile required</h2>
-    <p class="sub">The Weekly Pick 3 belongs to <b style="color:#fff">DJs and A&amp;Rs with a profile</b>. The panel password opens this page to look — but to make picks, build your profile first (it can stay hidden; it just has to exist), then come back here.</p>
+    <h2 style="margin-top:0">🔒 Voting for ${esc(prettyDate(target))} — profile required</h2>
+    <p class="sub">The Weekly Pick 3 belongs to <b style="color:#fff">DJs and A&amp;Rs with a profile</b>. The panel password opens this page to look — but to vote, build your profile first (it can stay hidden; it just has to exist), then come back here.</p>
     <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj-profile">Build your DJ profile →</a> <a class="btn" href="/ar-profile">Build your A&amp;R profile →</a></p>
   </div>`}
+  <div class="panel">
+    <h2 style="margin-top:0">📊 The race so far — ${esc(prettyDate(target))}</h2>
+    ${standings.length ? standings.map((s, i) => `<p class="sub" style="margin:6px 0 0">${i < 3 ? "🎧" : `<span style="display:inline-block;width:22px"></span>`} <b style="color:#fff">${i + 1}. ${esc(s.title)}</b> — ${esc(s.artist)} · <b style="color:#fff">${s.votes} vote${s.votes === 1 ? "" : "s"}</b>${i < 3 ? ` · <b style="color:#f5c542">IN THE PICKS — so far</b>` : ""}</p>`).join("") : `<p class="sub" style="margin:0">No ballots in yet for this Friday. The first votes start the race.</p>`}
+    <p class="note" style="margin:10px 0 0">${ballotsCast} panel member${ballotsCast === 1 ? "" : "s"} voted so far. When Friday's chart lands at midnight, the top 3 are the Hot Picks — no more, no less.</p>
+  </div>
   <div class="panel">
     <h2 style="margin-top:0">On the chart now</h2>
     ${current.length ? `<p class="sub" style="margin:0">The live picks (entered for ${esc(prettyDate(current[0].pick_date))}):</p>
@@ -5747,9 +5772,17 @@ app.get("/dj", (req, res) => {
   res.send(layout("DJ's Hot Picks panel", "", body));
 });
 
-app.post("/dj/picks", (req, res) => {
-  if (!canPick(req)) {
-    return res.redirect("/dj?msg=" + encodeURIComponent("Making the weekly picks takes a DJ or A&R profile. Build yours first — DJ Login → DJ Profiles, or the A&R profile door on the A&R page — then come back and pick."));
+// THE WEEKLY PICK 3 BALLOT (owner, Nov 3, 2026): there is no direct
+// pick-saving anymore. A panel member's profile is their voting pass:
+// this saves THEIR ballot (up to 3 songs whose artist has a profile)
+// for the coming Friday, replacing whatever they had. When Friday's
+// chart is dealt, charts.js tallies every ballot and the top 3
+// vote-getters become the picks. No profile, no ballot — and the
+// panel password alone never reaches this route with an identity.
+app.post("/dj/vote", (req, res) => {
+  const who = panelIdentity(req);
+  if (!who) {
+    return res.redirect("/dj?msg=" + encodeURIComponent("Voting takes a DJ or A&R profile — the profile is your pass. Build yours first (DJ Login → DJ Profiles, or the A&R profile door on the A&R page), then come back and cast your ballot."));
   }
   const target = nextFridayStr();
   const ids = [];
@@ -5757,17 +5790,21 @@ app.post("/dj/picks", (req, res) => {
     const n = Number(req.body[k]);
     if (n > 0 && !ids.includes(n)) ids.push(n);
   }
-  const live = ids.filter((id) => db.prepare("SELECT id FROM songs WHERE id = ? AND status = 'live'").get(id));
+  // A song can only be voted on if it's live AND its artist has a
+  // profile loaded in Top 20.
+  const eligible = ids.filter((id) => db.prepare(`
+    SELECT s.id FROM songs s JOIN users u ON u.id = s.artist_id
+    WHERE s.id = ? AND s.status = 'live' AND u.name IS NOT NULL AND u.name <> '' AND u.city IS NOT NULL AND u.city <> ''`).get(id));
   db.exec("BEGIN IMMEDIATE");
   try {
-    db.prepare("DELETE FROM dj_picks WHERE pick_date = ?").run(target);
-    const ins = db.prepare("INSERT INTO dj_picks (song_id, pick_date) VALUES (?, ?)");
-    for (const id of live) ins.run(id, target);
+    db.prepare("DELETE FROM pick_votes WHERE pick_date = ? AND profile_id = ?").run(target, who.profile.id);
+    const ins = db.prepare("INSERT INTO pick_votes (pick_date, profile_id, song_id) VALUES (?, ?, ?)");
+    for (const id of eligible) ins.run(target, who.profile.id, id);
     db.exec("COMMIT");
   } catch (e) { db.exec("ROLLBACK"); throw e; }
-  const msg = live.length
-    ? `Saved ${live.length} pick${live.length === 1 ? "" : "s"} for ${prettyDate(target)}. They step into the National Overall Top 20 when that chart lands at midnight.`
-    : `Picks cleared for ${prettyDate(target)} — no DJ picks will step in that Friday.`;
+  const msg = eligible.length
+    ? `Ballot saved, ${who.profile.name} — your ${eligible.length} vote${eligible.length === 1 ? "" : "s"} for ${prettyDate(target)} are in the panel tally. The top 3 when Friday's chart lands are the Hot Picks.`
+    : `Ballot cleared for ${prettyDate(target)} — you have no votes in this week's tally.`;
   return res.redirect("/dj?msg=" + encodeURIComponent(msg));
 });
 
@@ -5977,8 +6014,8 @@ for (const role of ["dj", "ar"]) {
   </div>
   ${panelComplete(p) ? `<div class="panel" style="border-left:3px solid var(--accent)">
     <h2 style="margin-top:0">🎧 The Weekly Pick 3</h2>
-    <p class="sub">The Friday picks belong to DJs and A&amp;Rs <b style="color:#fff">with a profile</b> — yours is on file, so the panel is open to you.</p>
-    <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj">Make the weekly picks →</a></p>
+    <p class="sub">The Friday Hot Picks are <b style="color:#fff">voted in</b> by DJs and A&amp;Rs with a profile — yours is on file, so you hold a ballot. The top 3 vote-getters are the picks.</p>
+    <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj">Cast your ballot →</a></p>
   </div>` : ""}
   <div class="panel">
     <form method="post" action="${R.home}" enctype="multipart/form-data">
@@ -6499,7 +6536,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     </div>`).join('')}</div>` : `<div class="panel"><p class="note" style="margin:0">No ads yet — upload the first one above and it joins the rotation.</p></div>`}
   <div class="panel">
     <h2 style="margin-top:0">🎧 DJ panel access</h2>
-    <p class="sub">Your DJs get their OWN login that opens <b style="color:#fff">only</b> the weekly DJ's Hot Picks panel — they pick the 3 songs for Friday there. They never see placements or anything else in the admin. Set the DJ password here and hand it to your DJs; they log in with the <b style="color:#fff">DJ Login</b> link at the bottom of any page. Changing the password logs every DJ out. <b style="color:#fff">The weekly Pick 3 now runs on profiles:</b> only DJs and A&amp;Rs with a profile (next card) can save picks — the password alone opens the panel to look.</p>
+    <p class="sub">Your DJs get their OWN login that opens <b style="color:#fff">only</b> the weekly DJ's Hot Picks panel — they pick the 3 songs for Friday there. They never see placements or anything else in the admin. Set the DJ password here and hand it to your DJs; they log in with the <b style="color:#fff">DJ Login</b> link at the bottom of any page. Changing the password logs every DJ out. <b style="color:#fff">The weekly Pick 3 is a panel vote:</b> DJs and A&amp;Rs with a profile (next card) each cast a ballot, the top 3 vote-getters are Friday's picks — the password alone opens the panel to look.</p>
     <form method="post" action="/admin/dj-password">
       <label class="sub">New DJ password (6+ characters)<br>
       <input type="password" name="dj_password" required style="width:240px;padding:12px;margin:6px 0 10px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>

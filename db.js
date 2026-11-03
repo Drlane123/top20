@@ -261,6 +261,21 @@ function openDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (role, email)
     );
+
+    -- Weekly Pick 3 ballots (owner, Nov 3, 2026): the Friday picks are
+    -- a PANEL VOTE. Each DJ/A&R with a profile casts a ballot of up to
+    -- 3 songs for the coming Friday (pick_date); when that Friday's
+    -- chart is dealt, the top 3 vote-getters are written into
+    -- dj_picks and seat into the Top 20 like always. One row per
+    -- (Friday, voter, song) — a ballot is 3 distinct songs.
+    CREATE TABLE IF NOT EXISTS pick_votes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pick_date TEXT NOT NULL,
+      profile_id INTEGER NOT NULL,
+      song_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pick_date, profile_id, song_id)
+    );
   `);
 
   // Migrations for a DB created by an earlier build (seed rebuilds from
