@@ -137,6 +137,21 @@ app.get("/ann/:file", (req, res) => {
 // actually waiting, so no standing timer burns agent runs. Songs 20
 // and 33 are excluded by the owner's standing order (their clips
 // were deleted on purpose, Nov 2).
+// The owner's re-record flags (his song-page button): each flag
+// carries the build that was live when he tapped it, so the flag
+// clears itself the moment any new build ships — the re-record
+// push included. No write-back needed.
+function announceRedoFlags() {
+  try {
+    const row = db.prepare("SELECT value FROM admin_config WHERE key = 'announce_redo'").get();
+    return row && row.value ? JSON.parse(row.value) : [];
+  } catch { return []; }
+}
+function announceState(id) {
+  const hasTitle = !!ANN["title-" + id], hasLine = !!ANN["line-" + id];
+  const redoPending = announceRedoFlags().some((f) => f.id === id && f.build === BUILD);
+  return { hasTitle, hasLine, hasClips: hasTitle && hasLine, redoPending };
+}
 app.get("/api/announce-needed", (req, res) => {
   try {
     const rows = db.prepare(`
@@ -144,6 +159,13 @@ app.get("/api/announce-needed", (req, res) => {
       JOIN users u ON u.id = s.artist_id
       WHERE s.status = 'live' AND s.id NOT IN (20, 33) ORDER BY s.id`).all();
     const need = rows.filter((r) => !ANN["title-" + r.id] || !ANN["line-" + r.id]);
+    const listed = new Set(need.map((r) => r.id));
+    for (const f of announceRedoFlags()) {
+      if (f.build !== BUILD || listed.has(f.id)) continue;
+      const s = rows.find((r) => r.id === f.id);
+      if (s) { need.push({ ...s, redo: true }); listed.add(f.id); }
+    }
+    need.sort((a, b) => a.id - b.id);
     res.setHeader("Cache-Control", "no-store");
     return res.json(need);
   } catch (e) {
@@ -3209,6 +3231,13 @@ app.get("/song/:id", (req, res) => {
     <p class="note">The tall plaque is made for Instagram Stories and TikTok. The Facebook plaque is sized for Facebook and shows your WHOLE cover head to toe, plus your counts and your measured specs. Post them anywhere — they show your accomplishments and your rank status.</p>` : ""}
     <p class="note" style="margin-top:10px">Only the Top 20 plays on the Stage. Any day, this song can pop in.</p>
   </div>
+  ${isAdmin(req) ? (() => { const as = announceState(song.id); return `<div class="panel" style="border-left:3px solid #ffd98a">
+    <h2 style="margin-top:0">🎙️ DJ announcement — owner</h2>
+    ${as.redoPending ? `<p class="sub" style="margin:0">A re-record of this song's announcement is <b style="color:#fff">queued</b> — it will be re-recorded automatically in the DJ voice. Nothing else for you to do.</p>`
+    : as.hasClips ? `<p class="sub">This song's DJ announcement is recorded — the DJ says the artist and the title. If it ever sounds wrong, tap below and it gets re-recorded automatically. No need to message anybody.</p>
+    <form method="post" action="/admin/songs/${song.id}/announce-redo"><button type="submit" style="padding:10px 20px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">🎙️ Re-record this song's DJ announcement</button></form>`
+    : `<p class="sub" style="margin:0">This song has <b style="color:#fff">no DJ announcement clips yet</b> — it's already flagged automatically, and its voice will be recorded on its own. Nothing for you to do.</p>`}
+  </div>`; })() : ""}
   ${song.lyrics ? `<div class="panel"><h2 style="margin-top:0">Lyrics</h2><p class="sub" style="white-space:pre-wrap">${esc(song.lyrics)}</p></div>` : ""}`;
   res.send(layout(song.title, "", body, {
     meta: {
@@ -4710,7 +4739,13 @@ app.get("/artist/:id", (req, res) => {
   </div>
   ${isAdmin(req) ? `<div class="panel" style="margin-top:16px;border-left:3px solid #ff9d9d">
     <h2 style="margin-top:0">🛠 Owner tools</h2>
-    <p class="sub">You're signed in as staff, so this button is only showing for you — visitors never see it. Deleting removes this profile, all its songs, scores and chart history, and the charts recalculate without them. It can't be undone.</p>
+    <p class="sub">You're signed in as staff, so this panel is only showing for you — visitors never see it.</p>
+    ${songs.length ? `<p class="sub" style="margin-top:10px"><b style="color:#fff">🎙️ DJ announcements</b> — if a song's name or title is ever said wrong, hit Redo and it's re-recorded automatically:</p>
+    ${songs.map((s) => { const as = announceState(s.id); return `<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--line)">
+      <span style="min-width:0"><b style="color:#fff">${esc(s.title)}</b> <span class="note">${as.redoPending ? "re-record queued" : as.hasClips ? "announcement recorded" : "no clips yet — flagged automatically"}</span></span>
+      ${!as.redoPending && as.hasClips ? `<form method="post" action="/admin/songs/${s.id}/announce-redo"><button class="mini" type="submit">🎙️ Redo name &amp; title</button></form>` : ""}
+    </div>`; }).join("")}` : ""}
+    <p class="sub" style="margin-top:12px">Deleting removes this profile, all its songs, scores and chart history, and the charts recalculate without them. It can't be undone.</p>
     <p style="margin:10px 0 0"><a class="btn btn-danger" href="/admin/profiles/${user.id}/delete">🗑 Delete this profile</a></p>
   </div>` : ""}
   <script>
@@ -6123,6 +6158,21 @@ app.post("/admin/panel-profiles/:id/delete", requireAdmin, (req, res) => {
   db.prepare("DELETE FROM panel_profiles WHERE id = ?").run(p.id);
   snapshotDbSoon();
   return back(`${PANEL_ROLES[p.role].label} profile deleted: ${p.name || p.email} is out.`);
+});
+
+// The owner's 🎙️ Re-record button (on every song page, owner-only):
+// one tap flags the song, and the automatic tripwire re-records its
+// DJ announcement — no message to Vesper needed. The flag stores the
+// current build and stops counting the moment a new build ships.
+app.post("/admin/songs/:id/announce-redo", requireAdmin, (req, res) => {
+  const id = Number(req.params.id);
+  if (id === 20 || id === 33) return res.redirect(`/song/${id}`);
+  const song = db.prepare("SELECT id FROM songs WHERE id = ? AND status = 'live'").get(id);
+  if (!song) return res.redirect("/");
+  const flags = announceRedoFlags().filter((f) => f.id !== id);
+  flags.push({ id, build: BUILD, at: new Date().toISOString() });
+  db.prepare("INSERT INTO admin_config (key, value) VALUES ('announce_redo', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(flags));
+  return res.redirect(`/song/${id}`);
 });
 
 // SPOTLIGHT OF THE WEEK — the owner names the artist the 16th Law says
