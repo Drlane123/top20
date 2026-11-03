@@ -149,9 +149,10 @@ function renderProfileCard({ userId, name, city, state, genre, imageAbs, standin
   });
 }
 
-// Bragging plaques (owner, Nov 2, 2026 — from the scorecard review Dale
+// Accomplishment plaques (owner, Nov 2, 2026 — from the scorecard review Dale
 // brought in): a TALL 1080x1920 picture made for Instagram Stories and
-// TikTok. Artists love to brag, and every brag carries the brand: the
+// TikTok. Artists show their accomplishments and rank status, and every
+// plaque carries the brand: the
 // cover fills the frame, the platinum rank rides the top band like the
 // Stage, the bottom band carries title, artist and craft score, and the
 // tagline closes it. Same standing rule as the share card — no standing
@@ -210,14 +211,14 @@ function renderBadge({ songId, title, artist, coverAbs, standing, chartDate, cra
   });
 }
 
-// Facebook bragging plaque (owner, Nov 3, 2026): the story plaque is
+// Facebook accomplishment plaque (owner, Nov 3, 2026): the story plaque is
 // cropped-to-fill for Instagram/TikTok, but Facebook gets its OWN —
 // a 1200x1500 (4:5, the biggest a Facebook feed shows whole) picture
 // where the cover is shown COMPLETE, head to toe, never cropped: the
 // cover is fit inside its zone and the lacquer shows around it. The
 // header carries the platinum rank; under the whole cover sit title,
 // artist, craft score, the counts (plays, likes, shares, fan bonus,
-// days charted, total) and the measured specs line — the full brag,
+// days charted, total) and the measured specs line — the full record,
 // made for a Facebook post. Same standing rule as the other cards.
 function renderFbBadge({ songId, title, artist, coverAbs, standing, chartDate, craftScore, statsLine, specsLine }) {
   const top20 = standing.rank <= 20;

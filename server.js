@@ -2765,8 +2765,8 @@ app.get("/card/:id.jpg", async (req, res) => {
   }
 });
 
-// Bragging plaque (owner, Nov 2, 2026): the tall story-size picture an
-// artist posts to Instagram Stories / TikTok to brag their standing —
+// Accomplishment plaque (owner, Nov 2, 2026): the tall story-size picture an
+// artist posts to Instagram Stories / TikTok to show their standing —
 // cover, platinum rank, craft score, brand. Same rules as the share
 // card: only for a song standing in a Top 100 today, cover read as
 // bytes on this machine (disk or bucket), any failure falls back to
@@ -2810,7 +2810,7 @@ app.get("/badge/:id.jpg", async (req, res) => {
   }
 });
 
-// Facebook bragging plaque (owner, Nov 3, 2026): the story plaque is
+// Facebook accomplishment plaque (owner, Nov 3, 2026): the story plaque is
 // cropped-to-fill for Instagram/TikTok; Facebook gets its own 4:5
 // plaque with the WHOLE cover shown head to toe, plus the counts and
 // the measured specs. Same standing rule as the other cards; any
@@ -3176,9 +3176,9 @@ app.get("/song/:id", (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">Where it stands</h2>
     ${rankLines(ranks)}
-    ${sharecard.headlineStanding(db, song.id) ? `<p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/badge/${song.id}.jpg" download>🏆 Get my brag plaque</a></p>
+    ${sharecard.headlineStanding(db, song.id) ? `<p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/badge/${song.id}.jpg" download>🏆 Show your accomplishments & rank status</a></p>
     <p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/fbadge/${song.id}.jpg" download>📘 Facebook plaque — full cover</a></p>
-    <p class="note">The tall plaque is made for Instagram Stories and TikTok. The Facebook plaque is sized for Facebook and shows your WHOLE cover head to toe, plus your counts and your measured specs. Post them and let them brag for you.</p>` : ""}
+    <p class="note">The tall plaque is made for Instagram Stories and TikTok. The Facebook plaque is sized for Facebook and shows your WHOLE cover head to toe, plus your counts and your measured specs. Post them anywhere — they show your accomplishments and your rank status.</p>` : ""}
     <p class="note" style="margin-top:10px">Only the Top 20 plays on the Stage. Any day, this song can pop in.</p>
   </div>
   ${song.lyrics ? `<div class="panel"><h2 style="margin-top:0">Lyrics</h2><p class="sub" style="white-space:pre-wrap">${esc(song.lyrics)}</p></div>` : ""}`;
@@ -4666,7 +4666,7 @@ app.get("/dashboard", (req, res) => {
             <span class="meta"><span class="t">${esc(s.title)}</span><br><span class="a">${esc(s.genre)} · Craft ${s.craft_score}</span></span>
           </a>
           ${rankLines(ranks)}
-          ${sharecard.headlineStanding(db, s.id) ? `<p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/badge/${s.id}.jpg" download>🏆 Get my brag plaque — post it everywhere</a></p>
+          ${sharecard.headlineStanding(db, s.id) ? `<p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/badge/${s.id}.jpg" download>🏆 Show your accomplishments & rank status</a></p>
           <p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/fbadge/${s.id}.jpg" download>📘 Facebook plaque — full cover</a></p>` : ""}
           <form method="post" action="/dashboard/remove" style="margin-top:10px">
             <input type="hidden" name="email" value="${esc(user.email)}">
