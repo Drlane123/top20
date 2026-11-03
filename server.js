@@ -1313,7 +1313,7 @@ function topRisers(date, level, genre, regionKey) {
 function risersHtml(list) {
   if (!list.length) return "";
   const rows = list.map((e) => `
-    <div class="row rowlink" data-song="${e.song_id}" data-id="${e.song_id}" data-rank="${e.rank}" data-days="${e.days || 0}" data-fresh="${e.fresh ? 1 : 0}" data-audio="${esc(e.audio_path)}" data-title="${esc(e.title)}" data-artist="${esc(e.artist)}" data-cover="${esc(e.cover_path)}">
+    <div class="row rowlink" data-song="${e.song_id}" data-id="${e.song_id}" data-rank="${e.rank}" data-days="${e.days || 0}" data-fresh="${e.fresh ? 1 : 0}" data-audio="${esc(e.audio_path)}" data-demo="${String(e.audio_path || "").replace(/^\//, "").startsWith("audio/") ? 1 : 0}" data-title="${esc(e.title)}" data-artist="${esc(e.artist)}" data-cover="${esc(e.cover_path)}">
       <a class="stretch" href="/song/${e.song_id}" aria-label="${esc(e.title)}"></a>
       <span class="rankbadge">#${e.rank}</span>
       <img class="thumb" src="${esc(e.cover_path)}" alt="">
@@ -1500,6 +1500,7 @@ function stagePlaylist(genreKey, date) {
     return {
       id: r.id, title: r.title, artist: r.artist, cover: r.cover_path,
       audio: r.audio_path, rank: r.rank, craft: r.craft_score,
+      demo: String(r.audio_path || "").replace(/^\//, "").startsWith("audio/") ? 1 : 0,
       plays: r.plays || 0, likes: r.likes || 0, shares: r.shares || 0,
       days: dc.days, fresh: dc.days > 0 && dc.first === date, pick: !!r.dj_pick,
     };
@@ -1994,7 +1995,7 @@ app.get("/", (req, res) => {
     function finish(){
       if (fired) return; fired = true;
       clearTimeout(hard);
-      if (my === djChain) { announcing = false; annStep = null; audio.onerror = null; audio.ontimeupdate = null; audio.volume = 1; audio.src = t.audio; }
+      if (my === djChain) { announcing = false; annStep = null; audio.onerror = null; audio.ontimeupdate = null; audio.volume = t.demo ? 0.3 : 1; audio.src = t.audio; } // demo hum tracks play turned DOWN (owner, Nov 2, 2026); the DJ call always stays full volume
       setTimeout(done, 450); // the narrator fully ends — a beat of quiet — then the song (owner, Nov 1)
     }
     const step = () => {
@@ -2192,6 +2193,7 @@ app.get("/", (req, res) => {
     previewOn = false;
     idx = i;
     audio.src = t.audio;
+    audio.volume = t.demo ? 0.3 : 1;
     $('npCover').src = t.cover; $('npTitle').textContent = t.title;
     $('npArtist').textContent = t.artist; $('npBigRank').textContent = '#' + t.rank;
     $('npCraft').textContent = t.craft; $('npChannel').textContent = LABELS[ch];
@@ -2351,12 +2353,13 @@ app.get("/", (req, res) => {
       djStop();
       if (window.__muteHero) window.__muteHero();
       audio.src = row.dataset.audio;
+      audio.volume = row.dataset.demo === '1' ? 0.3 : 1;
       $('barThumb').src = row.dataset.cover;
       $('barTitle').textContent = row.dataset.title;
       $('barArtist').textContent = row.dataset.artist;
       // Risers live in the bucket (ranks 21-50): the narrator blesses the
       // preview with the climbing announcement before the song plays.
-      const bt = { id: parseInt(row.dataset.id, 10), rank: parseInt(row.dataset.rank, 10), title: row.dataset.title, artist: row.dataset.artist, audio: row.dataset.audio, days: parseInt(row.dataset.days || '0', 10), fresh: row.dataset.fresh === '1' };
+      const bt = { id: parseInt(row.dataset.id, 10), rank: parseInt(row.dataset.rank, 10), title: row.dataset.title, artist: row.dataset.artist, audio: row.dataset.audio, demo: row.dataset.demo === '1' ? 1 : 0, days: parseInt(row.dataset.days || '0', 10), fresh: row.dataset.fresh === '1' };
       const seq = ++loadSeq;
       djAnnounce(bt, () => { if (seq === loadSeq && previewOn) audio.play().catch(() => {}); }, true);
       row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -2448,7 +2451,7 @@ app.get("/charts", (req, res) => {
     for (const r of db.prepare(`SELECT id, audio_path FROM songs WHERE id IN (${ids})`).all()) audioMap[r.id] = r.audio_path;
   }
   const chartQ = entries.map((e) => {
-    const base = { id: e.song_id, title: e.title, artist: e.artist, cover: e.cover_path, audio: audioMap[e.song_id] || "", rank: e.rank, days: 0, fresh: false };
+    const base = { id: e.song_id, title: e.title, artist: e.artist, cover: e.cover_path, audio: audioMap[e.song_id] || "", rank: e.rank, days: 0, fresh: false, demo: (audioMap[e.song_id] || "").replace(/^\//, "").startsWith("audio/") ? 1 : 0 };
     if (e.rank >= 21 && e.rank <= 100) {
       const dc = daysOnChart(e.song_id, level, genre, regionKey, 100, date);
       base.days = dc.days; base.fresh = dc.fresh;
@@ -2498,7 +2501,7 @@ app.get("/charts", (req, res) => {
       step();
     }
     function startSong(i){ var s = Q[i]; if (!s) return;
-      audio.src = s.audio; audio.play().catch(function(){});
+      audio.src = s.audio; audio.volume = s.demo ? 0.3 : 1; audio.play().catch(function(){});
       fetch('/api/play/' + s.id, { method: 'POST' }).catch(function(){}); }
     var playToken = 0;
     function playAt(i){ if (i < 0 || i >= Q.length || !Q[i].audio) return; cur = i;
@@ -2889,7 +2892,8 @@ app.get("/song/:id", (req, res) => {
   ${pickChip}
   ${standingBadge}
   ${removedNote}
-  <audio controls preload="metadata" src="${esc(song.audio_path)}"></audio>
+  <audio controls preload="metadata" src="${esc(song.audio_path)}" data-demo="${String(song.audio_path || "").replace(/^\//, "").startsWith("audio/") ? 1 : 0}"></audio>
+  <script>document.querySelectorAll('audio[data-demo="1"]').forEach(function(a){ a.volume = 0.3; });</script>
   <div class="flexbtns">
     <form id="likeForm" method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="like"><button class="btn" type="submit" id="likeBtn">♥ <span id="likeLabel">Like</span> (<span id="likeCount">${fmtNum(eng.like || 0)}</span>)</button></form>
     <form id="shareForm" method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="share"><button class="btn" type="submit">⤴ Share (${fmtNum(eng.share || 0)})</button></form>
@@ -4254,7 +4258,7 @@ app.get("/artist/:id", (req, res) => {
         <span class="meta"><span class="t">${esc(s.title)}</span><br><span class="a">${esc(s.genre)} · Craft ${s.craft_score}</span></span>
       </a>
       <div class="chips">${standing} ${bonusChip}</div>
-      <audio class="profile-audio" controls preload="metadata" src="${esc(s.audio_path)}" data-song="${s.id}" data-mode="${ann.mode}" data-rank="${ann.rank}" data-days="${ann.days}" data-fresh="${ann.fresh ? 1 : 0}" data-title="${esc(s.title)}" data-artist="${esc(user.name)}" style="width:100%;margin-top:10px"></audio>
+      <audio class="profile-audio" controls preload="metadata" src="${esc(s.audio_path)}" data-song="${s.id}" data-mode="${ann.mode}" data-rank="${ann.rank}" data-days="${ann.days}" data-fresh="${ann.fresh ? 1 : 0}" data-demo="${String(s.audio_path || "").replace(/^\//, "").startsWith("audio/") ? 1 : 0}" data-title="${esc(s.title)}" data-artist="${esc(user.name)}" style="width:100%;margin-top:10px"></audio>
     </div>`;
   }).join("");
   const highlights = db.prepare(`
@@ -4343,7 +4347,7 @@ app.get("/artist/:id", (req, res) => {
     function cancelAnnounce(a) {
       if (!a._announcing) return;
       annChain++; a._announcing = false; a._announced = true; a._annStep = null;
-      a.ontimeupdate = null; a.volume = 1;
+      a.ontimeupdate = null; a.volume = a._demoVol || 1;
       if (a._songSrc) a.src = a._songSrc;
     }
     function announceProfile(a, done) {
@@ -4363,7 +4367,7 @@ app.get("/artist/:id", (req, res) => {
       var hard = setTimeout(function () { if (my === annChain) finish(); }, 12000);
       function finish() {
         if (fired) return; fired = true; clearTimeout(hard);
-        if (my === annChain) { a._announcing = false; a._annStep = null; a.ontimeupdate = null; a.volume = 1; a.src = a._songSrc; }
+        if (my === annChain) { a._announcing = false; a._annStep = null; a.ontimeupdate = null; a.volume = a._demoVol || 1; a.src = a._songSrc; }
         setTimeout(done, 450);
       }
       var step = function () {
@@ -4380,6 +4384,7 @@ app.get("/artist/:id", (req, res) => {
     }
     audios.forEach(function (a) {
       a._songSrc = a.getAttribute('src');
+      a._demoVol = a.getAttribute('data-demo') === '1' ? 0.3 : 1; a.volume = a._demoVol; // demo hum tracks sit turned down (owner, Nov 2, 2026); the DJ call still plays full volume
       a.addEventListener('ended', function () { if (a._announcing && a._annStep) a._annStep(); });
       a.addEventListener('play', function () {
         audios.forEach(function (o) { if (o !== a) { cancelAnnounce(o); if (!o.paused) o.pause(); } });
