@@ -2009,17 +2009,18 @@ app.get("/", (req, res) => {
       if (i >= keys.length) { finish(); return; }
       audio.ontimeupdate = null; audio.volume = 1;
       audio.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++;
+      const served = i;
       if (i === keys.length) { // last clip: fade its tail out so the call ends clean, never clipped by the song
         audio.ontimeupdate = () => {
           const d = audio.duration || 0, c = audio.currentTime || 0;
           if (d > 0 && d - c < 0.35) audio.volume = Math.max(0, (d - c) / 0.35);
         };
       }
-      const p = audio.play(); if (p && p.catch) p.catch(() => finish());
+      const p = audio.play(); if (p && p.catch) p.catch(() => { if (i === served) finish(); }); // a stale rejection from a skipped clip must not kill the rest of the call
     };
     announcing = true;
     annStep = step;
-    audio.onerror = () => { if (announcing && my === djChain) finish(); };
+    audio.onerror = () => { if (announcing && my === djChain) step(); }; // a clip that fails to play is SKIPPED — one bad clip can never kill a song's call (owner, Nov 2, 2026)
     step();
   }
   // The welcome video's SOUND ON button calls this: stop the Stage dead
@@ -2501,9 +2502,9 @@ app.get("/charts", (req, res) => {
       var my = ++annChain, i = 0, fired = false;
       var hard = setTimeout(function(){ if (my === annChain) finish(); }, 12000);
       function finish(){ if (fired) return; fired = true; clearTimeout(hard); if (my === annChain) { announcingC = false; annStepC = null; audio.onerror = null; audio.ontimeupdate = null; audio.volume = 1; } setTimeout(done, 450); }
-      var step = function(){ if (fired || my !== annChain) return; if (i >= keys.length) { finish(); return; } audio.ontimeupdate = null; audio.volume = 1; audio.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++; if (i === keys.length) { audio.ontimeupdate = function(){ var d = audio.duration || 0, c = audio.currentTime || 0; if (d > 0 && d - c < 0.35) audio.volume = Math.max(0, (d - c) / 0.35); }; } var p = audio.play(); if (p && p.catch) p.catch(function(){ finish(); }); };
+      var step = function(){ if (fired || my !== annChain) return; if (i >= keys.length) { finish(); return; } audio.ontimeupdate = null; audio.volume = 1; audio.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++; var served = i; if (i === keys.length) { audio.ontimeupdate = function(){ var d = audio.duration || 0, c = audio.currentTime || 0; if (d > 0 && d - c < 0.35) audio.volume = Math.max(0, (d - c) / 0.35); }; } var p = audio.play(); if (p && p.catch) p.catch(function(){ if (i === served) finish(); }); };
       announcingC = true; annStepC = step;
-      audio.onerror = function(){ if (announcingC && my === annChain) finish(); };
+      audio.onerror = function(){ if (announcingC && my === annChain) step(); };
       step();
     }
     // Top 20 songs get their full Stage call in this player too (owner,
@@ -2519,9 +2520,9 @@ app.get("/charts", (req, res) => {
       var my = ++annChain, i = 0, fired = false;
       var hard = setTimeout(function(){ if (my === annChain) finish(); }, 12000);
       function finish(){ if (fired) return; fired = true; clearTimeout(hard); if (my === annChain) { announcingC = false; annStepC = null; audio.onerror = null; audio.ontimeupdate = null; audio.volume = 1; } setTimeout(done, 450); }
-      var step = function(){ if (fired || my !== annChain) return; if (i >= keys.length) { finish(); return; } audio.ontimeupdate = null; audio.volume = 1; audio.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++; if (i === keys.length) { audio.ontimeupdate = function(){ var d = audio.duration || 0, c = audio.currentTime || 0; if (d > 0 && d - c < 0.35) audio.volume = Math.max(0, (d - c) / 0.35); }; } var p = audio.play(); if (p && p.catch) p.catch(function(){ finish(); }); };
+      var step = function(){ if (fired || my !== annChain) return; if (i >= keys.length) { finish(); return; } audio.ontimeupdate = null; audio.volume = 1; audio.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++; var served = i; if (i === keys.length) { audio.ontimeupdate = function(){ var d = audio.duration || 0, c = audio.currentTime || 0; if (d > 0 && d - c < 0.35) audio.volume = Math.max(0, (d - c) / 0.35); }; } var p = audio.play(); if (p && p.catch) p.catch(function(){ if (i === served) finish(); }); };
       announcingC = true; annStepC = step;
-      audio.onerror = function(){ if (announcingC && my === annChain) finish(); };
+      audio.onerror = function(){ if (announcingC && my === annChain) step(); };
       step();
     }
     function startSong(i){ var s = Q[i]; if (!s) return;
@@ -2964,12 +2965,12 @@ app.get("/song/:id", (req, res) => {
         if (fired || my !== annChain) return;
         if (i >= keys.length) { finish(); return; }
         a.ontimeupdate = null; a.volume = 1;
-        a.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++;
+        a.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++; var served = i;
         if (i === keys.length) { a.ontimeupdate = function () { var d = a.duration || 0, c = a.currentTime || 0; if (d > 0 && d - c < 0.35) a.volume = Math.max(0, (d - c) / 0.35); }; }
-        var p = a.play(); if (p && p.catch) p.catch(function () { finish(); });
+        var p = a.play(); if (p && p.catch) p.catch(function () { if (i === served) finish(); });
       };
       a._announcing = true; a._annStep = step;
-      a.onerror = function () { if (a._announcing && my === annChain) finish(); };
+      a.onerror = function () { if (a._announcing && my === annChain) step(); };
       step();
     }
     a.addEventListener('ended', function () { if (a._announcing && a._annStep) a._annStep(); });
@@ -4463,12 +4464,12 @@ app.get("/artist/:id", (req, res) => {
         if (fired || my !== annChain) return;
         if (i >= keys.length) { finish(); return; }
         a.ontimeupdate = null; a.volume = 1;
-        a.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++;
+        a.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++; var served = i;
         if (i === keys.length) { a.ontimeupdate = function () { var d = a.duration || 0, c = a.currentTime || 0; if (d > 0 && d - c < 0.35) a.volume = Math.max(0, (d - c) / 0.35); }; }
-        var p = a.play(); if (p && p.catch) p.catch(function () { finish(); });
+        var p = a.play(); if (p && p.catch) p.catch(function () { if (i === served) finish(); });
       };
       a._announcing = true; a._annStep = step;
-      a.onerror = function () { if (a._announcing && my === annChain) finish(); };
+      a.onerror = function () { if (a._announcing && my === annChain) step(); };
       step();
     }
     audios.forEach(function (a) {
