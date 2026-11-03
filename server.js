@@ -5691,7 +5691,13 @@ app.post("/dj/logout", (req, res) => {
   res.redirect("/");
 });
 
-app.get("/dj", requireDj, (req, res) => {
+app.get("/dj", (req, res) => {
+  // The panel page opens for the picks-password session, the owner,
+  // or a profile-carrying DJ/A&R — but MAKING picks takes a profile
+  // (or the owner): see canPick.
+  if (!isDj(req) && !panelIdentity(req)) return res.redirect("/dj/login");
+  const picker = canPick(req);
+  const who = panelIdentity(req);
   const target = nextFridayStr();
   const songs = db.prepare(`
     SELECT s.id, s.title, s.genre, u.name AS artist FROM songs s
@@ -5716,15 +5722,20 @@ app.get("/dj", requireDj, (req, res) => {
   </div>
   <p class="sub">Every Friday the panel picks up to <b style="color:#fff">3 songs</b> that are already hot. Those picks step into the <b style="color:#fff">National Overall Top 20</b> when Friday's chart lands at midnight, wearing the gold 🎧 DJ Pick badge. From the next day the algorithm treats a pick like any other song. Picks can be changed any time before that Friday midnight.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
-  <div class="panel">
+  ${picker ? `<div class="panel">
     <h2 style="margin-top:0">Picks for ${esc(prettyDate(target))}</h2>
+    <p class="sub" style="margin-top:0">${who ? `Picking as <b style="color:#fff">${esc(who.profile.name)}</b> — your ${who.role === "dj" ? "🎧 DJ" : "🤝 A&R"} profile is on file.` : "You're in as the owner."}</p>
     <form method="post" action="/dj/picks">
       <label class="sub">Pick 1<br>${sel(1)}</label>
       <label class="sub">Pick 2<br>${sel(2)}</label>
       <label class="sub">Pick 3<br>${sel(3)}</label>
       <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Save the picks</button>
     </form>
-  </div>
+  </div>` : `<div class="panel" style="border-left:3px solid var(--accent)">
+    <h2 style="margin-top:0">🔒 Picks for ${esc(prettyDate(target))} — profile required</h2>
+    <p class="sub">The Weekly Pick 3 belongs to <b style="color:#fff">DJs and A&amp;Rs with a profile</b>. The panel password opens this page to look — but to make picks, build your profile first (it can stay hidden; it just has to exist), then come back here.</p>
+    <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj-profile">Build your DJ profile →</a> <a class="btn" href="/ar-profile">Build your A&amp;R profile →</a></p>
+  </div>`}
   <div class="panel">
     <h2 style="margin-top:0">On the chart now</h2>
     ${current.length ? `<p class="sub" style="margin:0">The live picks (entered for ${esc(prettyDate(current[0].pick_date))}):</p>
@@ -5736,7 +5747,10 @@ app.get("/dj", requireDj, (req, res) => {
   res.send(layout("DJ's Hot Picks panel", "", body));
 });
 
-app.post("/dj/picks", requireDj, (req, res) => {
+app.post("/dj/picks", (req, res) => {
+  if (!canPick(req)) {
+    return res.redirect("/dj?msg=" + encodeURIComponent("Making the weekly picks takes a DJ or A&R profile. Build yours first — DJ Login → DJ Profiles, or the A&R profile door on the A&R page — then come back and pick."));
+  }
   const target = nextFridayStr();
   const ids = [];
   for (const k of ["pick1", "pick2", "pick3"]) {
@@ -5840,6 +5854,48 @@ function panelShell(role, emailLc) {
 }
 const panelComplete = (p) => !!(p && p.name && p.city);
 
+function getCookieVal(req, name) {
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === name) {
+      const raw = v.join("=");
+      try { return decodeURIComponent(raw); } catch { return raw; }
+    }
+  }
+  return "";
+}
+// A panel member's identity cookie: which profile they loaded/built.
+// Signed with that role's session token, so it can't be forged and it
+// dies whenever the owner changes the group code.
+function panelIdentitySig(role, id) {
+  return crypto.createHmac("sha256", panelToken(role)).update("pid:" + role + ":" + id).digest("hex");
+}
+function setPanelIdentity(res, role, id) {
+  // "-" separators: cookie-safe characters, so the value travels
+  // un-encoded (a ":" gets %-encoded by the cookie layer and the
+  // reader would never match it).
+  res.cookie("t20_pid", role + "-" + id + "-" + panelIdentitySig(role, id), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 30 * 24 * 3600 * 1000 });
+}
+function panelIdentity(req) {
+  const m = /^(dj|ar)-(\d+)-([0-9a-f]{64})$/.exec(getCookieVal(req, "t20_pid") || "");
+  if (!m) return null;
+  const [, role, idStr, sig] = m;
+  const got = Buffer.from(sig);
+  const want = Buffer.from(panelIdentitySig(role, idStr));
+  if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) return null;
+  let p = null;
+  try { p = db.prepare("SELECT * FROM panel_profiles WHERE id = ? AND role = ?").get(Number(idStr), role); } catch { p = null; }
+  if (!p || !panelComplete(p)) return null; // kicked or never finished: no identity
+  return { role, profile: p };
+}
+// THE WEEKLY PICK 3 GATE (owner's rule, Nov 3, 2026): only DJs and
+// A&Rs can make the weekly picks, and only with a profile on file.
+// The owner always can (executive). A group code or the old panel
+// password by itself — no profile — cannot pick.
+function canPick(req) {
+  return isAdmin(req) || !!panelIdentity(req);
+}
+
 // The public roster for one role — only profiles their owners chose
 // to show, and only once they carry a name and a city.
 function panelRosterHtml(role) {
@@ -5892,6 +5948,7 @@ for (const role of ["dj", "ar"]) {
 
   app.post(`${R.home}/logout`, (req, res) => {
     res.clearCookie(R.cookie, { path: "/" });
+    res.clearCookie("t20_pid", { path: "/" });
     res.redirect("/");
   });
 
@@ -5911,12 +5968,18 @@ for (const role of ["dj", "ar"]) {
     </div>`));
     }
     const p = panelShell(role, email);
+    if (panelComplete(p)) setPanelIdentity(res, role, p.id);
     const body = `${intro}
   ${req.query.err ? `<div class="panel" style="border-left:3px solid #ff9d9d"><p class="sub" style="margin:0;color:#ffb3b3">${esc(req.query.err)}</p></div>` : ""}
   ${req.query.saved ? `<div class="panel" style="border-left:3px solid #7dff9a"><p class="sub" style="margin:0;color:#c9ffd6">✓ <b style="color:#fff">${R.label} profile saved.</b> ${p.show_public ? `It's showing publicly now${isDj ? " on the DJs page" : " on the A&R page"}.` : "It's hidden — nobody sees it until you flip it public."}</p></div>` : ""}
   <div class="panel">
     <p class="sub" style="margin:0">Profile for <b style="color:#fff">${esc(email)}</b> — ${panelComplete(p) ? "live-ready (name + city on file)" : "add your name and home city to complete it"}${p.show_public ? ` · <b style="color:#9fe8a9">SHOWING PUBLICLY</b>` : " · hidden"}.</p>
   </div>
+  ${panelComplete(p) ? `<div class="panel" style="border-left:3px solid var(--accent)">
+    <h2 style="margin-top:0">🎧 The Weekly Pick 3</h2>
+    <p class="sub">The Friday picks belong to DJs and A&amp;Rs <b style="color:#fff">with a profile</b> — yours is on file, so the panel is open to you.</p>
+    <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj">Make the weekly picks →</a></p>
+  </div>` : ""}
   <div class="panel">
     <form method="post" action="${R.home}" enctype="multipart/form-data">
       <input type="hidden" name="email" value="${esc(email)}">
@@ -5965,6 +6028,8 @@ for (const role of ["dj", "ar"]) {
       req.body.show_public ? 1 : 0,
       p.id
     );
+    const p2 = db.prepare("SELECT * FROM panel_profiles WHERE id = ?").get(p.id);
+    if (p2 && panelComplete(p2)) setPanelIdentity(res, role, p.id);
     snapshotDbSoon();
     return res.redirect(`${R.home}?email=${encodeURIComponent(emailLc)}&saved=1`);
   });
@@ -6434,7 +6499,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     </div>`).join('')}</div>` : `<div class="panel"><p class="note" style="margin:0">No ads yet — upload the first one above and it joins the rotation.</p></div>`}
   <div class="panel">
     <h2 style="margin-top:0">🎧 DJ panel access</h2>
-    <p class="sub">Your DJs get their OWN login that opens <b style="color:#fff">only</b> the weekly DJ's Hot Picks panel — they pick the 3 songs for Friday there. They never see placements or anything else in the admin. Set the DJ password here and hand it to your DJs; they log in with the <b style="color:#fff">DJ Login</b> link at the bottom of any page. Changing the password logs every DJ out.</p>
+    <p class="sub">Your DJs get their OWN login that opens <b style="color:#fff">only</b> the weekly DJ's Hot Picks panel — they pick the 3 songs for Friday there. They never see placements or anything else in the admin. Set the DJ password here and hand it to your DJs; they log in with the <b style="color:#fff">DJ Login</b> link at the bottom of any page. Changing the password logs every DJ out. <b style="color:#fff">The weekly Pick 3 now runs on profiles:</b> only DJs and A&amp;Rs with a profile (next card) can save picks — the password alone opens the panel to look.</p>
     <form method="post" action="/admin/dj-password">
       <label class="sub">New DJ password (6+ characters)<br>
       <input type="password" name="dj_password" required style="width:240px;padding:12px;margin:6px 0 10px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
