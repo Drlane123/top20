@@ -4275,13 +4275,13 @@ app.get("/profile", (req, res) => {
         <label>TikTok<input name="tiktok" maxlength="160" placeholder="@yourhandle or tiktok.com/@yourhandle" value="${esc(user.tiktok || "")}"></label>
         <label>YouTube channel (if you have one)<input name="youtube" maxlength="160" placeholder="youtube.com/@yourchannel" value="${esc(user.youtube || "")}"></label>
       </div>
-      <label>Profile photo (optional — leave blank and you get a styled initial avatar)<input name="photo" type="file" accept="image/*"></label>
-      ${user.photo_path ? `<p class="note">Current photo: ${esc(user.photo_path)}</p>` : ""}
       <div style="border:1px solid rgba(255,196,77,.55);border-radius:12px;padding:12px 12px 6px;margin:14px 0;background:rgba(255,196,77,.06)">
-        <p class="sub" style="margin:0 0 6px"><b style="color:#ffd98a">🎵 Upload your song — right here (optional).</b> Attach a song now and it goes straight into the 15-Point Scale Evaluation when you save your profile — no second trip. Radio quality only: WAV or FLAC, or MP3 / M4A at 192 kbps or better, and cover art is required with a song. No song ready? Just save your profile and upload any time.</p>
+        <p class="sub" style="margin:0 0 6px"><b style="color:#ffd98a">📸🎵 Your photo &amp; your song — right next to each other.</b> Load your profile photo and your record right here, together. The song is optional: attach it now and it goes straight into the 15-Point Scale Evaluation when you save your profile — no second trip. Radio quality only: WAV or FLAC, or MP3 / M4A at 192 kbps or better, and cover art is required with a song. No song ready? Just save your profile and upload any time.</p>
+        <label>Profile photo (optional — leave blank and you get a styled initial avatar)<input name="photo" type="file" accept="image/*"></label>
+        ${user.photo_path ? `<p class="note">Current photo: ${esc(user.photo_path)}</p>` : ""}
+        <label>Your song — the record itself<input name="songaudio" type="file" accept="audio/*,.wav,.flac,.mp3,.m4a"></label>
         <label>Song title<input name="song_title" maxlength="120" placeholder="Your song's title"></label>
         <label>Song genre<select name="song_genre">${GENRES.map((g) => `<option value="${esc(g)}" ${g === (user.genre || GENRES[0]) ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></label>
-        <label>Your song — the record itself<input name="songaudio" type="file" accept="audio/*,.wav,.flac,.mp3,.m4a"></label>
         <label>Cover art (required with a song — the cover is judged too)<input name="songcover" type="file" accept="image/*"></label>
         <label>Lyrics (optional — paste them and Lyrical Quality reads your words)<textarea name="song_lyrics" rows="4"></textarea></label>
         <label style="display:flex;gap:9px;align-items:flex-start;font-weight:600">
@@ -4773,6 +4773,30 @@ app.get("/dashboard", (req, res) => {
           ? `<a href="/artist/${user.id}" style="color:var(--accent);font-weight:700;text-decoration:none">View your public profile →</a> · `
           : ""}<a href="/profile?email=${encodeURIComponent(user.email)}" style="color:var(--accent);font-weight:700;text-decoration:none">Edit profile →</a></p></div>`;
       if (hasProfile(user)) content += videoPanelHtml(user, "dashboard");
+      // Load a song from the dashboard too (owner, Nov 3, 2026): any
+      // place an artist manages their profile takes a song — this
+      // form posts to the same /upload gates and Theater, with the
+      // dashboard's email carried in a hidden field. Shown only
+      // while a slot is open; the slots line above covers the full
+      // case.
+      if (hasProfile(user) && live.length < 2) content += `<div class="panel">
+        <h2 style="margin-top:0">🎵 Load a song right here</h2>
+        <p class="sub">You have ${2 - live.length} song slot${live.length === 1 ? "" : "s"} open — load a record straight from your dashboard. Same evaluation, same charts. Radio quality only: WAV or FLAC, or MP3 / M4A at 192 kbps or better, and cover art is required (the cover is judged too).</p>
+        <form method="post" action="/upload" enctype="multipart/form-data">
+          <input type="hidden" name="email" value="${esc(user.email)}">
+          <label>Song title<input name="title" required maxlength="120" placeholder="Your song's title"></label>
+          <label>Genre<select name="genre">${GENRES.map((g) => `<option value="${esc(g)}" ${g === (user.genre || GENRES[0]) ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></label>
+          <label>Your song — the record itself<input name="audio" type="file" required accept="audio/*,.wav,.flac,.mp3,.m4a"></label>
+          <label>Cover art<input name="cover" type="file" required accept="image/*"></label>
+          <label>Lyrics (optional)<textarea name="lyrics" rows="4"></textarea></label>
+          <label style="display:flex;gap:9px;align-items:flex-start;font-weight:600">
+            <input type="checkbox" name="consent" value="yes" required style="width:20px;height:20px;margin-top:2px;flex:none">
+            <span><b style="color:#fff">I agree to the Terms &amp; Conditions.</b> I am the artist or an authorized label representative for this song, and I grant Hot Top 20 exclusive permission to add and play it on this platform. My consent is recorded with this upload. <a href="/terms" style="color:var(--accent);font-weight:700;text-decoration:none">Read the full Terms →</a></span>
+          </label>
+          <button class="btn btn-blue btn-block" type="submit" style="margin-top:10px">Upload &amp; judge my song</button>
+          <p class="note">The analyzer reads your record — keep this page open while it loads.</p>
+        </form>
+      </div>`;
       for (const s of live) {
         const { ranks } = songRanks(s.id);
         content += `<div class="panel">
