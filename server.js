@@ -1942,7 +1942,7 @@ app.get("/", (req, res) => {
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   const ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-  const ANN_V = 8; // announcement voice generation (Take B radio voice; v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
+  const ANN_V = 9; // announcement voice generation (Take B radio voice; v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -2522,7 +2522,7 @@ app.get("/charts", (req, res) => {
   (function(){
     var Q = ${JSON.stringify(chartQ).replace(/</g, "\\u003c")};
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 8;
+    var ANN_V = 9;
     var byId = {}; Q.forEach(function(s, i){ byId[s.id] = i; });
     var audio = document.getElementById('cAudio');
     var btn = document.getElementById('cPlayBtn');
@@ -3067,7 +3067,7 @@ app.get("/song/:id", (req, res) => {
     var a = document.querySelector('audio.profile-audio');
     if (!a) return;
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 8;
+    var ANN_V = 9;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     a._songSrc = a.getAttribute('src');
@@ -3461,7 +3461,7 @@ function theaterHtml(title, genre, audioWeb, specs) {
     <div id="tScreenView" style="overflow:hidden;aspect-ratio:2531/1613;width:100%">
     <div id="tScreenTrack" style="transition:transform 1.15s ease">
     <div style="position:relative">
-      <img src="/studio.jpg?v=30" alt="The Top 20 Mastering Analyzer" style="width:100%;display:block">
+      <img src="/studio.jpg?v=31" alt="The Top 20 Mastering Analyzer" style="width:100%;display:block">
       <div id="tOvlBpm" style="position:absolute;left:68.5%;top:18%;width:14.5%;background:rgba(4,10,22,.82);border:1px solid #2ee6a8;border-radius:6px;padding:3px 6px;animation:tPulse 1.6s infinite">
         <div style="font-size:8px;letter-spacing:1.5px;color:#57e6ff;line-height:1.1">TEMPO / BPM</div>
         <div id="tOvlBpmVal" style="font-size:clamp(10px,3.1vw,16px);font-weight:800;color:#fff;line-height:1.15">···</div>
@@ -4758,7 +4758,7 @@ app.get("/artist/:id", (req, res) => {
     // what a visiting artist hears when an artist posts their profile.
     // The Stage's DJ VOICE switch is the same switch here.
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 8;
+    var ANN_V = 9;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     function countPlay(a) { if (a._counted) return; a._counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
@@ -5019,7 +5019,7 @@ app.get("/how-it-works", (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">Part 2 — The Judging</h2>
     <p class="sub">Every song uploaded to TOP 20 is scored on <b style="color:#fff">15 points, 1–10 each</b> (total /150) — the same 15 for every song, fitted genre by genre:</p>
-    <img src="/studio.jpg?v=30" alt="The TOP 20 mastering analyzer — the studio screen that reads every record against the 15-Point Scale" style="width:100%;border-radius:12px;border:1px solid #22304f;display:block;margin:12px 0 8px">
+    <img src="/studio.jpg?v=31" alt="The TOP 20 mastering analyzer — the studio screen that reads every record against the 15-Point Scale" style="width:100%;border-radius:12px;border:1px solid #22304f;display:block;margin:12px 0 8px">
     <p class="sub"><b style="color:#fff">The Analyzer.</b> This is the machine that reads every record on TOP 20 — loudness, true peak, the full spectrum — measured against the same professional reference charts engineers keep on their desks. And you don't just get a number back: upload a song and you <b style="color:#fff">watch it work</b> — your record on the meters, point by point, until your 15-point evaluation lands.</p>
     <ul class="rules">${CATEGORIES.map((c, i) => `<li><b>${i + 1}. ${esc(c.label)}</b></li>`).join("")}</ul>
     <p class="sub">Yes — the cover is one of the points. Quality artwork helps your score; anything slapped together will hurt it. The craft score is then blended with real engagement (60% craft / 40% engagement, social buzz capped at about 10% of the total) to set the charts — chart position is never popularity alone, and the craft score can't be bought.</p>
