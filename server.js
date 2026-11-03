@@ -3176,7 +3176,7 @@ app.get("/song/:id", (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">Where it stands</h2>
     ${rankLines(ranks)}
-    ${sharecard.headlineStanding(db, song.id) ? `<p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/badge/${song.id}.jpg" download>🏆 Show your accomplishments & rank status</a></p>
+    ${sharecard.headlineStanding(db, song.id) ? `<p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/badge/${song.id}.jpg" download>🏆 Show your accomplishments & rank status (tall plaque)</a></p>
     <p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/fbadge/${song.id}.jpg" download>📘 Facebook plaque — full cover</a></p>
     <p class="note">The tall plaque is made for Instagram Stories and TikTok. The Facebook plaque is sized for Facebook and shows your WHOLE cover head to toe, plus your counts and your measured specs. Post them anywhere — they show your accomplishments and your rank status.</p>` : ""}
     <p class="note" style="margin-top:10px">Only the Top 20 plays on the Stage. Any day, this song can pop in.</p>
@@ -4666,7 +4666,7 @@ app.get("/dashboard", (req, res) => {
             <span class="meta"><span class="t">${esc(s.title)}</span><br><span class="a">${esc(s.genre)} · Craft ${s.craft_score}</span></span>
           </a>
           ${rankLines(ranks)}
-          ${sharecard.headlineStanding(db, s.id) ? `<p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/badge/${s.id}.jpg" download>🏆 Show your accomplishments & rank status</a></p>
+          ${sharecard.headlineStanding(db, s.id) ? `<p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/badge/${s.id}.jpg" download>🏆 Show your accomplishments & rank status (tall plaque)</a></p>
           <p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/fbadge/${s.id}.jpg" download>📘 Facebook plaque — full cover</a></p>` : ""}
           <form method="post" action="/dashboard/remove" style="margin-top:10px">
             <input type="hidden" name="email" value="${esc(user.email)}">
