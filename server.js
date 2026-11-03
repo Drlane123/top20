@@ -1982,9 +1982,15 @@ app.get("/", (req, res) => {
     // "Number 47 — Mike millzz — Get low — non-stop and climbing!"
     // No days line, no "brand new entry". The Top 20 call keeps its
     // full Stage format with the days line.
+    // EVERY ranked song gets its call (owner, Nov 2, 2026): if the days
+    // line can't be formed (a genre-channel song whose days read 0, or a
+    // run past the recorded days clips), the call goes out WITHOUT the
+    // days line — it never goes silent over a missing middle clip.
     const keys = bucket
       ? ['climb-' + t.rank, 'line-' + t.id, 'climb-closer']
-      : ['rank-' + t.rank, 'title-' + t.id, daysKey, 'closer'];
+      : (daysKey
+        ? ['rank-' + t.rank, 'title-' + t.id, daysKey, 'closer']
+        : ['rank-' + t.rank, 'title-' + t.id, 'closer']);
     // ONE narrator, always (owner, Nov 1, 2026): the recorded voice or
     // no call at all. A phone robot voice once read a fresh song's name
     // and the song cut in over it — that fallback is gone for good.
@@ -2500,6 +2506,24 @@ app.get("/charts", (req, res) => {
       audio.onerror = function(){ if (announcingC && my === annChain) finish(); };
       step();
     }
+    // Top 20 songs get their full Stage call in this player too (owner,
+    // Nov 2, 2026: the DJ announces EVERY ranked song, Top 20 and the
+    // bucket alike). Same recorded voice, same DJ VOICE switch; if the
+    // days line can't be formed it is dropped, never the whole call.
+    function announceTop(s, done){
+      var on = true; try { on = localStorage.getItem('djVoice') !== '0'; } catch (e) {}
+      if (!on) { done(); return; }
+      var daysKey = s.fresh ? 'days-fresh' : (s.days === 1 ? 'days-one' : (s.days >= 2 && s.days <= 100 ? 'days-' + s.days : null));
+      var keys = daysKey ? ['rank-' + s.rank, 'title-' + s.id, daysKey, 'closer'] : ['rank-' + s.rank, 'title-' + s.id, 'closer'];
+      if (keys.some(function(k){ return !k || ANN_KEYS.indexOf(k) === -1; })) { done(); return; }
+      var my = ++annChain, i = 0, fired = false;
+      var hard = setTimeout(function(){ if (my === annChain) finish(); }, 12000);
+      function finish(){ if (fired) return; fired = true; clearTimeout(hard); if (my === annChain) { announcingC = false; annStepC = null; audio.onerror = null; audio.ontimeupdate = null; audio.volume = 1; } setTimeout(done, 450); }
+      var step = function(){ if (fired || my !== annChain) return; if (i >= keys.length) { finish(); return; } audio.ontimeupdate = null; audio.volume = 1; audio.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++; if (i === keys.length) { audio.ontimeupdate = function(){ var d = audio.duration || 0, c = audio.currentTime || 0; if (d > 0 && d - c < 0.35) audio.volume = Math.max(0, (d - c) / 0.35); }; } var p = audio.play(); if (p && p.catch) p.catch(function(){ finish(); }); };
+      announcingC = true; annStepC = step;
+      audio.onerror = function(){ if (announcingC && my === annChain) finish(); };
+      step();
+    }
     function startSong(i){ var s = Q[i]; if (!s) return;
       audio.src = s.audio; audio.volume = s.demo ? 0.3 : 1; audio.play().catch(function(){});
       fetch('/api/play/' + s.id, { method: 'POST' }).catch(function(){}); }
@@ -2511,6 +2535,7 @@ app.get("/charts", (req, res) => {
       paint();
       var s = Q[i];
       if (s.rank >= 21 && s.rank <= 100) { announceBucket(s, function(){ if (playToken === tk && cur === i) startSong(i); }); }
+      else if (s.rank >= 1 && s.rank <= 20) { announceTop(s, function(){ if (playToken === tk && cur === i) startSong(i); }); }
       else startSong(i); }
     audio.addEventListener('play', function(){ btn.textContent = '❚❚'; });
     audio.addEventListener('pause', function(){ btn.textContent = '▶'; });
@@ -2857,6 +2882,20 @@ app.get("/song/:id", (req, res) => {
   const fanBonus = supportBonus(eng.like || 0, eng.share || 0);
   const dc = daysCharted(song.id);
   const dcNew = dc.days > 0 && dc.first === latestChartDate(db);
+  // The DJ call on this page (owner, Nov 2, 2026: EVERY ranked song is
+  // announced, Top 20 and the bucket alike) — the song's National Overall
+  // standing drives the call, same as on the artist profile.
+  const annDate = latestChartDate(db);
+  const annRow = annDate ? db.prepare(
+    "SELECT rank FROM chart_entries WHERE song_id = ? AND chart_date = ? AND level = 'national' AND genre = 'Overall' AND region_key = 'ALL'"
+  ).get(song.id, annDate) : null;
+  let songAnn = { mode: "", rank: 0, days: 0, fresh: false };
+  if (annRow && annRow.rank <= 20) {
+    songAnn = { mode: "top20", rank: annRow.rank, days: dc.days, fresh: dcNew };
+  } else if (annRow && annRow.rank <= 100) {
+    const bdc = daysOnChart(song.id, "national", OVERALL, "ALL", 100, annDate);
+    songAnn = { mode: "bucket", rank: annRow.rank, days: bdc.days, fresh: bdc.fresh };
+  }
   const { ranks } = songRanks(song.id);
   // Share-my-position (Dale's spec): the headline standing drives the
   // badge on this page, the words in the share sheet, and the card image
@@ -2892,8 +2931,56 @@ app.get("/song/:id", (req, res) => {
   ${pickChip}
   ${standingBadge}
   ${removedNote}
-  <audio controls preload="metadata" src="${esc(song.audio_path)}" data-demo="${String(song.audio_path || "").replace(/^\//, "").startsWith("audio/") ? 1 : 0}"></audio>
+  <audio class="profile-audio" controls preload="metadata" src="${esc(song.audio_path)}" data-song="${song.id}" data-mode="${songAnn.mode}" data-rank="${songAnn.rank}" data-days="${songAnn.days}" data-fresh="${songAnn.fresh ? 1 : 0}" data-demo="${String(song.audio_path || "").replace(/^\//, "").startsWith("audio/") ? 1 : 0}"></audio>
   <script>document.querySelectorAll('audio[data-demo="1"]').forEach(function(a){ a.volume = 0.3; });</script>
+  <script>
+  (function () {
+    var a = document.querySelector('audio.profile-audio');
+    if (!a) return;
+    var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
+    var ANN_V = 4;
+    var annChain = 0;
+    function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
+    a._songSrc = a.getAttribute('src');
+    a._demoVol = a.getAttribute('data-demo') === '1' ? 0.3 : 1; a.volume = a._demoVol;
+    function announceSong(done) {
+      var mode = a.getAttribute('data-mode');
+      if (!djOnP() || !mode) { done(); return; }
+      var days = parseInt(a.getAttribute('data-days') || '0', 10);
+      var fresh = a.getAttribute('data-fresh') === '1';
+      var daysKey = fresh ? 'days-fresh' : (days === 1 ? 'days-one' : (days >= 2 && days <= 100 ? 'days-' + days : null));
+      var keys = mode === 'top20'
+        ? (daysKey ? ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), daysKey, 'closer'] : ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), 'closer'])
+        : ['climb-' + a.getAttribute('data-rank'), 'line-' + a.getAttribute('data-song'), 'climb-closer'];
+      if (keys.some(function (k) { return !k || ANN_KEYS.indexOf(k) === -1; })) { done(); return; }
+      var my = ++annChain, i = 0, fired = false;
+      var hard = setTimeout(function () { if (my === annChain) finish(); }, 12000);
+      function finish() {
+        if (fired) return; fired = true; clearTimeout(hard);
+        if (my === annChain) { a._announcing = false; a._annStep = null; a.ontimeupdate = null; a.volume = a._demoVol || 1; a.src = a._songSrc; }
+        setTimeout(done, 450);
+      }
+      var step = function () {
+        if (fired || my !== annChain) return;
+        if (i >= keys.length) { finish(); return; }
+        a.ontimeupdate = null; a.volume = 1;
+        a.src = '/ann/' + keys[i] + '.mp3?v=' + ANN_V; i++;
+        if (i === keys.length) { a.ontimeupdate = function () { var d = a.duration || 0, c = a.currentTime || 0; if (d > 0 && d - c < 0.35) a.volume = Math.max(0, (d - c) / 0.35); }; }
+        var p = a.play(); if (p && p.catch) p.catch(function () { finish(); });
+      };
+      a._announcing = true; a._annStep = step;
+      a.onerror = function () { if (a._announcing && my === annChain) finish(); };
+      step();
+    }
+    a.addEventListener('ended', function () { if (a._announcing && a._annStep) a._annStep(); });
+    a.addEventListener('play', function () {
+      if (a._announcing || a._announced) return;
+      if (!a.getAttribute('data-mode') || !djOnP()) { a._announced = true; return; }
+      a.pause();
+      announceSong(function () { a._announced = true; a.play().catch(function () {}); });
+    });
+  })();
+  </script>
   <div class="flexbtns">
     <form id="likeForm" method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="like"><button class="btn" type="submit" id="likeBtn">♥ <span id="likeLabel">Like</span> (<span id="likeCount">${fmtNum(eng.like || 0)}</span>)</button></form>
     <form id="shareForm" method="post" action="/song/${song.id}/engage"><input type="hidden" name="type" value="share"><button class="btn" type="submit">⤴ Share (${fmtNum(eng.share || 0)})</button></form>
@@ -4360,7 +4447,9 @@ app.get("/artist/:id", (req, res) => {
       // number — artist — title — "Non-stop and climbing!", no days
       // line. Recorded voice or no call — never a phone robot voice.
       var keys = mode === 'top20'
-        ? ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), daysKey, 'closer']
+        ? (daysKey
+          ? ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), daysKey, 'closer']
+          : ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), 'closer'])
         : ['climb-' + a.getAttribute('data-rank'), 'line-' + a.getAttribute('data-song'), 'climb-closer'];
       if (keys.some(function (k) { return !k || ANN_KEYS.indexOf(k) === -1; })) { done(); return; }
       var my = ++annChain, i = 0, fired = false;
