@@ -2677,6 +2677,11 @@ app.get("/ar", (req, res) => {
   const body = `
   <h1>🎧 A&amp;R Executive Mode</h1>
   <p class="sub">Search the live catalogue the way the industry searches: by <b style="color:#fff">territory</b> and by the <b style="color:#fff">scores themselves</b>. Every record here was uploaded by an independent artist and judged on the same 15-Point Scale — the numbers below are the numbers on its public scorecard.</p>
+  <div class="panel" style="border-left:3px solid var(--accent)">
+    <h2 style="margin-top:0">🤝 Your A&amp;R profile</h2>
+    <p class="sub">A&amp;Rs on Top 20 get their own profile — and it's your <b style="color:#fff">voting pass</b> for the Weekly Pick 3. Build it with the <b style="color:#fff">8-digit A&amp;R code</b> the owner hands out; show it publicly only if you flip it on.</p>
+    <p style="margin:10px 0 0"><a class="btn btn-blue" href="/ar-profile">Open the A&amp;R profile creator →</a></p>
+  </div>
   <form class="panel" method="get" action="/ar">
     <div class="grid">
       <div class="field"><label for="argenre">Genre</label>
