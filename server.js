@@ -129,6 +129,27 @@ app.get("/ann/:file", (req, res) => {
   res.setHeader("Cache-Control", "public, max-age=604800");
   res.send(b);
 });
+// NEW-SONG VOICE FLAG (owner, Nov 3, 2026): the site itself watches
+// for uploads whose DJ clips don't exist yet — artist and title come
+// straight off the song's own record, whichever door it came in
+// (Upload page, Create Profile, Dashboard). A tiny automatic
+// tripwire polls this list and wakes Vesper ONLY when a song is
+// actually waiting, so no standing timer burns agent runs. Songs 20
+// and 33 are excluded by the owner's standing order (their clips
+// were deleted on purpose, Nov 2).
+app.get("/api/announce-needed", (req, res) => {
+  try {
+    const rows = db.prepare(`
+      SELECT s.id, s.title, u.name AS artist FROM songs s
+      JOIN users u ON u.id = s.artist_id
+      WHERE s.status = 'live' AND s.id NOT IN (20, 33) ORDER BY s.id`).all();
+    const need = rows.filter((r) => !ANN["title-" + r.id] || !ANN["line-" + r.id]);
+    res.setHeader("Cache-Control", "no-store");
+    return res.json(need);
+  } catch (e) {
+    return res.json([]);
+  }
+});
 // If the owner has uploaded his own hero video to Cloudflare storage, the
 // home page's hero is served from there (whole file, signed link, streamed
 // by Cloudflare). Until he does — or if storage is ever unconfigured — the
