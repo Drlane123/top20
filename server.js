@@ -1899,7 +1899,7 @@ app.get("/", (req, res) => {
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   const ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-  const ANN_V = 4; // announcement voice generation (Take B radio voice; v4 adds title-47 + days up to 100, with the fade-out ending) — bump on every re-record so phones fetch the new clips instead of playing a cached old voice
+  const ANN_V = 5; // announcement voice generation (Take B radio voice; v5 drops the two corrupt line clips (20, 33) by owner order; v4 added title-47 + days up to 100, with the fade-out ending) — bump on every re-record so phones fetch the new clips instead of playing a cached old voice
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -1986,11 +1986,14 @@ app.get("/", (req, res) => {
     // line can't be formed (a genre-channel song whose days read 0, or a
     // run past the recorded days clips), the call goes out WITHOUT the
     // days line — it never goes silent over a missing middle clip.
-    const keys = bucket
+    let keys = bucket
       ? ['climb-' + t.rank, 'line-' + t.id, 'climb-closer']
       : (daysKey
         ? ['rank-' + t.rank, 'title-' + t.id, daysKey, 'closer']
         : ['rank-' + t.rank, 'title-' + t.id, 'closer']);
+    // A missing artist/title middle clip (deleted or not yet recorded)
+    // drops out of the call — the number and the ending always play.
+    keys = keys.filter((k) => (k.indexOf('title-') !== 0 && k.indexOf('line-') !== 0) || ANN_KEYS.indexOf(k) !== -1);
     // ONE narrator, always (owner, Nov 1, 2026): the recorded voice or
     // no call at all. A phone robot voice once read a fresh song's name
     // and the song cut in over it — that fallback is gone for good.
@@ -2476,7 +2479,7 @@ app.get("/charts", (req, res) => {
   (function(){
     var Q = ${JSON.stringify(chartQ).replace(/</g, "\\u003c")};
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 4;
+    var ANN_V = 5;
     var byId = {}; Q.forEach(function(s, i){ byId[s.id] = i; });
     var audio = document.getElementById('cAudio');
     var btn = document.getElementById('cPlayBtn');
@@ -2498,6 +2501,7 @@ app.get("/charts", (req, res) => {
       var on = true; try { on = localStorage.getItem('djVoice') !== '0'; } catch (e) {}
       if (!on) { done(); return; }
       var keys = ['climb-' + s.rank, 'line-' + s.id, 'climb-closer'];
+      keys = keys.filter(function (k) { return (k.indexOf('title-') !== 0 && k.indexOf('line-') !== 0) || ANN_KEYS.indexOf(k) !== -1; }); // a missing artist/title middle clip drops out — the number and the ending always play (owner, Nov 2, 2026)
       if (keys.some(function(k){ return !k || ANN_KEYS.indexOf(k) === -1; })) { done(); return; }
       var my = ++annChain, i = 0, fired = false;
       var hard = setTimeout(function(){ if (my === annChain) finish(); }, 12000);
@@ -2516,6 +2520,7 @@ app.get("/charts", (req, res) => {
       if (!on) { done(); return; }
       var daysKey = s.fresh ? 'days-fresh' : (s.days === 1 ? 'days-one' : (s.days >= 2 && s.days <= 100 ? 'days-' + s.days : null));
       var keys = daysKey ? ['rank-' + s.rank, 'title-' + s.id, daysKey, 'closer'] : ['rank-' + s.rank, 'title-' + s.id, 'closer'];
+      keys = keys.filter(function (k) { return (k.indexOf('title-') !== 0 && k.indexOf('line-') !== 0) || ANN_KEYS.indexOf(k) !== -1; }); // a missing artist/title middle clip drops out — the number and the ending always play (owner, Nov 2, 2026)
       if (keys.some(function(k){ return !k || ANN_KEYS.indexOf(k) === -1; })) { done(); return; }
       var my = ++annChain, i = 0, fired = false;
       var hard = setTimeout(function(){ if (my === annChain) finish(); }, 12000);
@@ -2939,7 +2944,7 @@ app.get("/song/:id", (req, res) => {
     var a = document.querySelector('audio.profile-audio');
     if (!a) return;
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 4;
+    var ANN_V = 5;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     a._songSrc = a.getAttribute('src');
@@ -2953,6 +2958,7 @@ app.get("/song/:id", (req, res) => {
       var keys = mode === 'top20'
         ? (daysKey ? ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), daysKey, 'closer'] : ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), 'closer'])
         : ['climb-' + a.getAttribute('data-rank'), 'line-' + a.getAttribute('data-song'), 'climb-closer'];
+      keys = keys.filter(function (k) { return (k.indexOf('title-') !== 0 && k.indexOf('line-') !== 0) || ANN_KEYS.indexOf(k) !== -1; }); // a missing artist/title middle clip drops out — the number and the ending always play (owner, Nov 2, 2026)
       if (keys.some(function (k) { return !k || ANN_KEYS.indexOf(k) === -1; })) { done(); return; }
       var my = ++annChain, i = 0, fired = false;
       var hard = setTimeout(function () { if (my === annChain) finish(); }, 12000);
@@ -4428,7 +4434,7 @@ app.get("/artist/:id", (req, res) => {
     // what a visiting artist hears when an artist posts their profile.
     // The Stage's DJ VOICE switch is the same switch here.
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 4;
+    var ANN_V = 5;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     function countPlay(a) { if (a._counted) return; a._counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
@@ -4452,6 +4458,7 @@ app.get("/artist/:id", (req, res) => {
           ? ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), daysKey, 'closer']
           : ['rank-' + a.getAttribute('data-rank'), 'title-' + a.getAttribute('data-song'), 'closer'])
         : ['climb-' + a.getAttribute('data-rank'), 'line-' + a.getAttribute('data-song'), 'climb-closer'];
+      keys = keys.filter(function (k) { return (k.indexOf('title-') !== 0 && k.indexOf('line-') !== 0) || ANN_KEYS.indexOf(k) !== -1; }); // a missing artist/title middle clip drops out — the number and the ending always play (owner, Nov 2, 2026)
       if (keys.some(function (k) { return !k || ANN_KEYS.indexOf(k) === -1; })) { done(); return; }
       var my = ++annChain, i = 0, fired = false;
       var hard = setTimeout(function () { if (my === annChain) finish(); }, 12000);
