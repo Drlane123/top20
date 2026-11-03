@@ -4174,6 +4174,23 @@ const photoUpload = multer({
   limits: { fileSize: 15 * 1024 * 1024 },
 });
 
+// Create Profile form upload (owner, Nov 3, 2026): the profile form
+// also takes an optional SONG right next to the profile photo — one
+// form, three files, each routed to its own folder: photo to photos,
+// songaudio to audio, songcover to covers. Same 40 MB cap as /upload.
+const profileFormUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null,
+      file.fieldname === "photo" ? PHOTO_UP : file.fieldname === "songaudio" ? AUDIO_UP : COVER_UP),
+    filename: (req, file, cb) => {
+      const ext = (path.extname(file.originalname) || "").toLowerCase().replace(/[^.a-z0-9]/g, "")
+        || (file.fieldname === "songaudio" ? ".mp3" : ".png");
+      cb(null, `${file.fieldname}-${Date.now()}-${crypto.randomBytes(3).toString("hex")}${ext}`);
+    },
+  }),
+  limits: { fileSize: 40 * 1024 * 1024 },
+});
+
 function findOrCreateShell(emailLc) {
   let user = db.prepare("SELECT * FROM users WHERE LOWER(email) = ?").get(emailLc);
   if (!user) {
@@ -4260,6 +4277,19 @@ app.get("/profile", (req, res) => {
       </div>
       <label>Profile photo (optional — leave blank and you get a styled initial avatar)<input name="photo" type="file" accept="image/*"></label>
       ${user.photo_path ? `<p class="note">Current photo: ${esc(user.photo_path)}</p>` : ""}
+      <div style="border:1px solid rgba(255,196,77,.55);border-radius:12px;padding:12px 12px 6px;margin:14px 0;background:rgba(255,196,77,.06)">
+        <p class="sub" style="margin:0 0 6px"><b style="color:#ffd98a">🎵 Upload your song — right here (optional).</b> Attach a song now and it goes straight into the 15-Point Scale Evaluation when you save your profile — no second trip. Radio quality only: WAV or FLAC, or MP3 / M4A at 192 kbps or better, and cover art is required with a song. No song ready? Just save your profile and upload any time.</p>
+        <label>Song title<input name="song_title" maxlength="120" placeholder="Your song's title"></label>
+        <label>Song genre<select name="song_genre">${GENRES.map((g) => `<option value="${esc(g)}" ${g === (user.genre || GENRES[0]) ? "selected" : ""}>${esc(g)}</option>`).join("")}</select></label>
+        <label>Your song — the record itself<input name="songaudio" type="file" accept="audio/*,.wav,.flac,.mp3,.m4a"></label>
+        <label>Cover art (required with a song — the cover is judged too)<input name="songcover" type="file" accept="image/*"></label>
+        <label>Lyrics (optional — paste them and Lyrical Quality reads your words)<textarea name="song_lyrics" rows="4"></textarea></label>
+        <label style="display:flex;gap:9px;align-items:flex-start;font-weight:600">
+          <input type="checkbox" name="song_consent" value="yes" style="width:20px;height:20px;margin-top:2px;flex:none">
+          <span><b style="color:#fff">I agree to the Terms &amp; Conditions</b> for this song. I am the artist or an authorized label representative for this song, and I grant Hot Top 20 exclusive permission to add and play it on this platform. My consent is recorded with this upload. <a href="/terms" style="color:var(--accent);font-weight:700;text-decoration:none">Read the full Terms →</a></span>
+        </label>
+        <p class="note">Attaching a song? Saving takes a little longer — the analyzer reads your record. Keep this page open.</p>
+      </div>
       <label>Bio<textarea name="bio" rows="3" maxlength="600">${esc(user.bio || "")}</textarea></label>
       <label>Age (optional — leave blank to keep it private)<input name="age" type="number" min="1" max="120" value="${user.age ?? ""}"></label>
       <label>Years in the game (optional)<input name="years_in_game" type="number" min="0" max="80" value="${user.years_in_game ?? ""}"></label>
@@ -4312,7 +4342,7 @@ app.get("/my-profile", (req, res) => {
   res.send(layout("My Profile", "myprofile", `${intro}${result}${form(email)}${stash}`));
 });
 
-app.post("/profile", photoUpload.single("photo"), (req, res) => {
+app.post("/profile", profileFormUpload.fields([{ name: "photo", maxCount: 1 }, { name: "songaudio", maxCount: 1 }, { name: "songcover", maxCount: 1 }]), async (req, res) => {
   const emailLc = String(req.body.email || "").trim().toLowerCase();
   if (!emailLc) return res.redirect("/profile");
   const user = findOrCreateShell(emailLc);
@@ -4329,7 +4359,7 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
   const picks = [...new Set(rawGenres.map((g) => String(g).trim()).filter((g) => GENRES.includes(g)))].slice(0, 3);
   const genre = picks.length ? picks[0] : (GENRES.includes(req.body.genre) ? req.body.genre : user.genre);
   const genresStr = picks.length ? picks.join(",") : (user.genres || null);
-  const photoPath = req.file ? `/uploads/photos/${req.file.filename}` : user.photo_path;
+  const photoPath = req.files?.photo?.[0] ? `/uploads/photos/${req.files.photo[0].filename}` : user.photo_path;
   const socials = {
     facebook: String(req.body.facebook || "").trim().slice(0, 160),
     instagram: String(req.body.instagram || "").trim().slice(0, 160),
@@ -4364,6 +4394,91 @@ app.post("/profile", photoUpload.single("photo"), (req, res) => {
   // artist's profile must survive even a deploy minutes later.
   snapshotDbSoon();
   snapshotDb("profile-save");
+  // UPLOAD A SONG ON THE SAME SAVE (owner, Nov 3, 2026): the artist
+  // attached a song next to the profile photo — the profile is saved
+  // either way (it always lands); the song then runs the same gates
+  // as /upload, in the same order, and a gate failure sends them back
+  // to the form with the reason while their profile stays saved.
+  const songAudioFile = req.files?.songaudio?.[0] || null;
+  const songCoverFile = req.files?.songcover?.[0] || null;
+  const backWithErr = (msg) => {
+    for (const f of [songAudioFile, songCoverFile]) if (f) fs.unlink(f.path, () => {});
+    return res.redirect(`/profile?email=${encodeURIComponent(emailLc)}&err=${encodeURIComponent("Your profile saved — but the song didn't go up: " + msg)}`);
+  };
+  if (songAudioFile || songCoverFile || String(req.body.song_title || "").trim()) {
+    if (!songAudioFile) return backWithErr("a cover or title came in, but no song file — attach the record itself and save again.");
+    if (!req.body.song_consent) return backWithErr("the Terms & Conditions box for the song wasn't checked — consent has to come first.");
+    if (!songCoverFile) return backWithErr("cover art is required with a song — no cover, no upload, no judging, no chart.");
+    if (!isRadioQuality(probeAudioQuality(songAudioFile.path))) return backWithErr("that file isn't radio quality — WAV or FLAC, or MP3 / M4A at 192 kbps or better.");
+    const songTitle = String(req.body.song_title || "").trim();
+    const songGenre = String(req.body.song_genre || "");
+    const songLyrics = String(req.body.song_lyrics || "");
+    if (!songTitle || !GENRES.includes(songGenre)) return backWithErr("the song needs its title and a genre.");
+    if (!hasProfile(saved)) return backWithErr("your profile needs an artist name and home city before a song can go up — both are on this form.");
+    const liveCount = db.prepare("SELECT COUNT(*) AS c FROM songs WHERE artist_id = ? AND status = 'live'").get(user.id).c;
+    if (liveCount >= 2) return backWithErr("you already have two songs live — those are the only songs that get judged. Remove one to put another up.");
+
+    const audioWeb = `/uploads/audio/${songAudioFile.filename}`;
+    const coverWeb = `/uploads/covers/${songCoverFile.filename}`;
+    const songInfo = db.prepare(
+      "INSERT INTO songs (artist_id, title, genre, audio_path, cover_path, lyrics, status, consent_at, consent_by) VALUES (?, ?, ?, ?, ?, ?, 'live', datetime('now'), ?)"
+    ).run(user.id, songTitle, songGenre, audioWeb, coverWeb, songLyrics ? songLyrics : null, saved.email);
+    const songId = Number(songInfo.lastInsertRowid);
+    let judged = null;
+    try { judged = await withAnalyzerLock(() => judgeMeasuredFile(songAudioFile.path, songGenre, songCoverFile.path, songLyrics ? songLyrics : null, songTitle)); } catch { judged = null; }
+    if (!judged) judged = judgeAudioFile(songAudioFile.path, songCoverFile.path);
+    const catCols = CATEGORIES.map((c) => c.key).join(", ");
+    const placeholders = CATEGORIES.map(() => "?").join(", ");
+    db.prepare(
+      `INSERT INTO judge_scores (song_id, ${catCols}, total_score, craft_score, notes, metrics) VALUES (?, ${placeholders}, ?, ?, ?, ?)`
+    ).run(songId, ...CATEGORIES.map((c) => judged.scores[c.key]), judged.totalScore, judged.craftScore, JSON.stringify(judged.notes),
+      judged.measurements ? JSON.stringify(quickSpecs(judged.measurements)) : null);
+    db.prepare("INSERT INTO engagements (song_id, type, count) VALUES (?, 'play', 0), (?, 'like', 0), (?, 'share', 0), (?, 'save', 0)")
+      .run(songId, songId, songId, songId);
+    mirrorUpload(songAudioFile.path); mirrorUpload(songCoverFile.path); snapshotDbSoon();
+    const result = recalc(db);
+    const myNotifications = result.notifications.filter((n) => n.song_id === songId);
+    const judge = db.prepare("SELECT * FROM judge_scores WHERE song_id = ?").get(songId);
+    const { ranks } = songRanks(songId);
+    const specs = judged.measurements ? quickSpecs(judged.measurements) : null;
+    const readParts = [];
+    if (specs) {
+      if (specs.bpm) readParts.push(`Tempo <b style="color:#fff">${specs.bpm} BPM</b>`);
+      if (specs.keyRoot) readParts.push(`Key <b style="color:#fff">${esc(specs.keyRoot)} ${esc(specs.keyMode || "")}</b>`);
+      if (specs.lufs != null) readParts.push(`Loudness <b style="color:#fff">${specs.lufs} LUFS</b>`);
+      if (specs.truePeak != null) readParts.push(`True peak <b style="color:#fff">${specs.truePeak} dBTP</b>`);
+      if (specs.hookStartSec != null) readParts.push(`Hook lands <b style="color:#fff">${Math.floor(specs.hookStartSec / 60)}:${String(Math.round(specs.hookStartSec % 60)).padStart(2, "0")}</b>`);
+    }
+    const readStrip = readParts.length ? `<div class="panel" style="border-left:3px solid #ffc44d"><p class="sub" style="margin:0">🎧 <b style="color:#fff">What the analyzer read on your record:</b> ${readParts.join(" · ")}</p></div>` : "";
+    const emailsHtml = myNotifications.length ? `
+  <div class="panel">
+    <h2 style="margin-top:0">✉️ You charted — email sent</h2>
+    ${myNotifications.map((n) => `
+      <p class="sub" style="margin-top:12px"><b style="color:#fff">To:</b> ${esc(saved.email)}<br>
+      <b style="color:#fff">Subject:</b> ${esc(emailSubject(n))}</p>
+      <p class="note">${esc(emailBody(n, saved.name, songTitle, result.date))}</p>`).join("")}
+  </div>` : `
+  <div class="panel"><h2 style="margin-top:0">Not in a Top 20 — yet</h2>
+  <p class="sub">No chart email this time. Your exact ranks are below — charts recalculate daily, and any day you can pop into the Top 20. If you fall out later, we won't email that either: come back and check.</p></div>`;
+    const body = `
+  <h1>Profile live — and your song is judged &amp; ranked</h1>
+  <p class="sub">Your artist profile is saved and public: <a href="/artist/${user.id}" style="color:var(--accent);font-weight:700;text-decoration:none">open it here</a>. And &quot;${esc(songTitle)}&quot; by ${esc(saved.name)} was judged on all 15 criteria — cover art included — and placed on today's charts.</p>
+  ${readStrip}
+  <div class="panel">
+    <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">Craft score</div>
+    <div style="display:flex;align-items:baseline;gap:10px;margin-top:4px">
+      <span class="craftbig">${judge.craft_score}</span><span class="sub">/ 100 · total ${judge.total_score} / 150</span>
+    </div>
+    ${quickSpecsHtml(judge)}
+    ${scoreBars(judge)}
+    <p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/song/${songId}">Open your song page</a></p>
+  </div>
+  <div class="panel"><h2 style="margin-top:0">Your ranks today</h2>${rankLines(ranks)}</div>
+  ${emailsHtml}`;
+    const theater = theaterHtml(songTitle, songGenre, audioWeb, specs);
+    return res.send(layout("Upload result", "profile", theater + `
+  <div id="revealContent" style="display:none">${body}</div>`));
+  }
   if (hasProfile(saved)) return res.redirect(`/artist/${user.id}?saved=1`);
   return res.redirect(`/profile?email=${encodeURIComponent(emailLc)}&saved=1`);
 });
