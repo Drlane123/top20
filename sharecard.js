@@ -210,4 +210,80 @@ function renderBadge({ songId, title, artist, coverAbs, standing, chartDate, cra
   });
 }
 
-module.exports = { headlineStanding, chartLabelText, renderCard, renderProfileCard, renderBadge };
+// Facebook bragging plaque (owner, Nov 3, 2026): the story plaque is
+// cropped-to-fill for Instagram/TikTok, but Facebook gets its OWN —
+// a 1200x1500 (4:5, the biggest a Facebook feed shows whole) picture
+// where the cover is shown COMPLETE, head to toe, never cropped: the
+// cover is fit inside its zone and the lacquer shows around it. The
+// header carries the platinum rank; under the whole cover sit title,
+// artist, craft score, the counts (plays, likes, shares, fan bonus,
+// days charted, total) and the measured specs line — the full brag,
+// made for a Facebook post. Same standing rule as the other cards.
+function renderFbBadge({ songId, title, artist, coverAbs, standing, chartDate, craftScore, statsLine, specsLine }) {
+  const top20 = standing.rank <= 20;
+  const key = ["fbbadge1", songId, chartDate, standing.level, standing.genre, standing.region_key, standing.rank, title, artist, craftScore, statsLine, specsLine].join("|");
+  if (cache.has(key)) return Promise.resolve(cache.get(key));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "fbbadge-"));
+  const put = (name, text) => { const p = path.join(dir, name); fs.writeFileSync(p, cardText(text, 200)); return p; };
+  // Fit a " · "-joined line to the plaque width by dropping trailing
+  // tokens — a line never runs off the edge.
+  const fit = (line, size) => {
+    const per = size * 0.54;
+    const parts = String(line || "").split(" · ").filter(Boolean);
+    while (parts.length > 1 && parts.join(" · ").length * per > 1112) parts.pop();
+    return parts.join(" · ");
+  };
+  const fBrand = put("brand.txt", "TOP 20");
+  const fRank = put("rank.txt", "#" + standing.rank);
+  const fLabel = put("label.txt", chartLabelText(standing));
+  const fTier = put("tier.txt", top20 ? "★ OFFICIAL TOP 20" : "TOP 100");
+  const fTitle = put("title.txt", cardText(title, 22));
+  const fArtist = put("artist.txt", cardText(artist, 28));
+  const fCraft = put("craft.txt", craftScore != null ? `CRAFT ${craftScore} / 100` : "15-POINT SCALE");
+  const fStats = put("stats.txt", fit(statsLine, 31) || "15-POINT SCALE EVALUATION");
+  const fSpecs = put("specs.txt", fit(specsLine, 27));
+  const fTag = put("tag.txt", "CHARTS BY CRAFT, NOT JUST CLOUT");
+  const fDomain = put("domain.txt", "HOTTOP20.COM");
+  const rankSize = top20 ? 138 : 112;
+  const digits = String(standing.rank).length;
+  const textX = Math.round(44 + (0.52 + 0.60 * digits) * rankSize + 40);
+  const dt = (file, size, color, x, y) =>
+    `drawtext=fontfile=${FONT}:textfile=${file}:fontsize=${size}:fontcolor=${color}:x=${x}:y=${y}`;
+  const graph = [
+    "[0:v]scale=1200:1060:force_original_aspect_ratio=decrease,pad=1200:1500:(ow-iw)/2:170:color=0x060B1C[bg]",
+    "[bg]drawbox=x=0:y=164:w=1200:h=5:color=0xFFC44D:t=fill,"
+      + "drawbox=x=0:y=1230:w=1200:h=270:color=0x060B1C:t=fill,"
+      + "drawbox=x=0:y=1226:w=1200:h=4:color=0xFFC44D:t=fill,"
+      + "drawbox=x=0:y=0:w=1200:h=1500:color=0xFFC44D:t=6,"
+      + dt(fRank, rankSize, "0x54657F", 51, 26) + ","
+      + dt(fRank, rankSize, "0xF4F8FF", 44, 19) + ","
+      + dt(fBrand, 54, "0xFFC44D", textX, 22) + ","
+      + dt(fLabel, 35, "0xFFFFFF", textX, 88) + ","
+      + `drawtext=fontfile=${FONT_STAR}:textfile=${fTier}:fontsize=29:fontcolor=0xFFC44D:x=${textX}:y=132` + ","
+      + dt(fTitle, 50, "0xFFFFFF", 44, 1252) + ","
+      + dt(fCraft, 42, "0xFFC44D", "(w-text_w-44)", 1258) + ","
+      + dt(fArtist, 37, "0xCFE0FF", 44, 1324) + ","
+      + dt(fStats, 31, "0xFFFFFF", 44, 1384) + ","
+      + (specsLine ? dt(fSpecs, 27, "0xFFC44D", 44, 1432) + "," : "")
+      + dt(fTag, 25, "0x8FA8D8", 44, 1466) + ","
+      + dt(fDomain, 25, "0x8FA8D8", "(w-text_w-44)", 1466)
+      + "[out]",
+  ].join(";");
+  const out = path.join(dir, "fbbadge.jpg");
+  return new Promise((resolve, reject) => {
+    execFile("ffmpeg", ["-y", "-i", coverAbs, "-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-q:v", "3", out],
+      { timeout: 30000 }, (err) => {
+        let buf = null, readErr = err;
+        if (!err) {
+          try { buf = fs.readFileSync(out); } catch (e) { readErr = e; }
+        }
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* temp cleanup */ }
+        if (readErr) return reject(readErr);
+        if (cache.size > 200) cache.clear();
+        cache.set(key, buf);
+        resolve(buf);
+      });
+  });
+}
+
+module.exports = { headlineStanding, chartLabelText, renderCard, renderProfileCard, renderBadge, renderFbBadge };

@@ -2810,6 +2810,79 @@ app.get("/badge/:id.jpg", async (req, res) => {
   }
 });
 
+// Facebook bragging plaque (owner, Nov 3, 2026): the story plaque is
+// cropped-to-fill for Instagram/TikTok; Facebook gets its own 4:5
+// plaque with the WHOLE cover shown head to toe, plus the counts and
+// the measured specs. Same standing rule as the other cards; any
+// failure falls back to the story plaque rather than a broken image.
+app.get("/fbadge/:id.jpg", async (req, res) => {
+  const song = db.prepare(`
+    SELECT s.*, u.name AS artist FROM songs s JOIN users u ON u.id = s.artist_id WHERE s.id = ?
+  `).get(req.params.id);
+  if (!song) return res.status(404).end();
+  const standing = sharecard.headlineStanding(db, song.id);
+  if (!standing) return res.redirect(`/card/${song.id}.jpg`);
+  let coverAbs = [path.join(__dirname, "public", song.cover_path), path.join(__dirname, song.cover_path)]
+    .find((p) => fs.existsSync(p));
+  let tmpFile = null;
+  if (!coverAbs && storage.configured()) {
+    try {
+      const bytes = await storage.getObject(String(song.cover_path).replace(/^\//, ""));
+      if (bytes && bytes.length) {
+        const ext = (path.extname(song.cover_path) || ".jpg").toLowerCase();
+        tmpFile = path.join(require("node:os").tmpdir(), `fbbadge-src-${song.id}${ext}`);
+        fs.writeFileSync(tmpFile, bytes);
+        coverAbs = tmpFile;
+      }
+    } catch { /* fall through to the story plaque */ }
+  }
+  if (!coverAbs) return res.redirect(`/badge/${song.id}.jpg`);
+  try {
+    const judge = db.prepare("SELECT craft_score, total_score, metrics FROM judge_scores WHERE song_id = ?").get(song.id);
+    const eng = {};
+    for (const r of db.prepare("SELECT type, count FROM engagements WHERE song_id = ?").all(song.id)) eng[r.type] = r.count;
+    const bonus = supportBonus(eng.like || 0, eng.share || 0);
+    const dc = daysCharted(song.id);
+    const statsLine = [
+      `PLAYS ${fmtNum(eng.play || 0)}`, `LIKES ${fmtNum(eng.like || 0)}`, `SHARES ${fmtNum(eng.share || 0)}`,
+      bonus > 0 ? `FAN BONUS +${bonus.toFixed(1)}` : null,
+    ].filter(Boolean).join(" · ");
+    // Second line: chart tenure + total first, then the measured
+    // specs — the renderer trims the tail if the line runs long.
+    const line2 = [
+      dc.days > 0 ? `DAYS CHARTED ${dc.days}` : "BRAND NEW ENTRY",
+      judge && judge.total_score != null ? `TOTAL ${judge.total_score}/150` : null,
+    ];
+    try {
+      const qs = judge && judge.metrics ? JSON.parse(judge.metrics) : null;
+      if (qs) {
+        const mmss = (s) => `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
+        line2.push(
+          qs.bpm ? `TEMPO ${qs.bpm} BPM` : null,
+          qs.keyRoot ? `KEY ${qs.keyRoot} ${String(qs.keyMode || "").toUpperCase()}`.trim() : null,
+          qs.hookStartSec != null ? `HOOK ${mmss(qs.hookStartSec)}` : null,
+          qs.lufs != null ? `${qs.lufs} LUFS` : null,
+          qs.truePeak != null ? `PEAK ${qs.truePeak} dBTP` : null,
+          qs.durationSec ? `LENGTH ${mmss(qs.durationSec)}` : null,
+        );
+      }
+    } catch { /* the specs are a bonus — never block the plaque */ }
+    const specsLine = line2.filter(Boolean).join(" · ");
+    const buf = await sharecard.renderFbBadge({
+      songId: song.id, title: song.title, artist: song.artist,
+      coverAbs, standing, chartDate: latestChartDate(db),
+      craftScore: judge ? judge.craft_score : null, statsLine, specsLine,
+    });
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(buf);
+  } catch {
+    res.redirect(`/badge/${song.id}.jpg`);
+  } finally {
+    if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* temp cleanup */ } }
+  }
+});
+
 // Profile share card (owner, Nov 1, 2026): the picture Facebook shows when
 // an artist shares their profile. The artist's raw photo is served through
 // a storage redirect that Facebook's scraper won't follow, so posts came
@@ -3104,7 +3177,8 @@ app.get("/song/:id", (req, res) => {
     <h2 style="margin-top:0">Where it stands</h2>
     ${rankLines(ranks)}
     ${sharecard.headlineStanding(db, song.id) ? `<p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/badge/${song.id}.jpg" download>🏆 Get my brag plaque</a></p>
-    <p class="note">A tall plaque made for Instagram Stories and TikTok — your cover, your rank, your craft score. Post it and let it brag for you.</p>` : ""}
+    <p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/fbadge/${song.id}.jpg" download>📘 Facebook plaque — full cover</a></p>
+    <p class="note">The tall plaque is made for Instagram Stories and TikTok. The Facebook plaque is sized for Facebook and shows your WHOLE cover head to toe, plus your counts and your measured specs. Post them and let them brag for you.</p>` : ""}
     <p class="note" style="margin-top:10px">Only the Top 20 plays on the Stage. Any day, this song can pop in.</p>
   </div>
   ${song.lyrics ? `<div class="panel"><h2 style="margin-top:0">Lyrics</h2><p class="sub" style="white-space:pre-wrap">${esc(song.lyrics)}</p></div>` : ""}`;
@@ -4592,7 +4666,8 @@ app.get("/dashboard", (req, res) => {
             <span class="meta"><span class="t">${esc(s.title)}</span><br><span class="a">${esc(s.genre)} · Craft ${s.craft_score}</span></span>
           </a>
           ${rankLines(ranks)}
-          ${sharecard.headlineStanding(db, s.id) ? `<p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/badge/${s.id}.jpg" download>🏆 Get my brag plaque — post it everywhere</a></p>` : ""}
+          ${sharecard.headlineStanding(db, s.id) ? `<p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/badge/${s.id}.jpg" download>🏆 Get my brag plaque — post it everywhere</a></p>
+          <p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/fbadge/${s.id}.jpg" download>📘 Facebook plaque — full cover</a></p>` : ""}
           <form method="post" action="/dashboard/remove" style="margin-top:10px">
             <input type="hidden" name="email" value="${esc(user.email)}">
             <input type="hidden" name="song_id" value="${s.id}">
