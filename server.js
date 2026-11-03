@@ -4483,6 +4483,73 @@ app.post("/profile", profileFormUpload.fields([{ name: "photo", maxCount: 1 }, {
   return res.redirect(`/profile?email=${encodeURIComponent(emailLc)}&saved=1`);
 });
 
+/* ---------------------- Delete a profile (owner, Nov 3, 2026) ---------
+   One eraser for both doors: the owner's delete button on each artist
+   page (staff session only) and the artist's own delete on their
+   dashboard (typed-email confirmation). Removes every row that points
+   at the artist or their songs — child tables first, FK order — plus
+   the local media files; bucket copies stay orphaned, same as the
+   site's other deletes. The caller recalculates and snapshots. */
+function deleteProfileEverywhere(userId) {
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(userId);
+  if (!user) return null;
+  const songs = db.prepare("SELECT * FROM songs WHERE artist_id = ?").all(userId);
+  const vids = db.prepare("SELECT * FROM videos WHERE artist_id = ?").all(userId);
+  const songIds = songs.map((s) => s.id);
+  const del = (sql, v) => { try { db.prepare(sql).run(v); } catch { /* older books may lack a table */ } };
+  for (const sid of songIds) {
+    del("DELETE FROM score_corrections WHERE song_id = ?", sid);
+    del("DELETE FROM admin_placements WHERE song_id = ?", sid);
+    del("DELETE FROM dj_picks WHERE song_id = ?", sid);
+    del("DELETE FROM notifications WHERE song_id = ?", sid);
+    del("DELETE FROM chart_entries WHERE song_id = ?", sid);
+    del("DELETE FROM engagements WHERE song_id = ?", sid);
+    del("DELETE FROM judge_scores WHERE song_id = ?", sid);
+    del("DELETE FROM videos WHERE song_id = ?", sid);
+  }
+  del("DELETE FROM videos WHERE artist_id = ?", userId);
+  del("DELETE FROM notifications WHERE user_id = ?", userId);
+  del("DELETE FROM songs WHERE artist_id = ?", userId);
+  try {
+    const sp = db.prepare("SELECT value FROM admin_config WHERE key = 'spotlight'").get();
+    if (sp) { const v = JSON.parse(sp.value); if (v && songIds.includes(Number(v.song_id ?? v.songId))) del("DELETE FROM admin_config WHERE key = ?", "spotlight"); }
+  } catch { /* no spotlight set */ }
+  del("DELETE FROM users WHERE id = ?", userId);
+  const unlinkWeb = (web) => { if (!web) return; fs.unlink(path.join(PUBLIC_DIR, String(web).replace(/^\//, "")), () => {}); };
+  for (const s of songs) { unlinkWeb(s.audio_path); unlinkWeb(s.cover_path); }
+  for (const v of vids) unlinkWeb(v.video_path);
+  unlinkWeb(user.photo_path);
+  return { name: user.name, email: user.email, songCount: songs.length };
+}
+
+app.get("/admin/profiles/:id/delete", requireAdmin, (req, res) => {
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
+  if (!user) return res.status(404).send(layout("Artist not found", "", `<div class="panel"><h2>Artist not found</h2><p class="sub">No profile with that number.</p></div>`));
+  const songs = db.prepare("SELECT s.title, s.genre, s.status, j.craft_score FROM songs s LEFT JOIN judge_scores j ON j.song_id = s.id WHERE s.artist_id = ? ORDER BY s.id").all(user.id);
+  res.send(layout("Delete profile", "", `
+  <div class="panel" style="border-left:3px solid #ff9d9d">
+    <h2 style="margin-top:0">🗑 Delete this profile?</h2>
+    <p class="sub"><b style="color:#fff">${esc(user.name || "(no name yet)")}</b> · ${esc(user.email)}${user.city ? ` · ${esc(user.city)}, ${esc(user.state || "")}` : ""}</p>
+    <p class="sub">This removes the profile, <b style="color:#fff">${songs.length} song${songs.length === 1 ? "" : "s"}</b>, all scores, engagements and chart history, then recalculates the charts without them. <b style="color:#fff">It can't be undone.</b></p>
+    ${songs.length ? `<p class="sub">${songs.map((s) => `• ${esc(s.title)} (${esc(s.genre)}${s.status !== "live" ? ", removed" : ""}${s.craft_score != null ? `, Craft ${s.craft_score}` : ""})`).join("<br>")}</p>` : ""}
+    <form method="post" action="/admin/profiles/${user.id}/delete">
+      <button class="btn btn-danger btn-block" type="submit">Yes — delete ${esc(user.name || "this profile")} for good</button>
+    </form>
+    <p style="margin-top:10px"><a class="btn btn-block" href="/artist/${user.id}">Cancel — keep the profile</a></p>
+  </div>`));
+});
+
+app.post("/admin/profiles/:id/delete", requireAdmin, (req, res) => {
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
+  if (!user) return res.redirect("/admin/placements");
+  const gone = deleteProfileEverywhere(user.id);
+  recalc(db); snapshotDb("profile-delete");
+  res.send(layout("Profile deleted", "", `
+  <div class="panel" style="border-left:3px solid #7dff9a"><h2 style="margin-top:0">Profile deleted</h2>
+  <p class="sub"><b style="color:#fff">${esc(gone.name || gone.email)}</b> is gone — ${gone.songCount} song${gone.songCount === 1 ? "" : "s"} removed and the charts recalculated without them.</p>
+  <p style="margin-top:10px"><a class="btn btn-blue" href="/admin/placements">Back to Chart placements</a></p></div>`));
+});
+
 app.get("/artist/:id", (req, res) => {
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
   if (!user || !hasProfile(user)) {
@@ -4613,6 +4680,11 @@ app.get("/artist/:id", (req, res) => {
     <p class="sub" style="margin:0 auto 12px;max-width:540px">This is what a TOP 20 artist profile looks like — your cover up front, your story in your own words, your songs playing right on the page, the narrator calling your record. <b style="color:#fff">It's FREE</b> — free profile, free uploads, judged on the 15-Point Scale like everybody else.</p>
     <a class="btn btn-blue" href="/profile">Create your FREE profile</a> <a class="btn" href="/upload" style="margin-left:8px">Upload your song</a>
   </div>
+  ${isAdmin(req) ? `<div class="panel" style="margin-top:16px;border-left:3px solid #ff9d9d">
+    <h2 style="margin-top:0">🛠 Owner tools</h2>
+    <p class="sub">You're signed in as staff, so this button is only showing for you — visitors never see it. Deleting removes this profile, all its songs, scores and chart history, and the charts recalculate without them. It can't be undone.</p>
+    <p style="margin:10px 0 0"><a class="btn btn-danger" href="/admin/profiles/${user.id}/delete">🗑 Delete this profile</a></p>
+  </div>` : ""}
   <script>
   (function () {
     var audios = document.querySelectorAll('audio.profile-audio');
@@ -4753,6 +4825,7 @@ app.get("/dashboard", (req, res) => {
     </form>
     <p class="note">Demo tip: try one of the seeded artist emails, e.g. queen.nyla@example.com or colton.ray@example.com.</p>
   </div>`;
+  if (req.query.delerr) content += `<div class="panel" style="border-left:3px solid #ff9d9d"><p class="sub" style="margin:0;color:#ffb3b3">That confirmation email didn't match the account — <b style="color:#fff">nothing was deleted</b>. To delete a profile, type the exact email on the account in the delete box at the bottom of the dashboard.</p></div>`;
   if (email) {
     const user = db.prepare("SELECT * FROM users WHERE LOWER(email) = ?").get(email);
     if (!user) {
@@ -4823,9 +4896,35 @@ app.get("/dashboard", (req, res) => {
           </div>
         </div>`;
       }
+      content += `<div class="panel" style="border-left:3px solid #ff9d9d">
+        <h2 style="margin-top:0">Delete my profile</h2>
+        <p class="sub">This removes your profile, every song on it, your scores and your chart history — for good, and it can't be undone. If you only want one song down, use its Remove button above instead.</p>
+        <form method="post" action="/dashboard/delete-profile">
+          <input type="hidden" name="email" value="${esc(user.email)}">
+          <label>Type your account email to confirm<input name="confirm_email" type="email" required placeholder="${esc(user.email)}"></label>
+          <button class="btn btn-danger btn-block" type="submit">🗑 Delete my profile — for good</button>
+        </form>
+      </div>`;
     }
   }
   res.send(layout("Dashboard", "dashboard", content));
+});
+
+// Delete my own profile (owner, Nov 3, 2026): the artist types the
+// account email to confirm; a mismatch deletes nothing and bounces
+// back to the dashboard with the reason showing.
+app.post("/dashboard/delete-profile", (req, res) => {
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const confirmEmail = String(req.body.confirm_email || "").trim().toLowerCase();
+  const user = db.prepare("SELECT * FROM users WHERE LOWER(email) = ?").get(email);
+  if (!user || confirmEmail !== email) {
+    return res.redirect(`/dashboard?email=${encodeURIComponent(email)}&delerr=1`);
+  }
+  const gone = deleteProfileEverywhere(user.id);
+  recalc(db); snapshotDb("profile-delete");
+  return res.send(layout("Profile deleted", "dashboard", `
+  <div class="panel" style="border-left:3px solid #7dff9a"><h2 style="margin-top:0">Profile deleted</h2>
+  <p class="sub"><b style="color:#fff">${esc(gone.name || gone.email)}</b> is gone — ${gone.songCount} song${gone.songCount === 1 ? "" : "s"} removed with it, and the charts have recalculated. If you ever want back in, a fresh profile is free at <a href="/profile" style="color:var(--accent);font-weight:700">Create Profile</a>.</p></div>`));
 });
 
 // Remove a live song: frees one of the artist's two slots and takes the
