@@ -244,6 +244,23 @@ function openDb() {
       status TEXT NOT NULL DEFAULT 'live',       -- 'live' | 'hidden'; only live episodes show
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+
+    -- DJ & A&R profiles (owner, Nov 3, 2026): panel members get their
+    -- own profile creator behind their own group login codes (one code
+    -- for DJs, one for A&Rs, both changeable by the owner). A profile
+    -- is HIDDEN until its owner flips show_public on — appearing on
+    -- the public roster is always their choice. Photo is optional.
+    CREATE TABLE IF NOT EXISTS panel_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      role TEXT NOT NULL CHECK (role IN ('dj', 'ar')),
+      email TEXT NOT NULL,
+      name TEXT, city TEXT, state TEXT, region TEXT,
+      bio TEXT, photo_path TEXT,
+      facebook TEXT, instagram TEXT, tiktok TEXT, youtube TEXT,
+      show_public INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (role, email)
+    );
   `);
 
   // Migrations for a DB created by an earlier build (seed rebuilds from

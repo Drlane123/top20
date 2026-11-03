@@ -2718,6 +2718,8 @@ app.get("/ar", (req, res) => {
       <p class="note" style="margin:4px 0 0">${st ? `Standing: #${st.rank} · ${esc(sharecard.chartLabelText(st))} · ` : ""}<a href="/song/${r.id}" style="color:var(--accent);font-weight:700;text-decoration:none">Full scorecard →</a> · <a href="/artist/${r.artist_id}" style="color:var(--accent);font-weight:700;text-decoration:none">Artist profile →</a></p>
     </div>`;
   }).join("") : `<div class="panel"><p class="sub" style="margin:0">No records match that combination yet. Loosen a filter — the catalogue grows every day.</p></div>`}
+  ${panelRosterHtml("ar")}
+  <div class="panel"><p class="sub" style="margin:0">A&amp;R on Top 20? <a href="/ar-profile/login" style="color:var(--accent);font-weight:700;text-decoration:none">Log in to your A&amp;R profile →</a> — build it, and show it here only if you want to.</p></div>
   <div class="panel"><p class="sub" style="margin:0">Artists: this is how executives will find you. Your profile and your uploads are <b style="color:#fff">FREE</b> — <a href="/upload" style="color:var(--accent);font-weight:700;text-decoration:none">put your record in the catalogue</a>.</p></div>`;
   res.send(layout("A&R Executive Mode", "", body));
 });
@@ -5154,6 +5156,8 @@ app.get("/djs", (req, res) => {
   <p><a class="btn btn-blue btn-block" href="/djs/submit">Submit a DJ</a></p>
   ${djMsgHtml(req)}
   ${hotPicksHtml}
+  ${panelRosterHtml("dj")}
+  <div class="panel"><p class="sub" style="margin:0">Are you a DJ on the panel? <a href="/dj-profile/login" style="color:var(--accent);font-weight:700;text-decoration:none">Log in to your DJ profile →</a> — build it, and show it here only if you want to.</p></div>
   ${spotlights.length ? spotlights.map((c) => `
   <div class="panel">
     <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px">DJ of the Month race — ${esc(djCityLabel(c))} · ${fmtMonth(month)}</div>
@@ -5665,7 +5669,12 @@ app.get("/dj/login", (req, res) => {
       <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Log in</button>
     </form>
   </div>`;
-  res.send(layout("DJ panel login", "", body));
+  res.send(layout("DJ panel login", "", body + `
+  <div class="panel">
+    <h2 style="margin-top:0">🎧 DJ Profiles</h2>
+    <p class="sub">On the panel? You also have your own <b style="color:#fff">DJ profile</b> — your name, your city, your face on Top 20, shown publicly only if you flip it on. It has its <b style="color:#fff">own 8-digit DJ code</b> (different from the panel password above) — the owner gives it out.</p>
+    <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj-profile/login">DJ profile login →</a></p>
+  </div>`));
 });
 
 app.post("/dj/login", (req, res) => {
@@ -5754,6 +5763,233 @@ app.post("/admin/dj-password", requireAdmin, (req, res) => {
   const rec = { salt, hash: hashAdminCode(salt, n1) };
   db.prepare("INSERT INTO admin_config (key, value) VALUES ('dj_password', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(rec));
   return back("The DJ password is set. Give it to your DJs — they log in at the DJ Login link at the bottom of the site. Changing it logs every DJ out.");
+});
+
+/* ---------------- DJ & A&R PROFILES (owner, Nov 3, 2026) ----------------
+   The DJ panel and the A&Rs each get a PROFILE CREATOR, like the
+   artists have: behind their own group login code (one 8-digit number
+   for DJs, one for A&Rs — the owner creates them, changes them, and
+   kicks anybody out from his Chart placements desk), a panel member
+   builds a profile — name, city, bio, socials, picture OPTIONAL —
+   that stays HIDDEN until they flip it public themselves. Public DJ
+   profiles show on the DJs page as the panel showing itself; public
+   A&R profiles show on the A&R page. Same credential pattern as the
+   owner code: only a salted SHA-256 fingerprint is stored, the
+   session cookie is an HMAC keyed by the active fingerprint, so
+   changing a code logs that whole group out. Five wrong tries lock
+   the door for 15 minutes. The owner is admitted everywhere. */
+const PANEL_ROLES = {
+  dj: { key: "dj_profile_code", cookie: "t20_djp", hmac: "top20-djp-v1", label: "DJ", home: "/dj-profile",
+        starter: { salt: "41bd90c27e58a310", hash: "eb6967237035c071861fe8c102fb683c88c9925504edfafb60721f464f2c7a70" } },
+  ar: { key: "ar_profile_code", cookie: "t20_arp", hmac: "top20-arp-v1", label: "A&R", home: "/ar-profile",
+        starter: { salt: "c83f15d90a4b6e27", hash: "0bfd04301007ca21108c9061cd98e2c2d3c8ce04819180efbbe56119a9e21b3c" } },
+};
+function panelRecord(role) {
+  try {
+    const row = db.prepare("SELECT value FROM admin_config WHERE key = ?").get(PANEL_ROLES[role].key);
+    if (row && row.value) return JSON.parse(row.value);
+  } catch (e) { /* table may not exist on a pre-update DB */ }
+  return PANEL_ROLES[role].starter;
+}
+function verifyPanelCode(role, code) {
+  if (!/^\d{8}$/.test(String(code || ""))) return false;
+  const rec = panelRecord(role);
+  const got = Buffer.from(hashAdminCode(rec.salt, String(code)));
+  const want = Buffer.from(rec.hash);
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+function panelToken(role) {
+  return crypto.createHmac("sha256", panelRecord(role).hash).update(PANEL_ROLES[role].hmac).digest("hex");
+}
+function hasPanelSession(req, role) {
+  if (isAdmin(req)) return true; // the owner can always open these doors
+  const want = Buffer.from(panelToken(role));
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === PANEL_ROLES[role].cookie) {
+      const got = Buffer.from(v.join("="));
+      return got.length === want.length && crypto.timingSafeEqual(got, want);
+    }
+  }
+  return false;
+}
+const panelLoginFails = new Map();
+function panelLoginLocked(role, ip) {
+  const r = panelLoginFails.get(role + ":" + ip);
+  return r && r.until && r.until > Date.now();
+}
+function notePanelLoginFail(role, ip) {
+  const k = role + ":" + ip;
+  const r = panelLoginFails.get(k) || { fails: 0, until: 0 };
+  r.fails += 1;
+  if (r.fails >= 5) { r.until = Date.now() + 15 * 60 * 1000; r.fails = 0; }
+  panelLoginFails.set(k, r);
+}
+function panelShell(role, emailLc) {
+  let p = db.prepare("SELECT * FROM panel_profiles WHERE role = ? AND LOWER(email) = ?").get(role, emailLc);
+  if (!p) {
+    db.prepare("INSERT INTO panel_profiles (role, email) VALUES (?, ?)").run(role, emailLc);
+    p = db.prepare("SELECT * FROM panel_profiles WHERE role = ? AND LOWER(email) = ?").get(role, emailLc);
+  }
+  return p;
+}
+const panelComplete = (p) => !!(p && p.name && p.city);
+
+// The public roster for one role — only profiles their owners chose
+// to show, and only once they carry a name and a city.
+function panelRosterHtml(role) {
+  let rows = [];
+  try {
+    rows = db.prepare("SELECT * FROM panel_profiles WHERE role = ? AND show_public = 1 AND name IS NOT NULL AND name <> '' AND city IS NOT NULL AND city <> '' ORDER BY name").all(role);
+  } catch { rows = []; }
+  if (!rows.length) return "";
+  const isDj = role === "dj";
+  return `\n  <div class="panel">
+    <h2 style="margin-top:0">${isDj ? "🎧 On the DJ Panel" : "🤝 A&R Profiles"}</h2>
+    <p class="sub">${isDj
+      ? "The DJs behind the Friday Hot Picks — panel members showing themselves, by their own choice."
+      : "The A&Rs watching this board — profiles shown by their own choice."}</p>
+    ${rows.map((p) => `<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #232429">${avatarHtml(p)}<span style="min-width:0"><b style="color:#fff;font-size:17px">${esc(p.name)}</b> <span class="chip" style="margin-left:4px">${isDj ? "🎧 DJ PANEL" : "🤝 A&R"}</span><br><span class="sub">${esc(p.city)}, ${esc(p.state || "")}${p.bio ? `<br>${esc(String(p.bio).slice(0, 220))}` : ""}</span></span></div>`).join("")}
+  </div>`;
+}
+
+for (const role of ["dj", "ar"]) {
+  const R = PANEL_ROLES[role];
+  const isDj = role === "dj";
+
+  app.get(`${R.home}/login`, (req, res) => {
+    if (hasPanelSession(req, role)) return res.redirect(R.home);
+    const ip = req.ip || "x";
+    const body = `
+  <h1>${isDj ? "🎧 DJ" : "🤝 A&R"} profile login</h1>
+  <div class="panel">
+    <form method="post" action="${R.home}/login">
+      <p class="sub" style="margin-top:0">For ${isDj ? "DJs on the Top 20 panel" : "A&Rs on Top 20"}. This code opens <b style="color:#fff">only</b> the ${R.label} profile creator — build your profile, and show it publicly only if and when you want to. Enter the 8-digit ${R.label} code the owner gave you.</p>
+      ${req.query.err ? `<p class="note" style="color:#ff9d9d">That code didn't match. Try again.</p>` : ""}
+      ${panelLoginLocked(role, ip) ? `<p class="note" style="color:#ff9d9d">Too many wrong tries — the door is locked for a few minutes.</p>` : ""}
+      <label class="sub">${R.label} code<br>
+      <input type="password" name="code" inputmode="numeric" autocomplete="off" maxlength="8" required
+        style="width:220px;padding:14px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;font-size:20px;text-align:center;letter-spacing:6px"></label><br>
+      <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Log in</button>
+    </form>
+  </div>`;
+    res.send(layout(`${R.label} profile login`, "", body));
+  });
+
+  app.post(`${R.home}/login`, (req, res) => {
+    const ip = req.ip || "x";
+    if (panelLoginLocked(role, ip)) return res.redirect(`${R.home}/login?err=1`);
+    if (!verifyPanelCode(role, req.body.code)) { notePanelLoginFail(role, ip); return res.redirect(`${R.home}/login?err=1`); }
+    panelLoginFails.delete(role + ":" + ip);
+    res.cookie(R.cookie, panelToken(role), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 30 * 24 * 3600 * 1000 });
+    return res.redirect(R.home);
+  });
+
+  app.post(`${R.home}/logout`, (req, res) => {
+    res.clearCookie(R.cookie, { path: "/" });
+    res.redirect("/");
+  });
+
+  app.get(R.home, (req, res) => {
+    if (!hasPanelSession(req, role)) return res.redirect(`${R.home}/login`);
+    const email = String(req.query.email || "").trim().toLowerCase();
+    const intro = `
+  <h1>Your ${R.label} profile</h1>
+  <p class="sub">This is your face on Top 20 as ${isDj ? "a DJ on the panel" : "an A&R"}. It stays <b style="color:#fff">hidden until you say so</b> — flip it public only when you want ${isDj ? "artists to know you're on the DJ panel" : "artists to know you're watching the board"}. A picture is your choice, never required.</p>`;
+    if (!email) {
+      return res.send(layout(`${R.label} profile`, "", `${intro}
+    <div class="panel">
+      <form method="get" action="${R.home}">
+        <label>Your email<input name="email" type="email" required placeholder="you@example.com"></label>
+        <button class="btn btn-blue btn-block" type="submit">Load / create my ${R.label} profile</button>
+      </form>
+    </div>`));
+    }
+    const p = panelShell(role, email);
+    const body = `${intro}
+  ${req.query.err ? `<div class="panel" style="border-left:3px solid #ff9d9d"><p class="sub" style="margin:0;color:#ffb3b3">${esc(req.query.err)}</p></div>` : ""}
+  ${req.query.saved ? `<div class="panel" style="border-left:3px solid #7dff9a"><p class="sub" style="margin:0;color:#c9ffd6">✓ <b style="color:#fff">${R.label} profile saved.</b> ${p.show_public ? `It's showing publicly now${isDj ? " on the DJs page" : " on the A&R page"}.` : "It's hidden — nobody sees it until you flip it public."}</p></div>` : ""}
+  <div class="panel">
+    <p class="sub" style="margin:0">Profile for <b style="color:#fff">${esc(email)}</b> — ${panelComplete(p) ? "live-ready (name + city on file)" : "add your name and home city to complete it"}${p.show_public ? ` · <b style="color:#9fe8a9">SHOWING PUBLICLY</b>` : " · hidden"}.</p>
+  </div>
+  <div class="panel">
+    <form method="post" action="${R.home}" enctype="multipart/form-data">
+      <input type="hidden" name="email" value="${esc(email)}">
+      <label>${isDj ? "DJ name" : "Your name"}<input name="name" required maxlength="80" value="${esc(p.name || "")}"></label>
+      <label>Home city<input name="city" required maxlength="60" value="${esc(p.city || "")}"></label>
+      <label>Home state (2 letters)<input name="state" required maxlength="2" style="text-transform:uppercase" value="${esc(p.state || "")}"></label>
+      <label>Profile photo (optional — leave blank and you get a styled initial avatar)<input name="photo" type="file" accept="image/*"></label>
+      ${p.photo_path ? `<p class="note">Current photo: ${esc(p.photo_path)}</p>` : ""}
+      <label>Bio — who you are, what you spin / what you look for<textarea name="bio" rows="3" maxlength="600">${esc(p.bio || "")}</textarea></label>
+      <label>Facebook<input name="facebook" maxlength="160" placeholder="facebook.com/yourname or your page link" value="${esc(p.facebook || "")}"></label>
+      <label>Instagram<input name="instagram" maxlength="160" placeholder="@yourhandle or instagram.com/yourhandle" value="${esc(p.instagram || "")}"></label>
+      <label>TikTok<input name="tiktok" maxlength="160" placeholder="@yourhandle or tiktok.com/@yourhandle" value="${esc(p.tiktok || "")}"></label>
+      <label>YouTube (optional)<input name="youtube" maxlength="160" placeholder="youtube.com/@yourchannel" value="${esc(p.youtube || "")}"></label>
+      <label style="display:flex;gap:9px;align-items:flex-start;font-weight:600;margin-top:10px">
+        <input type="checkbox" name="show_public" value="1" ${p.show_public ? "checked" : ""} style="width:20px;height:20px;margin-top:2px;flex:none">
+        <span><b style="color:#fff">Show my profile publicly.</b> ${isDj ? "Your name, city and bio appear on the DJs page as a member of the DJ panel." : "Your name, city and bio appear on the A&R page."} Leave it unchecked and your profile stays hidden — it won't show anywhere.</span>
+      </label>
+      <button class="btn btn-blue btn-block" type="submit" style="margin-top:12px">Save my ${R.label} profile</button>
+    </form>
+    <form method="post" action="${R.home}/logout" style="margin-top:10px"><button class="btn btn-block" type="submit">Log out</button></form>
+  </div>`;
+    res.send(layout(`${R.label} profile`, "", body));
+  });
+
+  app.post(R.home, photoUpload.single("photo"), (req, res) => {
+    if (!hasPanelSession(req, role)) return res.redirect(`${R.home}/login`);
+    const emailLc = String(req.body.email || "").trim().toLowerCase();
+    if (!emailLc) return res.redirect(R.home);
+    const p = panelShell(role, emailLc);
+    const state = String(req.body.state || "").trim().toUpperCase().slice(0, 2);
+    const photoPath = req.file ? `/uploads/photos/${req.file.filename}` : p.photo_path;
+    db.prepare(
+      `UPDATE panel_profiles SET name = ?, city = ?, state = ?, region = ?, bio = ?,
+         photo_path = ?, facebook = ?, instagram = ?, tiktok = ?, youtube = ?, show_public = ? WHERE id = ?`
+    ).run(
+      String(req.body.name || "").trim().slice(0, 80) || null,
+      String(req.body.city || "").trim().slice(0, 60) || null,
+      state || null,
+      regionForState(state),
+      String(req.body.bio || "").trim().slice(0, 600) || null,
+      photoPath || null,
+      String(req.body.facebook || "").trim().slice(0, 160) || null,
+      String(req.body.instagram || "").trim().slice(0, 160) || null,
+      String(req.body.tiktok || "").trim().slice(0, 160) || null,
+      String(req.body.youtube || "").trim().slice(0, 160) || null,
+      req.body.show_public ? 1 : 0,
+      p.id
+    );
+    snapshotDbSoon();
+    return res.redirect(`${R.home}?email=${encodeURIComponent(emailLc)}&saved=1`);
+  });
+}
+
+// The owner changes either profile code from his desk — same storage
+// pattern as his own code; saving a new fingerprint logs that whole
+// group's profile sessions out on the spot.
+app.post("/admin/panel-code", requireAdmin, (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const role = String(req.body.role || "");
+  if (!PANEL_ROLES[role]) return back("Unknown profile door.");
+  const n1 = String(req.body.code || ""), n2 = String(req.body.code2 || "");
+  if (!/^\d{8}$/.test(n1)) return back(`The ${PANEL_ROLES[role].label} profile code must be exactly 8 digits.`);
+  if (n1 !== n2) return back("The code didn't match itself — type it the same way twice.");
+  const salt = crypto.randomBytes(8).toString("hex");
+  const rec = { salt, hash: hashAdminCode(salt, n1) };
+  db.prepare("INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(PANEL_ROLES[role].key, JSON.stringify(rec));
+  return back(`The ${PANEL_ROLES[role].label} profile code is set. Hand it to your ${PANEL_ROLES[role].label}s — changing it logged every one of their profile sessions out.`);
+});
+
+// The owner's kick: a DJ or A&R profile is deleted for good from his
+// desk. The charts and picks are untouched — this is only the profile.
+app.post("/admin/panel-profiles/:id/delete", requireAdmin, (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const p = db.prepare("SELECT * FROM panel_profiles WHERE id = ?").get(req.params.id);
+  if (!p) return back("That profile is already gone.");
+  db.prepare("DELETE FROM panel_profiles WHERE id = ?").run(p.id);
+  snapshotDbSoon();
+  return back(`${PANEL_ROLES[p.role].label} profile deleted: ${p.name || p.email} is out.`);
 });
 
 // SPOTLIGHT OF THE WEEK — the owner names the artist the 16th Law says
@@ -6010,6 +6246,8 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   const statusOf = (p) => p.ends_on && latest && p.ends_on < latest ? "ended"
     : latest && p.starts_on > latest ? "starts at midnight tonight" : "on the chart now";
   const adsList = db.prepare("SELECT * FROM ads ORDER BY id DESC").all();
+  let panelProfiles = [];
+  try { panelProfiles = db.prepare("SELECT * FROM panel_profiles ORDER BY role, name, email").all(); } catch { panelProfiles = []; }
   const corrections = db.prepare(`
     SELECT c.*, s.title, u.name AS artist FROM score_corrections c
     JOIN songs s ON s.id = c.song_id JOIN users u ON u.id = s.artist_id
@@ -6200,6 +6438,38 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
       <button type="submit" style="padding:10px 20px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Set the DJ password</button>
     </form>
     <p class="sub" style="margin:12px 0 0"><a href="/dj" style="color:var(--accent);font-weight:700;text-decoration:none">Open the DJ panel →</a></p>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">🎧🤝 DJ &amp; A&amp;R profiles — your executive controls</h2>
+    <p class="sub">DJs and A&amp;Rs each have their <b style="color:#fff">own profile creator</b> and their <b style="color:#fff">own 8-digit code</b> — one number for the DJs, one for the A&amp;Rs. They log in, build a profile (picture optional), and it stays <b style="color:#fff">hidden until they flip it public</b>: public DJs show on the DJs page as panel members; public A&amp;Rs show on the A&amp;R page. You hold the executive rights here: <b style="color:#fff">change either code</b> (that logs that whole group out) or <b style="color:#fff">delete any profile</b> to kick somebody out.</p>
+    <form method="post" action="/admin/panel-code" style="margin-top:12px">
+      <input type="hidden" name="role" value="dj">
+      <label class="sub">DJ profile code — new 8-digit number<br>
+      <input type="password" name="code" inputmode="numeric" maxlength="8" required style="width:200px;padding:12px;margin:6px 0 8px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;letter-spacing:4px"></label><br>
+      <label class="sub">Same number again<br>
+      <input type="password" name="code2" inputmode="numeric" maxlength="8" required style="width:200px;padding:12px;margin:6px 0 10px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;letter-spacing:4px"></label><br>
+      <button type="submit" style="padding:10px 20px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Set the DJ profile code</button>
+      <span class="note" style="margin-left:8px">DJs enter it at DJ Login → DJ Profiles.</span>
+    </form>
+    <hr style="border:0;border-top:1px solid #26355a;margin:18px 0">
+    <form method="post" action="/admin/panel-code">
+      <input type="hidden" name="role" value="ar">
+      <label class="sub">A&amp;R profile code — new 8-digit number<br>
+      <input type="password" name="code" inputmode="numeric" maxlength="8" required style="width:200px;padding:12px;margin:6px 0 8px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;letter-spacing:4px"></label><br>
+      <label class="sub">Same number again<br>
+      <input type="password" name="code2" inputmode="numeric" maxlength="8" required style="width:200px;padding:12px;margin:6px 0 10px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff;letter-spacing:4px"></label><br>
+      <button type="submit" style="padding:10px 20px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Set the A&amp;R profile code</button>
+      <span class="note" style="margin-left:8px">A&amp;Rs enter it from the A&amp;R page.</span>
+    </form>
+    <hr style="border:0;border-top:1px solid #26355a;margin:18px 0">
+    ${["dj", "ar"].map((r) => {
+      const list = panelProfiles.filter((p) => p.role === r);
+      return `<p class="sub" style="margin:0 0 6px"><b style="color:#fff">${r === "dj" ? "🎧 DJ" : "🤝 A&R"} profiles (${list.length})</b></p>` + (list.length ? list.map((p) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)">
+        <span style="min-width:0"><b style="color:#fff">${esc(p.name || "(no name yet)")}</b> <span class="note">${esc(p.email)}${p.city ? ` · ${esc(p.city)}, ${esc(p.state || "")}` : ""} · ${p.show_public ? '<b style="color:#9fe8b6">PUBLIC</b>' : 'hidden'}</span></span>
+        <form method="post" action="/admin/panel-profiles/${p.id}/delete" onsubmit="return confirm('Delete this ${r === "dj" ? "DJ" : "A&R"} profile for good?')"><button class="mini">Kick out</button></form>
+      </div>`).join("") : `<p class="note" style="margin:0 0 8px">None yet — hand the ${r === "dj" ? "DJ" : "A&R"} profile code out and they'll build their own.</p>`);
+    }).join("")}
   </div>
   <div class="panel">
     <h2 style="margin-top:0">🎙️ Viewcast Studio</h2>
