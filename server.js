@@ -1289,7 +1289,7 @@ function chartEntriesFor(date, level, genre, regionKey, limit = 100) {
   `).all(date, level, genre, regionKey);
 }
 
-// DJ'S HOT PICKS reads: the latest Friday's picks, with each pick's
+// DJ'S HOT PICKS reads: the latest Saturday's picks, with each pick's
 // current National Overall rank on the given chart date.
 function latestPickDate() {
   const r = db.prepare("SELECT MAX(pick_date) AS d FROM dj_picks").get();
@@ -1575,20 +1575,20 @@ app.get("/", (req, res) => {
     ${homeDjLeader ? `<p class="sub" style="margin-top:8px">Dallas is riding with <b style="color:#fff">${esc(homeDjLeader.dj_name)}</b> — ${homeDjLeader.votes} vote${homeDjLeader.votes === 1 ? "" : "s"}.</p>` : ""}
     <p style="margin:10px 0 2px"><a href="/djs" style="color:var(--accent);font-weight:700;text-decoration:none">See the city boards →</a></p>
   </div>`;
-  // DJ'S HOT PICKS panel: this Friday's panel picks, front and center.
+  // DJ'S HOT PICKS panel: this Saturday's panel picks, front and center.
   const pickDate = latestPickDate();
   const djPickRows = djHotPicks(pickDate, date);
   const djPicksHtml = djPickRows.length ? `
   <div class="panel">
     <h2 style="margin-top:0">🎧 DJ's Hot Picks</h2>
-    <p class="sub">Top 20 is strictly algorithmic — with <b style="color:#fff">one exception</b>. Every Friday, a panel of DJs picks 3 songs that are already hot, and those picks step straight into the Top 20. After Friday, the algorithm treats them like everybody else — their spot rides on their score, same as every song on the chart.</p>
+    <p class="sub">Top 20 is strictly algorithmic — with <b style="color:#fff">one exception</b>. All week, a panel of DJs votes on 3 songs that are already hot — and at 12 AM Saturday those picks step straight into the Top 20. After Saturday, the algorithm treats them like everybody else — their spot rides on their score, same as every song on the chart.</p>
     ${djPickRows.map((p) => `
     <a class="row" href="/song/${p.id}">
       <img class="thumb" src="${esc(p.cover_path)}" alt="">
       <span class="meta"><span class="t">${esc(p.title)}</span><br><span class="a">${esc(p.artist)}</span></span>
       <span class="nums">${p.nowRank ? `NOW <b>#${p.nowRank}</b>` : "<b>Top 20</b>"}</span>
     </a>`).join("")}
-    <p class="note" style="margin-top:8px">This week's picks — ${fmtChartDate(pickDate)}. A new panel, new picks, every Friday.</p>
+    <p class="note" style="margin-top:8px">This week's picks — ${fmtChartDate(pickDate)}. A new panel, new picks, every Saturday.</p>
   </div>` : "";
   // SPOTLIGHT OF THE WEEK (owner feature): the 16th Law in action — the
   // owner names one artist worth recognizing. Recognition only: the
@@ -1942,7 +1942,7 @@ app.get("/", (req, res) => {
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   const ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-  const ANN_V = 12; // announcement voice generation (Take B radio voice; v12 re-ships title-51 + line-51 for New Nobility "Be Cool" (Nov 4, prior v11 never landed live); v11 adds title-51 + line-51 for New Nobility "Be Cool" (Nov 4); v10 re-ships title-50 + line-50 for Lady Rackz "Breathe" (Nov 3, prior v9 push never landed); v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
+  const ANN_V = 13; // announcement voice generation (Take B radio voice; v13 re-ships title-51 + line-51 for New Nobility "Be Cool" (Nov 4, prior v12 never landed live); v12 re-ships title-51 + line-51 for New Nobility "Be Cool" (Nov 4, prior v11 never landed live); v11 adds title-51 + line-51 for New Nobility "Be Cool" (Nov 4); v10 re-ships title-50 + line-50 for Lady Rackz "Breathe" (Nov 3, prior v9 push never landed); v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -2522,7 +2522,7 @@ app.get("/charts", (req, res) => {
   (function(){
     var Q = ${JSON.stringify(chartQ).replace(/</g, "\\u003c")};
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 12;
+    var ANN_V = 13;
     var byId = {}; Q.forEach(function(s, i){ byId[s.id] = i; });
     var audio = document.getElementById('cAudio');
     var btn = document.getElementById('cPlayBtn');
@@ -3067,7 +3067,7 @@ app.get("/song/:id", (req, res) => {
     var a = document.querySelector('audio.profile-audio');
     if (!a) return;
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 12;
+    var ANN_V = 13;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     a._songSrc = a.getAttribute('src');
@@ -4272,7 +4272,7 @@ const RULES_PANEL = `
       <li>Audio must be <b>radio quality</b> — WAV or FLAC, or MP3 / M4A at 192 kbps or better, the same quality radio stations send and accept.</li>
       <li>New charts land at <b>12:00 midnight</b>, every night.</li>
       <li>The only chart email is the <b>entry email</b> — when you enter a Top 20. Falling off is never emailed.</li>
-      <li><b>No pay, no labels</b> can move a song — the algorithm decides, and artists who believe in themselves put in the work. The one exception: <b>DJ's Hot Picks</b> — every Friday, a DJ panel steps 3 songs that are already hot into the Top 20, badged for all to see.</li>
+      <li><b>No pay, no labels</b> can move a song — the algorithm decides, and artists who believe in themselves put in the work. The one exception: <b>DJ's Hot Picks</b> — a DJ panel votes all week, and at 12 AM Saturday the 3 songs that are already hot step into the Top 20, badged for all to see.</li>
     </ul>
   </div>`;
 
@@ -4758,7 +4758,7 @@ app.get("/artist/:id", (req, res) => {
     // what a visiting artist hears when an artist posts their profile.
     // The Stage's DJ VOICE switch is the same switch here.
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 12;
+    var ANN_V = 13;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     function countPlay(a) { if (a._counted) return; a._counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
@@ -5051,7 +5051,7 @@ app.get("/how-it-works", (req, res) => {
       <li><b>Two live songs per artist, max</b> — those are the only songs that get judged. Remove one to put another up.</li>
       <li>A <b>profile page + at least one song uploaded</b> is how you get recognized.</li>
       <li><b>Add your Facebook, Instagram and TikTok</b> to your profile — the judging system searches them to locate you and your music. No socials on file, and the system can't find you.</li>
-      <li><b>No labels, no pay</b> can move a song. The algorithm decides — with one exception: <b>DJ's Hot Picks</b>. Every Friday a panel of DJs picks 3 songs that are already hot, and those picks step into the Top 20, badged for all to see. After Friday, the algorithm treats them like everybody else.</li>
+      <li><b>No labels, no pay</b> can move a song. The algorithm decides — with one exception: <b>DJ's Hot Picks</b>. All week a panel of DJs votes on 3 songs that are already hot — and at 12 AM Saturday those picks step into the Top 20, badged for all to see. After Saturday, the algorithm treats them like everybody else.</li>
       <li><b>Real artists only — no AI artists.</b> The voice and the artist have to be real: your vocals, your ability, your work, your hours. A producer may use AI tools — that is not what this rule is about — but he still has to produce the song: prompting a machine to generate the whole instrumental, start to finish, is not producing. But an AI singer, an AI performer — a song with no real artist behind it — we can't grade that and we won't; it isn't fair to the real artists. If we find out the artist is AI — today, next week, whenever — the song is pulled from the Top 20 and out of the Top 100 immediately.</li>
       <li>Audio must be <b>radio quality</b> — WAV or FLAC, or MP3 / M4A at 192 kbps or better, the same quality radio stations send and accept.</li>
       <li>Charts <b>recalculate daily</b> — the new chart lands at 12:00 midnight.</li>
@@ -5189,7 +5189,7 @@ app.get("/djs", (req, res) => {
     .map((c) => ({ ...c, winner: djBoard(prev, c.city, c.state)[0] }))
     .filter((c) => c.winner);
 
-  // DJ'S HOT PICKS: this week's panel picks + the archive of past Fridays.
+  // DJ'S HOT PICKS: this week's panel picks + the archive of past weeks.
   const hpChartDate = latestChartDate(db);
   const hpLatest = latestPickDate();
   const hpWeeks = db.prepare("SELECT DISTINCT pick_date FROM dj_picks ORDER BY pick_date DESC LIMIT 5").all().map((r) => r.pick_date);
@@ -5202,11 +5202,11 @@ app.get("/djs", (req, res) => {
   const hotPicksHtml = hpLatest ? `
   <div class="panel">
     <h2 style="margin-top:0">🎧 DJ's Hot Picks</h2>
-    <p class="sub">The DJs are the industry — radio and the clubs. So every <b style="color:#fff">Friday</b>, a panel of DJs gets a say-so: they pick <b style="color:#fff">3 songs that are already hot</b>, and those picks step straight into the Top 20. It's the one exception to the algorithm — and it's capped at 3 a week. The DJs take these records back to their stations and their clubs; after Friday, the algorithm treats a pick like everybody else.</p>
+    <p class="sub">The DJs are the industry — radio and the clubs. So every <b style="color:#fff">week</b>, a panel of DJs gets a say-so: they vote on <b style="color:#fff">3 songs that are already hot</b>, and at <b style="color:#fff">12 AM Saturday</b> those picks step straight into the Top 20. It's the one exception to the algorithm — and it's capped at 3 a week. The DJs take these records back to their stations and their clubs; after Saturday, the algorithm treats a pick like everybody else.</p>
     <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px;margin-top:10px">This week — ${fmtChartDate(hpLatest)}</div>
     ${djHotPicks(hpLatest, hpChartDate).map(hpRow).join("")}
     ${hpWeeks.filter((d) => d !== hpLatest).length ? `
-    <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px;margin-top:14px">Past Fridays</div>
+    <div class="sub" style="letter-spacing:2px;text-transform:uppercase;font-size:11px;margin-top:14px">Past picks</div>
     ${hpWeeks.filter((d) => d !== hpLatest).map((d) => `
     <p class="sub" style="margin:8px 0 0"><b style="color:#fff">${fmtChartDate(d)}</b> — ${djHotPicks(d, hpChartDate).map((p) => esc(p.title)).join(" · ")}</p>`).join("")}` : ""}
   </div>` : "";
@@ -5700,13 +5700,14 @@ function noteDjLoginFail(ip) {
   if (r.fails >= 5) { r.until = Date.now() + 15 * 60 * 1000; r.fails = 0; }
   djLoginFails.set(ip, r);
 }
-// Picks are entered for the NEXT Friday whose chart hasn't been dealt
-// yet (charts land at midnight, so on Friday itself the panel already
-// targets the following Friday).
-function nextFridayStr() {
+// Picks are entered for the NEXT Saturday whose chart hasn't been
+// dealt yet — the Pick 3 hits Saturday at 12 AM (owner, Nov 4, 2026),
+// so the panel votes all week toward Saturday, and on Saturday itself
+// the panel already targets the following Saturday.
+function nextSaturdayStr() {
   const today = todayStr();
   const dow = new Date(today + "T12:00:00Z").getUTCDay();
-  let delta = (5 - dow + 7) % 7;
+  let delta = (6 - dow + 7) % 7;
   if (delta === 0) delta = 7;
   return new Date(new Date(today + "T12:00:00Z").getTime() + delta * 86400000).toISOString().slice(0, 10);
 }
@@ -5759,7 +5760,7 @@ app.get("/dj", (req, res) => {
   if (!isDj(req) && !panelIdentity(req)) return res.redirect("/dj/login");
   const who = panelIdentity(req);
   const isOwner = isAdmin(req);
-  const target = nextFridayStr();
+  const target = nextSaturdayStr();
   // Only songs whose ARTIST has a profile can be voted on (owner's
   // rule) — a record has to be loaded into Top 20 behind a real
   // profile before the panel can put it in.
@@ -5780,9 +5781,9 @@ app.get("/dj", (req, res) => {
     WHERE v.pick_date = ?
     GROUP BY v.song_id ORDER BY votes DESC, s.title ASC LIMIT 12`).all(target);
   const ballotsCast = db.prepare("SELECT COUNT(DISTINCT profile_id) AS c FROM pick_votes WHERE pick_date = ?").get(target).c;
-  // Picks the OWNER set himself for the coming Friday (his desk,
-  // below). Rows for the target Friday only ever come from his hand —
-  // the ballot tally doesn't write picks until Friday's chart is dealt.
+  // Picks the OWNER set himself for the coming Saturday (his desk,
+  // below). Rows for the target Saturday only ever come from his hand —
+  // the ballot tally doesn't write picks until Saturday's chart is dealt.
   const ownerPicks = db.prepare(`
     SELECT p.id, p.song_id, s.title, u.name AS artist FROM dj_picks p
     JOIN songs s ON s.id = p.song_id JOIN users u ON u.id = s.artist_id
@@ -5802,10 +5803,10 @@ app.get("/dj", (req, res) => {
   <h1>🎧 DJ's Hot Picks — panel</h1>
   <div class="panel">
     <h2 style="margin-top:0">🎧 Your DJ profile</h2>
-    <p class="sub">The picks are above board on Fridays — your <b style="color:#fff">DJ profile</b> is your face on the panel the rest of the week. Build it with the <b style="color:#fff">8-digit DJ profile code</b> (separate from this panel's password), and show it on the DJs page only if you flip it public.</p>
+    <p class="sub">The picks land on Saturdays — your <b style="color:#fff">DJ profile</b> is your face on the panel the rest of the week. Build it with the <b style="color:#fff">8-digit DJ profile code</b> (separate from this panel's password), and show it on the DJs page only if you flip it public.</p>
     <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj-profile">Open the DJ profile creator →</a></p>
   </div>
-  <p class="sub">The Weekly Pick 3 is a <b style="color:#fff">panel vote</b>. Every DJ and A&amp;R with a profile casts a ballot of up to <b style="color:#fff">3 songs</b> — only songs whose artist has a profile and a record loaded in Top 20 can be voted on. When Friday's chart lands at midnight, the <b style="color:#fff">top 3 vote-getters</b> step into the <b style="color:#fff">National Overall Top 20</b> wearing the gold 🎧 DJ Pick badge. From the next day the algorithm treats a pick like any other song. Ballots can be changed any time before that Friday midnight.</p>
+  <p class="sub">The Weekly Pick 3 is a <b style="color:#fff">panel vote</b>. Every DJ and A&amp;R with a profile casts a ballot of up to <b style="color:#fff">3 songs</b> — only songs whose artist has a profile and a record loaded in Top 20 can be voted on. When Saturday's chart lands at midnight — 12 AM Saturday — the <b style="color:#fff">top 3 vote-getters</b> step into the <b style="color:#fff">National Overall Top 20</b> wearing the gold 🎧 DJ Pick badge. From the next day the algorithm treats a pick like any other song. Ballots can be changed any time before that Saturday midnight.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
   ${who ? `<div class="panel">
     <h2 style="margin-top:0">🗳️ Your ballot — for ${esc(prettyDate(target))}</h2>
@@ -5818,7 +5819,7 @@ app.get("/dj", (req, res) => {
     </form>
   </div>` : isOwner ? `<div class="panel" style="border-left:3px solid var(--accent)">
     <h2 style="margin-top:0">🗳️ Ballots for ${esc(prettyDate(target))} — owner view</h2>
-    <p class="sub">The panel votes with their profiles — there is no owner ballot on this page. The standings below are the live tally; the top 3 when Friday's chart lands become the Hot Picks automatically. If you want a vote of your own, make yourself a DJ or A&amp;R profile from your Chart placements card and vote like a panel member.</p>
+    <p class="sub">The panel votes with their profiles — there is no owner ballot on this page. The standings below are the live tally; the top 3 when Saturday's chart lands become the Hot Picks automatically. If you want a vote of your own, make yourself a DJ or A&amp;R profile from your Chart placements card and vote like a panel member.</p>
   </div>` : `<div class="panel" style="border-left:3px solid var(--accent)">
     <h2 style="margin-top:0">🔒 Voting for ${esc(prettyDate(target))} — profile required</h2>
     <p class="sub">The Weekly Pick 3 belongs to <b style="color:#fff">DJs and A&amp;Rs with a profile</b>. The panel password opens this page to look — but to vote, build your profile first (it can stay hidden; it just has to exist), then come back here.</p>
@@ -5826,21 +5827,21 @@ app.get("/dj", (req, res) => {
   </div>`}
   ${isOwner ? `<div class="panel" style="border:2px solid #f5c542">
     <h2 style="margin-top:0">👑 Owner's desk — set the Pick 3 yourself</h2>
-    <p class="sub">Only you see this. The panel votes with their profiles — no DJ or A&amp;R can add, remove, or clear anything here. A pick you set <b style="color:#fff">stands on Friday no matter how the votes fall</b>; whatever slots you leave open (3 total) fill from the panel's votes. Wrong or put in bad? Take it back out here, or strike a song out of the race below.</p>
-    ${ownerPicks.length ? ownerPicks.map((p, i) => `<div class="sub" style="margin:8px 0 0;display:flex;justify-content:space-between;align-items:center;gap:10px"><span><b style="color:#fff">${i + 1}. ${esc(p.title)}</b> — ${esc(p.artist)} · <b style="color:#f5c542">SET BY YOU</b></span><form method="post" action="/admin/dj-picks/remove" onsubmit="return confirm('Take this song out of your set picks?')" style="margin:0"><input type="hidden" name="pick_row" value="${p.id}"><button type="submit" style="padding:5px 14px;border-radius:7px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">Remove</button></form></div>`).join("") : `<p class="sub" style="margin:0">You haven't set any picks yourself for this Friday — right now the panel's votes decide all three.</p>`}
+    <p class="sub">Only you see this. The panel votes with their profiles — no DJ or A&amp;R can add, remove, or clear anything here. A pick you set <b style="color:#fff">stands on Saturday no matter how the votes fall</b>; whatever slots you leave open (3 total) fill from the panel's votes. Wrong or put in bad? Take it back out here, or strike a song out of the race below.</p>
+    ${ownerPicks.length ? ownerPicks.map((p, i) => `<div class="sub" style="margin:8px 0 0;display:flex;justify-content:space-between;align-items:center;gap:10px"><span><b style="color:#fff">${i + 1}. ${esc(p.title)}</b> — ${esc(p.artist)} · <b style="color:#f5c542">SET BY YOU</b></span><form method="post" action="/admin/dj-picks/remove" onsubmit="return confirm('Take this song out of your set picks?')" style="margin:0"><input type="hidden" name="pick_row" value="${p.id}"><button type="submit" style="padding:5px 14px;border-radius:7px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">Remove</button></form></div>`).join("") : `<p class="sub" style="margin:0">You haven't set any picks yourself for this Saturday — right now the panel's votes decide all three.</p>`}
     ${ownerPicks.length < 3 ? `<form method="post" action="/admin/dj-picks/add" style="margin-top:14px">
       <label class="sub">Put a song straight into the Pick 3:<br>
       <select name="song_id" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
         ${songs.filter((s) => !ownerPicks.some((p) => p.song_id === s.id)).map((s) => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
       </select></label>
       <button type="submit" style="padding:11px 20px;border-radius:10px;border:0;background:#f5c542;color:#111;font-weight:800;cursor:pointer">➕ Set this pick</button>
-    </form>` : `<p class="sub" style="margin:10px 0 0">All 3 picks are set by you for this Friday. Remove one above to open a slot back up to the panel's votes.</p>`}
+    </form>` : `<p class="sub" style="margin:10px 0 0">All 3 picks are set by you for this Saturday. Remove one above to open a slot back up to the panel's votes.</p>`}
   </div>` : ""}
   <div class="panel">
     <h2 style="margin-top:0">📊 The race so far — ${esc(prettyDate(target))}</h2>
-    ${standings.length ? standings.map((s, i) => `<p class="sub" style="margin:6px 0 0">${i < 3 ? "🎧" : `<span style="display:inline-block;width:22px"></span>`} <b style="color:#fff">${i + 1}. ${esc(s.title)}</b> — ${esc(s.artist)} · <b style="color:#fff">${s.votes} vote${s.votes === 1 ? "" : "s"}</b>${i < 3 ? ` · <b style="color:#f5c542">IN THE PICKS — so far</b>` : ""}</p>${isOwner ? `<form method="post" action="/admin/pick-votes/strike" onsubmit="return confirm('Strike this song from the race? Every vote for it this Friday is wiped — it cannot win a pick this week unless the panel votes it back in.')" style="margin:2px 0 6px"><input type="hidden" name="song_id" value="${s.id}"><input type="hidden" name="pick_date" value="${esc(target)}"><button type="submit" style="padding:3px 12px;border-radius:6px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer;font-size:12px">✕ Strike from race</button></form>` : ""}`).join("") : `<p class="sub" style="margin:0">No ballots in yet for this Friday. The first votes start the race.</p>`}
-    <p class="note" style="margin:10px 0 0">${ballotsCast} panel member${ballotsCast === 1 ? "" : "s"} voted so far. When Friday's chart lands at midnight, the top 3 are the Hot Picks — no more, no less.</p>
-    ${isOwner && ballotsCast ? `<form method="post" action="/admin/pick-votes/clear" onsubmit="return confirm('Clear ALL ballots for this Friday? The race starts over from zero.')" style="margin-top:12px"><input type="hidden" name="pick_date" value="${esc(target)}"><button type="submit" style="padding:9px 18px;border-radius:8px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">🧹 Clear all ballots for this Friday</button></form>` : ""}
+    ${standings.length ? standings.map((s, i) => `<p class="sub" style="margin:6px 0 0">${i < 3 ? "🎧" : `<span style="display:inline-block;width:22px"></span>`} <b style="color:#fff">${i + 1}. ${esc(s.title)}</b> — ${esc(s.artist)} · <b style="color:#fff">${s.votes} vote${s.votes === 1 ? "" : "s"}</b>${i < 3 ? ` · <b style="color:#f5c542">IN THE PICKS — so far</b>` : ""}</p>${isOwner ? `<form method="post" action="/admin/pick-votes/strike" onsubmit="return confirm('Strike this song from the race? Every vote for it this week is wiped — it cannot win a pick this week unless the panel votes it back in.')" style="margin:2px 0 6px"><input type="hidden" name="song_id" value="${s.id}"><input type="hidden" name="pick_date" value="${esc(target)}"><button type="submit" style="padding:3px 12px;border-radius:6px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer;font-size:12px">✕ Strike from race</button></form>` : ""}`).join("") : `<p class="sub" style="margin:0">No ballots in yet for this Saturday. The first votes start the race.</p>`}
+    <p class="note" style="margin:10px 0 0">${ballotsCast} panel member${ballotsCast === 1 ? "" : "s"} voted so far. When Saturday's chart lands at midnight, the top 3 are the Hot Picks — no more, no less.</p>
+    ${isOwner && ballotsCast ? `<form method="post" action="/admin/pick-votes/clear" onsubmit="return confirm('Clear ALL ballots for this Saturday? The race starts over from zero.')" style="margin-top:12px"><input type="hidden" name="pick_date" value="${esc(target)}"><button type="submit" style="padding:9px 18px;border-radius:8px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">🧹 Clear all ballots for this Saturday</button></form>` : ""}
   </div>
   <div class="panel">
     <h2 style="margin-top:0">On the chart now</h2>
@@ -5856,7 +5857,7 @@ app.get("/dj", (req, res) => {
 // THE WEEKLY PICK 3 BALLOT (owner, Nov 3, 2026): there is no direct
 // pick-saving anymore. A panel member's profile is their voting pass:
 // this saves THEIR ballot (up to 3 songs whose artist has a profile)
-// for the coming Friday, replacing whatever they had. When Friday's
+// for the coming Saturday, replacing whatever they had. When Saturday's
 // chart is dealt, charts.js tallies every ballot and the top 3
 // vote-getters become the picks. No profile, no ballot — and the
 // panel password alone never reaches this route with an identity.
@@ -5865,7 +5866,7 @@ app.post("/dj/vote", (req, res) => {
   if (!who) {
     return res.redirect("/dj?msg=" + encodeURIComponent("Voting takes a DJ or A&R profile — the profile is your pass. Build yours first (DJ Login → DJ Profiles, or the A&R profile door on the A&R page), then come back and cast your ballot."));
   }
-  const target = nextFridayStr();
+  const target = nextSaturdayStr();
   const ids = [];
   for (const k of ["pick1", "pick2", "pick3"]) {
     const n = Number(req.body[k]);
@@ -5884,7 +5885,7 @@ app.post("/dj/vote", (req, res) => {
     db.exec("COMMIT");
   } catch (e) { db.exec("ROLLBACK"); throw e; }
   const msg = eligible.length
-    ? `Ballot saved, ${who.profile.name} — your ${eligible.length} vote${eligible.length === 1 ? "" : "s"} for ${prettyDate(target)} are in the panel tally. The top 3 when Friday's chart lands are the Hot Picks.`
+    ? `Ballot saved, ${who.profile.name} — your ${eligible.length} vote${eligible.length === 1 ? "" : "s"} for ${prettyDate(target)} are in the panel tally. The top 3 when Saturday's chart lands are the Hot Picks.`
     : `Ballot cleared for ${prettyDate(target)} — you have no votes in this week's tally.`;
   return res.redirect("/dj?msg=" + encodeURIComponent(msg));
 });
@@ -6026,7 +6027,7 @@ function panelRosterHtml(role) {
   return `\n  <div class="panel">
     <h2 style="margin-top:0">${isDj ? "🎧 On the DJ Panel" : "🤝 A&R Profiles"}</h2>
     <p class="sub">${isDj
-      ? "The DJs behind the Friday Hot Picks — panel members showing themselves, by their own choice."
+      ? "The DJs behind the weekly Hot Picks — panel members showing themselves, by their own choice."
       : "The A&Rs watching this board — profiles shown by their own choice."}</p>
     ${rows.map((p) => `<div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid #232429">${avatarHtml(p)}<span style="min-width:0"><b style="color:#fff;font-size:17px">${esc(p.name)}</b> <span class="chip" style="margin-left:4px">${isDj ? "🎧 DJ PANEL" : "🤝 A&R"}</span><br><span class="sub">${esc(p.city)}, ${esc(p.state || "")}${p.bio ? `<br>${esc(String(p.bio).slice(0, 220))}` : ""}</span></span></div>`).join("")}
   </div>`;
@@ -6095,7 +6096,7 @@ for (const role of ["dj", "ar"]) {
   </div>
   ${panelComplete(p) ? `<div class="panel" style="border-left:3px solid var(--accent)">
     <h2 style="margin-top:0">🎧 The Weekly Pick 3</h2>
-    <p class="sub">The Friday Hot Picks are <b style="color:#fff">voted in</b> by DJs and A&amp;Rs with a profile — yours is on file, so you hold a ballot. The top 3 vote-getters are the picks.</p>
+    <p class="sub">The weekly Hot Picks are <b style="color:#fff">voted in</b> by DJs and A&amp;Rs with a profile — yours is on file, so you hold a ballot. The top 3 vote-getters are the picks.</p>
     <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj">Cast your ballot →</a></p>
   </div>` : ""}
   <div class="panel">
@@ -6669,7 +6670,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     </div>`).join('')}</div>` : `<div class="panel"><p class="note" style="margin:0">No ads yet — upload the first one above and it joins the rotation.</p></div>`}
   <div class="panel">
     <h2 style="margin-top:0">🎧 DJ panel access</h2>
-    <p class="sub">Your DJs get their OWN login that opens <b style="color:#fff">only</b> the weekly DJ's Hot Picks panel — they pick the 3 songs for Friday there. They never see placements or anything else in the admin. Set the DJ password here and hand it to your DJs; they log in with the <b style="color:#fff">DJ Login</b> link at the bottom of any page. Changing the password logs every DJ out. <b style="color:#fff">The weekly Pick 3 is a panel vote:</b> DJs and A&amp;Rs with a profile (next card) each cast a ballot, the top 3 vote-getters are Friday's picks — the password alone opens the panel to look.</p>
+    <p class="sub">Your DJs get their OWN login that opens <b style="color:#fff">only</b> the weekly DJ's Hot Picks panel — they vote the Pick 3 there — it lands Saturday at 12 AM. They never see placements or anything else in the admin. Set the DJ password here and hand it to your DJs; they log in with the <b style="color:#fff">DJ Login</b> link at the bottom of any page. Changing the password logs every DJ out. <b style="color:#fff">The weekly Pick 3 is a panel vote:</b> DJs and A&amp;Rs with a profile (next card) each cast a ballot, the top 3 vote-getters are Saturday's picks — the password alone opens the panel to look.</p>
     <form method="post" action="/admin/dj-password">
       <label class="sub">New DJ password (6+ characters)<br>
       <input type="password" name="dj_password" required style="width:240px;padding:12px;margin:6px 0 10px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
@@ -6952,7 +6953,7 @@ app.post("/admin/boost", requireAdmin, (req, res) => {
 });
 
 // CLEAR FRIDAY BALLOTS (owner, Nov 4 2026): wipe every panel ballot
-// cast for a Friday so the Pick 3 race starts over from zero — the
+// cast for a Saturday so the Pick 3 race starts over from zero — the
 // owner's reset for when a ballot didn't come from the real panel.
 // Profiles themselves are untouched; the panel just votes again.
 app.post("/admin/pick-votes/clear", requireAdmin, (req, res) => {
@@ -6964,23 +6965,23 @@ app.post("/admin/pick-votes/clear", requireAdmin, (req, res) => {
 });
 
 // OWNER PICK 3 DESK (Nov 4 2026): from his DJ panel owner view, the
-// owner can set a pick himself for the coming Friday (it stands no
+// owner can set a pick himself for the coming Saturday (it stands no
 // matter how the votes fall; open slots fill from the panel's tally —
 // see charts.js materializeDjVotes), take one of his set picks back
 // out, or strike a song out of the race by wiping its ballots for that
-// Friday. Admin only — the panel just votes; no DJ/A&R reaches these.
+// Saturday. Admin only — the panel just votes; no DJ/A&R reaches these.
 app.post("/admin/dj-picks/add", requireAdmin, (req, res) => {
-  const target = nextFridayStr();
+  const target = nextSaturdayStr();
   const songId = Number(req.body.song_id);
   const ok = db.prepare(`
     SELECT s.id, s.title FROM songs s JOIN users u ON u.id = s.artist_id
     WHERE s.id = ? AND s.status = 'live' AND u.name IS NOT NULL AND u.name <> '' AND u.city IS NOT NULL AND u.city <> ''`).get(songId);
   if (!ok) return res.redirect("/dj?msg=" + encodeURIComponent("That song can't be set as a pick — it has to be a live song whose artist has a profile."));
   const count = db.prepare("SELECT COUNT(*) AS c FROM dj_picks WHERE pick_date = ?").get(target).c;
-  if (count >= 3) return res.redirect("/dj?msg=" + encodeURIComponent("All 3 picks are already set by you for this Friday — remove one first."));
+  if (count >= 3) return res.redirect("/dj?msg=" + encodeURIComponent("All 3 picks are already set by you for this Saturday — remove one first."));
   db.prepare("INSERT OR IGNORE INTO dj_picks (song_id, pick_date) VALUES (?, ?)").run(songId, target);
   snapshotDb("dj-pick-add");
-  return res.redirect("/dj?msg=" + encodeURIComponent(`"${ok.title}" is set in the Pick 3 for ${target}. It stands on Friday no matter how the votes fall.`));
+  return res.redirect("/dj?msg=" + encodeURIComponent(`"${ok.title}" is set in the Pick 3 for ${target}. It stands on Saturday no matter how the votes fall.`));
 });
 
 app.post("/admin/dj-picks/remove", requireAdmin, (req, res) => {

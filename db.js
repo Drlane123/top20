@@ -135,16 +135,17 @@ function openDb() {
       UNIQUE (dj_id, voter_key, month)
     );
 
-    -- DJ'S HOT PICKS (owner feature): every Friday a panel of DJs picks
+    -- DJ'S HOT PICKS (owner feature): every week a panel of DJs votes
     -- up to 3 songs that are already hot, and those picks step into the
-    -- National Overall Top 20 for that Friday's chart — the ONE stated
+    -- National Overall Top 20 for that Saturday's chart (the Pick 3 hits
+    -- Saturday at 12 AM; moved from Friday by the owner, Nov 4, 2026) — the ONE stated
     -- exception to the strictly-algorithmic rule. Max 3 per pick_date is
     -- enforced where picks are entered. From the next day's recalc the
     -- algorithm treats a pick like any other song.
     CREATE TABLE IF NOT EXISTS dj_picks (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       song_id INTEGER NOT NULL REFERENCES songs(id),
-      pick_date TEXT NOT NULL,              -- the Friday, YYYY-MM-DD
+      pick_date TEXT NOT NULL,              -- the Saturday, YYYY-MM-DD
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (song_id, pick_date)
     );
@@ -262,12 +263,12 @@ function openDb() {
       UNIQUE (role, email)
     );
 
-    -- Weekly Pick 3 ballots (owner, Nov 3, 2026): the Friday picks are
-    -- a PANEL VOTE. Each DJ/A&R with a profile casts a ballot of up to
-    -- 3 songs for the coming Friday (pick_date); when that Friday's
-    -- chart is dealt, the top 3 vote-getters are written into
-    -- dj_picks and seat into the Top 20 like always. One row per
-    -- (Friday, voter, song) — a ballot is 3 distinct songs.
+    -- Weekly Pick 3 ballots (owner, Nov 3, 2026): the Saturday picks
+    -- are a PANEL VOTE. Each DJ/A&R with a profile casts a ballot of up
+    -- to 3 songs for the coming Saturday (pick_date); when that
+    -- Saturday's chart is dealt, the top 3 vote-getters are written
+    -- into dj_picks and seat into the Top 20 like always. One row per
+    -- (Saturday, voter, song) — a ballot is 3 distinct songs.
     CREATE TABLE IF NOT EXISTS pick_votes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       pick_date TEXT NOT NULL,

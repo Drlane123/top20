@@ -131,7 +131,7 @@ function top20Keys(db, date) {
 }
 
 // DJ'S HOT PICKS — the one stated exception to the strictly-algorithmic
-// rule. On a pick Friday, the panel's picks (max 3, entered in dj_picks)
+// rule. On pick Saturday, the panel's picks (max 3, entered in dj_picks)
 // step into the National Overall Top 20: a pick already in the Top 20 by
 // score keeps its earned spot; picks outside take the bottom slots of the
 // 20, in pick order, and every pick is flagged dj_pick = 1 so the badge
@@ -217,19 +217,20 @@ function dateSeed(dateStr) {
 // DAILY DRIFT — the living chart. Audience attention moves every day, so
 // each day's recalc deals every song a deterministic daily swing
 // (±DAILY_DRIFT chart points) keyed to the date. Craft scores never
-// move; only the day's engagement weather does. Fridays belong to the
-// DJ's Hot Picks: on a Friday the drift is muted so the panel's three
-// picks (seeded at unjittered ranks 22/25/28) still step into the bottom
+// move; only the day's engagement weather does. Saturdays belong to
+// the DJ's Hot Picks (the Pick 3 hits Saturday at 12 AM, owner, Nov 4,
+// 2026): on a Saturday the drift is muted so the panel's three picks
+// (seeded at unjittered ranks 22/25/28) still step into the bottom
 // of the Top 20 exactly the way applyDjPicks seats them.
 const DAILY_DRIFT = 6.5;
-const FRIDAY_DRIFT = 1.2;
+const PICK_DAY_DRIFT = 1.2;
 
-function isFriday(dateStr) {
-  return new Date(dateStr + "T12:00:00Z").getUTCDay() === 5;
+function isSaturday(dateStr) {
+  return new Date(dateStr + "T12:00:00Z").getUTCDay() === 6;
 }
 
 function dailyDriftFn(dateStr) {
-  const amp = isFriday(dateStr) ? FRIDAY_DRIFT : DAILY_DRIFT;
+  const amp = isSaturday(dateStr) ? PICK_DAY_DRIFT : DAILY_DRIFT;
   const ds = dateSeed(dateStr);
   return (songId) => (mulberry32((songId * 7919) ^ ds)() * 2 - 1) * amp;
 }
@@ -238,10 +239,11 @@ function dailyDriftFn(dateStr) {
 // previous chart date: every NEW Top 20 entry creates exactly one
 // 'chart_entry' notification (the simulated email). Songs that fall OUT
 // create nothing — fall-off is never notified (spec 3.9, section 9).
-// PANEL VOTE → FRIDAY PICKS (owner, Nov 3, 2026): the Weekly Pick 3
+// PANEL VOTE → SATURDAY PICKS (owner, Nov 3, 2026; moved from Friday
+// to Saturday 12 AM by the owner, Nov 4, 2026): the Weekly Pick 3
 // is decided by the whole panel together. All week, DJs and A&Rs with
-// a profile cast ballots (pick_votes) for the coming Friday; when that
-// Friday's chart is dealt, the top 3 vote-getters are written into
+// a profile cast ballots (pick_votes) for the coming Saturday; when
+// that Saturday's chart is dealt, the top 3 vote-getters are written into
 // dj_picks in tally order and applyDjPicks seats them as always.
 // Ties break on Craft Score, then on the older song. Votes from a
 // profile that no longer exists (kicked) stop counting. Picks the
@@ -250,7 +252,7 @@ function dailyDriftFn(dateStr) {
 // slots he left open, up to 3 picks total.
 function materializeDjVotes(db, date) {
   const dow = new Date(date + "T12:00:00Z").getUTCDay();
-  if (dow !== 5) return; // Fridays only
+  if (dow !== 6) return; // Saturdays only — the Pick 3 hits at 12 AM Saturday
   const setRows = db.prepare("SELECT song_id FROM dj_picks WHERE pick_date = ?").all(date);
   if (setRows.length >= 3) return;
   const taken = new Set(setRows.map((r) => r.song_id));
