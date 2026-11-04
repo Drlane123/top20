@@ -416,11 +416,11 @@ header.site .hotline{position:relative;z-index:5}
 @media (max-width:560px){.crowd{height:74px;opacity:.95;bottom:110px}.crowd.cl{left:-10px}.crowd.cr{right:-10px}.wordmark .top{font-size:30px}.wordmark .twenty{font-size:34px}}
 @media (max-width:400px){.crowd{bottom:130px}}
 .wm{display:inline-block;text-align:center;position:relative;isolation:isolate}
-.logoband{position:relative;z-index:3;max-width:940px;margin:-6px auto 24px;padding:0 6px}
-.site-logo{display:block;width:100%;height:auto;transform:scaleY(.94)}
+.logoband{position:relative;z-index:3;max-width:940px;margin:-16px auto 24px;padding:0 6px}
+.site-logo{display:block;width:100%;height:auto;transform:scaleY(.90)}
 header.site{padding-top:0}
 @media (min-width:901px){header.site{padding-top:0}.crowd.cc{height:182px}}
-@media (max-width:560px){.logoband{padding:0}.crowd{bottom:92px}.crowd.cc{height:122px;bottom:2px}}
+@media (max-width:560px){.logoband{padding:0}.crowd{bottom:92px}.crowd.cc{height:106px;bottom:0}}
 @keyframes shine{from{background-position:50% 0%}to{background-position:50% 100%}}
 /* Futuristic wordmark (owner round 3): the ENTIRE mark leans right in
    italic + skew, stamped into the black surface — dark shadow pressed at
