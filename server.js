@@ -1942,7 +1942,7 @@ app.get("/", (req, res) => {
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   const ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-  const ANN_V = 9; // announcement voice generation (Take B radio voice; v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
+  const ANN_V = 10; // announcement voice generation (Take B radio voice; v10 re-ships title-50 + line-50 for Lady Rackz "Breathe" (Nov 3, prior v9 push never landed); v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -2522,7 +2522,7 @@ app.get("/charts", (req, res) => {
   (function(){
     var Q = ${JSON.stringify(chartQ).replace(/</g, "\\u003c")};
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 9;
+    var ANN_V = 10;
     var byId = {}; Q.forEach(function(s, i){ byId[s.id] = i; });
     var audio = document.getElementById('cAudio');
     var btn = document.getElementById('cPlayBtn');
@@ -3067,7 +3067,7 @@ app.get("/song/:id", (req, res) => {
     var a = document.querySelector('audio.profile-audio');
     if (!a) return;
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 9;
+    var ANN_V = 10;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     a._songSrc = a.getAttribute('src');
@@ -4758,7 +4758,7 @@ app.get("/artist/:id", (req, res) => {
     // what a visiting artist hears when an artist posts their profile.
     // The Stage's DJ VOICE switch is the same switch here.
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 9;
+    var ANN_V = 10;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     function countPlay(a) { if (a._counted) return; a._counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
