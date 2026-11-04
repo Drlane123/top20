@@ -6517,6 +6517,23 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     </div>`).join("") : `<p class="sub">No placements yet.</p>`}
   </div>
   <div class="panel">
+    <h2 style="margin-top:0">📈 Real-artist boost — plays &amp; likes</h2>
+    <p class="sub">Add plays and likes to a real artist's counters so their profile and song page look alive while the artist base is still growing. The new totals show right away, everywhere the counts appear.</p>
+    <form method="post" action="/admin/boost">
+      <label class="sub">Song<br>
+      <select name="song_id" required style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        ${songs.map((s) => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
+      </select></label>
+      <label class="sub">Plays to add<br>
+      <input type="number" name="plays" min="0" max="100000" value="0"
+        style="width:140px;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
+      <label class="sub">Likes to add<br>
+      <input type="number" name="likes" min="0" max="100000" value="0"
+        style="width:140px;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
+      <button type="submit" style="padding:12px 22px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Add them</button>
+    </form>
+  </div>
+  <div class="panel">
     <h2 style="margin-top:0">⭐ Spotlight of the Week</h2>
     <p class="sub">The 16th Law, in public: name the one artist you feel is <b style="color:#fff">worth recognizing</b> this week — the gift, the value they bring. Their song headlines a gold panel on the home page with your words under it. Recognition only — it never touches a score or a chart spot. Change it any week; clear it and the panel hides.</p>
     <form method="post" action="/admin/spotlight">
@@ -6891,6 +6908,27 @@ app.post("/admin/placements/overall", requireAdmin, (req, res) => {
     return `${label[g.level]} #${r}` + (r !== rank ? ` (that chart has ${total} song${total === 1 ? "" : "s"})` : "");
   });
   return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" — Overall, right now: ${parts.join(" · ")}. It holds until ${ends_on || "you remove it"}.`));
+});
+
+// REAL-ARTIST BOOST (owner, Nov 4 2026): add plays/likes to a song's
+// counters so the real profiles look alive while the artist base is
+// still growing. Same counters the public buttons feed, written through
+// the same upsert; charts re-dealt on the spot so everything agrees.
+app.post("/admin/boost", requireAdmin, (req, res) => {
+  const songId = Number(req.body.song_id);
+  const plays = Math.max(0, Math.min(100000, Math.floor(Number(req.body.plays) || 0)));
+  const likes = Math.max(0, Math.min(100000, Math.floor(Number(req.body.likes) || 0)));
+  const song = db.prepare("SELECT id, title FROM songs WHERE id = ? AND status = 'live'").get(songId);
+  if (!song || (!plays && !likes)) return res.redirect("/admin/placements?msg=" + encodeURIComponent("Pick a live song and add at least 1 play or 1 like."));
+  const up = db.prepare(`INSERT INTO engagements (song_id, type, count) VALUES (?, ?, ?)
+     ON CONFLICT(song_id, type) DO UPDATE SET count = count + ?`);
+  if (plays) up.run(songId, "play", plays, plays);
+  if (likes) up.run(songId, "like", likes, likes);
+  recalc(db, todayStr());
+  snapshotDb("boost");
+  const now = {};
+  for (const r of db.prepare("SELECT type, count FROM engagements WHERE song_id = ?").all(songId)) now[r.type] = r.count;
+  return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" boosted: +${plays} plays, +${likes} likes. It now shows ${now.play || 0} plays and ${now.like || 0} likes.`));
 });
 
 app.post("/admin/placements/:id/remove", requireAdmin, (req, res) => {
