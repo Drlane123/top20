@@ -5773,7 +5773,7 @@ app.get("/dj", (req, res) => {
     ? db.prepare("SELECT song_id FROM pick_votes WHERE pick_date = ? AND profile_id = ? ORDER BY id").all(target, who.profile.id).map((r) => r.song_id)
     : [];
   const standings = db.prepare(`
-    SELECT s.id, s.title, u.name AS artist, COUNT(*) AS votes
+    SELECT s.id, s.title, s.audio_path, u.name AS artist, COUNT(*) AS votes, COALESCE(j.craft_score, 0) AS craft
     FROM pick_votes v
     JOIN panel_profiles p ON p.id = v.profile_id
     JOIN songs s ON s.id = v.song_id AND s.status = 'live'
@@ -5789,6 +5789,23 @@ app.get("/dj", (req, res) => {
     SELECT p.id, p.song_id, s.title, u.name AS artist FROM dj_picks p
     JOIN songs s ON s.id = p.song_id JOIN users u ON u.id = s.artist_id
     WHERE p.pick_date = ? ORDER BY p.id`).all(target);
+  // DEADLOCK AT THE LINE (owner, Nov 4, 2026): when the last seat and
+  // the first song out are tied on votes, the Craft Score alone would
+  // decide who sits — and a hot record can sit behind a score. The
+  // owner gets the final say with his own ear: the panel below shows
+  // him the tied songs with players, and putting one in is the same
+  // set-pick power from his desk (it stands Saturday regardless).
+  const tallyList = standings.filter((s) => !ownerPicks.some((p) => p.song_id === s.id));
+  const seatsLeft = Math.max(0, 3 - ownerPicks.length);
+  let deadlock = null;
+  if (isOwner && seatsLeft > 0 && tallyList.length > seatsLeft && tallyList[seatsLeft].votes === tallyList[seatsLeft - 1].votes) {
+    const cutVotes = tallyList[seatsLeft - 1].votes;
+    deadlock = {
+      votes: cutVotes,
+      group: tallyList.filter((s) => s.votes === cutVotes),
+      inIds: new Set(tallyList.slice(0, seatsLeft).filter((s) => s.votes === cutVotes).map((s) => s.id)),
+    };
+  }
   const saved = myBallot;
   const current = db.prepare(`
     SELECT p.pick_date, s.title, u.name AS artist FROM dj_picks p
@@ -5837,6 +5854,15 @@ app.get("/dj", (req, res) => {
       </select></label>
       <button type="submit" style="padding:11px 20px;border-radius:10px;border:0;background:#f5c542;color:#111;font-weight:800;cursor:pointer">➕ Set this pick</button>
     </form>` : `<p class="sub" style="margin:10px 0 0">All 3 picks are set by you for this Saturday. Remove one above to open a slot back up to the panel's votes.</p>`}
+  </div>` : ""}
+  ${deadlock ? `<div class="panel" style="border:2px solid #ff9d5c">
+    <h2 style="margin-top:0">⚖️ Deadlock at the line — owner's call</h2>
+    <p class="sub">These songs are <b style="color:#fff">tied at ${deadlock.votes} vote${deadlock.votes === 1 ? "" : "s"}</b> right at the last seat. Left to the machine, the higher Craft Score takes it — but a record can be hot in a way a score can't hear. Listen with your own ear and put in the one you hear. Your pick stands Saturday at 12 AM, same as any pick you set.</p>
+    ${deadlock.group.map((s) => `<div style="margin-top:14px;padding-top:12px;border-top:1px solid #2a3550">
+      <p class="sub" style="margin:0"><b style="color:#fff">${esc(s.title)}</b> — ${esc(s.artist)} · ${s.votes} vote${s.votes === 1 ? "" : "s"} · Craft ${Number(s.craft).toFixed(1)} · ${deadlock.inIds.has(s.id) ? `<b style="color:#7dff9a">IN on the score right now</b>` : `<b style="color:#ff9d9d">first one OUT on the score right now</b>`}</p>
+      <audio controls preload="metadata" src="${esc(s.audio_path)}" style="width:100%;margin-top:8px"></audio>
+      <form method="post" action="/admin/dj-picks/add" onsubmit="return confirm('Put this song in the Pick 3 with your own ear? It stands Saturday no matter the score.')" style="margin-top:8px"><input type="hidden" name="song_id" value="${s.id}"><button type="submit" style="padding:9px 18px;border-radius:8px;border:0;background:#ff9d5c;color:#111;font-weight:800;cursor:pointer">👂 Put this one in — my ear says so</button></form>
+    </div>`).join("")}
   </div>` : ""}
   <div class="panel">
     <h2 style="margin-top:0">📊 The race so far — ${esc(prettyDate(target))}</h2>
