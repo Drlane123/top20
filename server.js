@@ -310,6 +310,21 @@ if (ICONS) {
   // directly, and it 404'd — the new mark now answers there too.
   iconRoute("/favicon.ico", "icon-192x192.png");
 }
+// Header logo — the owner's gloss HOT TOP 20 mark (flyer letters,
+// yellow-to-green gloss wave, light flames under the name; approved
+// and ordered onto the site Nov 4, 2026). Served from baked data like
+// the icons; the header on every page carries it.
+const HEADER_LOGO = (() => {
+  try { return Buffer.from(require("./logo-data"), "base64"); }
+  catch (e) { return null; }
+})();
+if (HEADER_LOGO) {
+  app.get("/logo.png", (req, res) => {
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(HEADER_LOGO);
+  });
+}
 // Search engines (owner, Nov 2, 2026): a real robots.txt and a
 // sitemap, so Google's crawlers come back clean and pick up the
 // platinum favicon and the public pages. The site 404'd robots.txt
@@ -401,6 +416,7 @@ header.site .hotline{position:relative;z-index:5}
 @media (max-width:560px){.crowd{height:74px;opacity:.95;bottom:110px}.crowd.cl{left:-10px}.crowd.cr{right:-10px}.wordmark .top{font-size:30px}.wordmark .twenty{font-size:34px}}
 @media (max-width:400px){.crowd{bottom:130px}}
 .wm{display:inline-block;text-align:center;position:relative;isolation:isolate}
+.site-logo{display:block;width:min(500px,92vw);height:auto;margin:0 auto}
 @keyframes shine{from{background-position:50% 0%}to{background-position:50% 100%}}
 /* Futuristic wordmark (owner round 3): the ENTIRE mark leans right in
    italic + skew, stamped into the black surface — dark shadow pressed at
@@ -818,10 +834,9 @@ function layout(title, active, body, opts = {}) {
   <img class="crowd cl" src="/crowd-left.webp?v=7" alt="" aria-hidden="true">
   <img class="crowd cr" src="/crowd-right.webp?v=7" alt="" aria-hidden="true">
   <div class="wm">
-    <div class="wordmark"><span class="top">TOP</span> <span class="twenty">20</span></div>
-    <div class="blaze"></div><div class="blaze-line"></div>
+    <a href="/" aria-label="HOT TOP 20 — home"><img class="site-logo" src="/logo.png?v=1" alt="HOT TOP 20"></a>
   </div>
-  ${opts.home ? `<div class="hotline"><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — GREAT SONGS HOLD THEIR SPOT — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY FRIDAY — </span><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — GREAT SONGS HOLD THEIR SPOT — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY FRIDAY — </span></div>` : ""}
+  ${opts.home ? `<div class="hotline"><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — GREAT SONGS HOLD THEIR SPOT — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY SATURDAY — </span><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — GREAT SONGS HOLD THEIR SPOT — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY SATURDAY — </span></div>` : ""}
   <div class="tagline">Charts by craft, not just clout</div>
   <nav class="main">${nav}</nav>
 </header>
