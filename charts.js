@@ -244,14 +244,17 @@ function dailyDriftFn(dateStr) {
 // Friday's chart is dealt, the top 3 vote-getters are written into
 // dj_picks in tally order and applyDjPicks seats them as always.
 // Ties break on Craft Score, then on the older song. Votes from a
-// profile that no longer exists (kicked) stop counting. If dj_picks
-// already holds rows for the date (a legacy direct entry), they
-// stand — the tally only fills an empty Friday.
+// profile that no longer exists (kicked) stop counting. Picks the
+// OWNER set himself during the week (his desk on the panel page) also
+// live in dj_picks — those stand as-is, and the tally fills whatever
+// slots he left open, up to 3 picks total.
 function materializeDjVotes(db, date) {
   const dow = new Date(date + "T12:00:00Z").getUTCDay();
   if (dow !== 5) return; // Fridays only
-  const existing = db.prepare("SELECT COUNT(*) AS c FROM dj_picks WHERE pick_date = ?").get(date).c;
-  if (existing > 0) return;
+  const setRows = db.prepare("SELECT song_id FROM dj_picks WHERE pick_date = ?").all(date);
+  if (setRows.length >= 3) return;
+  const taken = new Set(setRows.map((r) => r.song_id));
+  const room = 3 - setRows.length;
   const tally = db.prepare(`
     SELECT v.song_id AS song_id, COUNT(*) AS votes
     FROM pick_votes v
@@ -261,9 +264,15 @@ function materializeDjVotes(db, date) {
     WHERE v.pick_date = ?
     GROUP BY v.song_id
     ORDER BY votes DESC, COALESCE(j.craft_score, 0) DESC, v.song_id ASC
-    LIMIT 3`).all(date);
+    LIMIT 12`).all(date);
   const ins = db.prepare("INSERT INTO dj_picks (song_id, pick_date) VALUES (?, ?)");
-  for (const t of tally) ins.run(t.song_id, date);
+  let filled = 0;
+  for (const t of tally) {
+    if (filled >= room) break;
+    if (taken.has(t.song_id)) continue;
+    ins.run(t.song_id, date);
+    filled++;
+  }
 }
 
 function recalc(db, date = todayStr()) {

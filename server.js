@@ -5780,6 +5780,13 @@ app.get("/dj", (req, res) => {
     WHERE v.pick_date = ?
     GROUP BY v.song_id ORDER BY votes DESC, s.title ASC LIMIT 12`).all(target);
   const ballotsCast = db.prepare("SELECT COUNT(DISTINCT profile_id) AS c FROM pick_votes WHERE pick_date = ?").get(target).c;
+  // Picks the OWNER set himself for the coming Friday (his desk,
+  // below). Rows for the target Friday only ever come from his hand —
+  // the ballot tally doesn't write picks until Friday's chart is dealt.
+  const ownerPicks = db.prepare(`
+    SELECT p.id, p.song_id, s.title, u.name AS artist FROM dj_picks p
+    JOIN songs s ON s.id = p.song_id JOIN users u ON u.id = s.artist_id
+    WHERE p.pick_date = ? ORDER BY p.id`).all(target);
   const saved = myBallot;
   const current = db.prepare(`
     SELECT p.pick_date, s.title, u.name AS artist FROM dj_picks p
@@ -5817,9 +5824,21 @@ app.get("/dj", (req, res) => {
     <p class="sub">The Weekly Pick 3 belongs to <b style="color:#fff">DJs and A&amp;Rs with a profile</b>. The panel password opens this page to look — but to vote, build your profile first (it can stay hidden; it just has to exist), then come back here.</p>
     <p style="margin:10px 0 0"><a class="btn btn-blue" href="/dj-profile">Build your DJ profile →</a> <a class="btn" href="/ar-profile">Build your A&amp;R profile →</a></p>
   </div>`}
+  ${isOwner ? `<div class="panel" style="border:2px solid #f5c542">
+    <h2 style="margin-top:0">👑 Owner's desk — set the Pick 3 yourself</h2>
+    <p class="sub">Only you see this. The panel votes with their profiles — no DJ or A&amp;R can add, remove, or clear anything here. A pick you set <b style="color:#fff">stands on Friday no matter how the votes fall</b>; whatever slots you leave open (3 total) fill from the panel's votes. Wrong or put in bad? Take it back out here, or strike a song out of the race below.</p>
+    ${ownerPicks.length ? ownerPicks.map((p, i) => `<div class="sub" style="margin:8px 0 0;display:flex;justify-content:space-between;align-items:center;gap:10px"><span><b style="color:#fff">${i + 1}. ${esc(p.title)}</b> — ${esc(p.artist)} · <b style="color:#f5c542">SET BY YOU</b></span><form method="post" action="/admin/dj-picks/remove" onsubmit="return confirm('Take this song out of your set picks?')" style="margin:0"><input type="hidden" name="pick_row" value="${p.id}"><button type="submit" style="padding:5px 14px;border-radius:7px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">Remove</button></form></div>`).join("") : `<p class="sub" style="margin:0">You haven't set any picks yourself for this Friday — right now the panel's votes decide all three.</p>`}
+    ${ownerPicks.length < 3 ? `<form method="post" action="/admin/dj-picks/add" style="margin-top:14px">
+      <label class="sub">Put a song straight into the Pick 3:<br>
+      <select name="song_id" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        ${songs.filter((s) => !ownerPicks.some((p) => p.song_id === s.id)).map((s) => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
+      </select></label>
+      <button type="submit" style="padding:11px 20px;border-radius:10px;border:0;background:#f5c542;color:#111;font-weight:800;cursor:pointer">➕ Set this pick</button>
+    </form>` : `<p class="sub" style="margin:10px 0 0">All 3 picks are set by you for this Friday. Remove one above to open a slot back up to the panel's votes.</p>`}
+  </div>` : ""}
   <div class="panel">
     <h2 style="margin-top:0">📊 The race so far — ${esc(prettyDate(target))}</h2>
-    ${standings.length ? standings.map((s, i) => `<p class="sub" style="margin:6px 0 0">${i < 3 ? "🎧" : `<span style="display:inline-block;width:22px"></span>`} <b style="color:#fff">${i + 1}. ${esc(s.title)}</b> — ${esc(s.artist)} · <b style="color:#fff">${s.votes} vote${s.votes === 1 ? "" : "s"}</b>${i < 3 ? ` · <b style="color:#f5c542">IN THE PICKS — so far</b>` : ""}</p>`).join("") : `<p class="sub" style="margin:0">No ballots in yet for this Friday. The first votes start the race.</p>`}
+    ${standings.length ? standings.map((s, i) => `<p class="sub" style="margin:6px 0 0">${i < 3 ? "🎧" : `<span style="display:inline-block;width:22px"></span>`} <b style="color:#fff">${i + 1}. ${esc(s.title)}</b> — ${esc(s.artist)} · <b style="color:#fff">${s.votes} vote${s.votes === 1 ? "" : "s"}</b>${i < 3 ? ` · <b style="color:#f5c542">IN THE PICKS — so far</b>` : ""}</p>${isOwner ? `<form method="post" action="/admin/pick-votes/strike" onsubmit="return confirm('Strike this song from the race? Every vote for it this Friday is wiped — it cannot win a pick this week unless the panel votes it back in.')" style="margin:2px 0 6px"><input type="hidden" name="song_id" value="${s.id}"><input type="hidden" name="pick_date" value="${esc(target)}"><button type="submit" style="padding:3px 12px;border-radius:6px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer;font-size:12px">✕ Strike from race</button></form>` : ""}`).join("") : `<p class="sub" style="margin:0">No ballots in yet for this Friday. The first votes start the race.</p>`}
     <p class="note" style="margin:10px 0 0">${ballotsCast} panel member${ballotsCast === 1 ? "" : "s"} voted so far. When Friday's chart lands at midnight, the top 3 are the Hot Picks — no more, no less.</p>
     ${isOwner && ballotsCast ? `<form method="post" action="/admin/pick-votes/clear" onsubmit="return confirm('Clear ALL ballots for this Friday? The race starts over from zero.')" style="margin-top:12px"><input type="hidden" name="pick_date" value="${esc(target)}"><button type="submit" style="padding:9px 18px;border-radius:8px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">🧹 Clear all ballots for this Friday</button></form>` : ""}
   </div>
@@ -6942,6 +6961,43 @@ app.post("/admin/pick-votes/clear", requireAdmin, (req, res) => {
   const info = db.prepare("DELETE FROM pick_votes WHERE pick_date = ?").run(date);
   snapshotDb("pick-votes-clear");
   return res.redirect("/dj?msg=" + encodeURIComponent(`All ballots for ${date} are cleared — ${info.changes} vote row${info.changes === 1 ? "" : "s"} removed. The race starts over from zero; only the real panel's votes will stand.`));
+});
+
+// OWNER PICK 3 DESK (Nov 4 2026): from his DJ panel owner view, the
+// owner can set a pick himself for the coming Friday (it stands no
+// matter how the votes fall; open slots fill from the panel's tally —
+// see charts.js materializeDjVotes), take one of his set picks back
+// out, or strike a song out of the race by wiping its ballots for that
+// Friday. Admin only — the panel just votes; no DJ/A&R reaches these.
+app.post("/admin/dj-picks/add", requireAdmin, (req, res) => {
+  const target = nextFridayStr();
+  const songId = Number(req.body.song_id);
+  const ok = db.prepare(`
+    SELECT s.id, s.title FROM songs s JOIN users u ON u.id = s.artist_id
+    WHERE s.id = ? AND s.status = 'live' AND u.name IS NOT NULL AND u.name <> '' AND u.city IS NOT NULL AND u.city <> ''`).get(songId);
+  if (!ok) return res.redirect("/dj?msg=" + encodeURIComponent("That song can't be set as a pick — it has to be a live song whose artist has a profile."));
+  const count = db.prepare("SELECT COUNT(*) AS c FROM dj_picks WHERE pick_date = ?").get(target).c;
+  if (count >= 3) return res.redirect("/dj?msg=" + encodeURIComponent("All 3 picks are already set by you for this Friday — remove one first."));
+  db.prepare("INSERT OR IGNORE INTO dj_picks (song_id, pick_date) VALUES (?, ?)").run(songId, target);
+  snapshotDb("dj-pick-add");
+  return res.redirect("/dj?msg=" + encodeURIComponent(`"${ok.title}" is set in the Pick 3 for ${target}. It stands on Friday no matter how the votes fall.`));
+});
+
+app.post("/admin/dj-picks/remove", requireAdmin, (req, res) => {
+  const rowId = Number(req.body.pick_row);
+  const row = db.prepare("SELECT p.id, s.title FROM dj_picks p JOIN songs s ON s.id = p.song_id WHERE p.id = ?").get(rowId);
+  if (row) { db.prepare("DELETE FROM dj_picks WHERE id = ?").run(rowId); snapshotDb("dj-pick-remove"); }
+  return res.redirect("/dj?msg=" + encodeURIComponent(row ? `"${row.title}" is out of your set picks.` : "That pick was already gone."));
+});
+
+app.post("/admin/pick-votes/strike", requireAdmin, (req, res) => {
+  const date = String(req.body.pick_date || "");
+  const songId = Number(req.body.song_id);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !songId) return res.redirect("/dj");
+  const song = db.prepare("SELECT title FROM songs WHERE id = ?").get(songId);
+  const info = db.prepare("DELETE FROM pick_votes WHERE pick_date = ? AND song_id = ?").run(date, songId);
+  snapshotDb("pick-vote-strike");
+  return res.redirect("/dj?msg=" + encodeURIComponent(`"${song ? song.title : "That song"}" is struck from the race for ${date} — ${info.changes} vote${info.changes === 1 ? "" : "s"} wiped. It can't win a pick this week unless the panel votes it back in.`));
 });
 
 app.post("/admin/placements/:id/remove", requireAdmin, (req, res) => {
