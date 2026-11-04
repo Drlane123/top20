@@ -419,8 +419,9 @@ header.site .hotline{position:relative;z-index:5}
 .logoband{position:relative;z-index:3;max-width:940px;margin:-16px auto 24px;padding:0 6px}
 .site-logo{display:block;width:100%;height:auto;transform:scaleY(.90)}
 header.site{padding-top:0}
-@media (min-width:901px){header.site{padding-top:0}.crowd.cc{height:182px}}
-@media (max-width:560px){.logoband{padding:0}.crowd{bottom:110px}.crowd.cc{height:106px;bottom:0}}
+@media (min-width:901px){header.site{padding-top:0}.crowd.cc{height:182px;top:calc(min(940px,92vw)*.3047 - 103px);bottom:auto}.crowd.cl,.crowd.cr{top:calc(min(940px,92vw)*.3047 - 141px);bottom:auto}}
+@media (max-width:900px) and (min-width:561px){.crowd.cc{top:calc((100vw - 98px)*.3047 - 79px);bottom:auto}.crowd.cl,.crowd.cr{top:calc((100vw - 98px)*.3047 - 55px);bottom:auto}}
+@media (max-width:560px){.logoband{padding:0}.crowd{bottom:110px}.crowd.cc{height:106px;bottom:0;top:calc((100vw - 34px)*.3047 - 20px)}.crowd.cl,.crowd.cr{top:calc((100vw - 34px)*.3047 - 4px);bottom:auto}}
 @keyframes shine{from{background-position:50% 0%}to{background-position:50% 100%}}
 /* Futuristic wordmark (owner round 3): the ENTIRE mark leans right in
    italic + skew, stamped into the black surface — dark shadow pressed at
