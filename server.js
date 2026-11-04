@@ -1942,7 +1942,7 @@ app.get("/", (req, res) => {
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   const ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-  const ANN_V = 10; // announcement voice generation (Take B radio voice; v10 re-ships title-50 + line-50 for Lady Rackz "Breathe" (Nov 3, prior v9 push never landed); v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
+  const ANN_V = 11; // announcement voice generation (Take B radio voice; v11 adds title-51 + line-51 for New Nobility "Be Cool" (Nov 4); v10 re-ships title-50 + line-50 for Lady Rackz "Breathe" (Nov 3, prior v9 push never landed); v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -2522,7 +2522,7 @@ app.get("/charts", (req, res) => {
   (function(){
     var Q = ${JSON.stringify(chartQ).replace(/</g, "\\u003c")};
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 10;
+    var ANN_V = 11;
     var byId = {}; Q.forEach(function(s, i){ byId[s.id] = i; });
     var audio = document.getElementById('cAudio');
     var btn = document.getElementById('cPlayBtn');
@@ -3067,7 +3067,7 @@ app.get("/song/:id", (req, res) => {
     var a = document.querySelector('audio.profile-audio');
     if (!a) return;
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 10;
+    var ANN_V = 11;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     a._songSrc = a.getAttribute('src');
@@ -4758,7 +4758,7 @@ app.get("/artist/:id", (req, res) => {
     // what a visiting artist hears when an artist posts their profile.
     // The Stage's DJ VOICE switch is the same switch here.
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 10;
+    var ANN_V = 11;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     function countPlay(a) { if (a._counted) return; a._counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
@@ -6458,8 +6458,28 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   ${req.query.admsg ? `<p class="note" style="color:#ffd98a">${esc(req.query.admsg)}</p>` : ""}
   <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. You can enter a placement any time — it goes onto the chart IMMEDIATELY, the second you place it, and holds through each midnight recalculation until it ends or you remove it (removals also take effect right away). A song's evaluation scores are never changed — this sets chart position only.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
+  <div class="panel" style="border:2px solid #d4af37">
+    <h2 style="margin-top:0">🌍 OVERALL — EVERYWHERE</h2>
+    <p class="sub">One push puts the song at your number in <b style="color:#fff">Local Overall, Regional Overall AND National Overall</b> at the same time — right away, no waiting. Push it again at a different number and it moves there.</p>
+    <form method="post" action="/admin/placements/overall">
+      <label class="sub">Song<br>
+      <select name="song_id" required style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        ${songs.map((s) => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
+      </select></label>
+      <label class="sub">Position (1 = #1)<br>
+      <input type="number" name="rank" min="1" max="100" value="20" required
+        style="width:120px;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
+      <label class="sub">How long<br>
+      <select name="duration" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        <option value="open">Until I remove it</option>
+        <option value="7">7 days</option>
+        <option value="30">30 days</option>
+      </select></label>
+      <button type="submit" style="padding:14px 24px;border-radius:10px;border:0;background:linear-gradient(180deg,#e8c65a,#b8912c);color:#14100a;font-weight:900;font-size:16px;cursor:pointer;width:100%">🌍 PLACE IN OVERALL — EVERYWHERE</button>
+    </form>
+  </div>
   <div class="panel">
-    <h2 style="margin-top:0">Place a song</h2>
+    <h2 style="margin-top:0">Place a song — one chart only</h2>
     <form method="post" action="/admin/placements">
       <label class="sub">Song<br>
       <select name="song_id" required style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
@@ -6823,7 +6843,54 @@ app.post("/admin/placements", requireAdmin, (req, res) => {
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(songId, level, genre, region_key, rank, starts_on, ends_on, String(req.body.note || "").slice(0, 200) || null);
   recalc(db, today);
   snapshotDb("placement");
-  return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" is on the chart NOW at #${rank}. It holds until ${ends_on || "you remove it"}.`));
+  // Report where the song ACTUALLY landed: a small chart may not have
+  // a #37 in it at all (a 7-song chart stops at #7), so the pin clamps
+  // to the bottom — say the real number, never the requested one.
+  const landed = db.prepare("SELECT rank FROM chart_entries WHERE chart_date = ? AND level = ? AND genre = ? AND region_key = ? AND song_id = ?").get(today, level, genre, region_key, songId);
+  const chartTotal = db.prepare("SELECT COUNT(*) AS c FROM chart_entries WHERE chart_date = ? AND level = ? AND genre = ? AND region_key = ?").get(today, level, genre, region_key).c;
+  const landedRank = landed ? landed.rank : rank;
+  const clampNote = landedRank !== rank ? ` (that chart has ${chartTotal} songs, so #${landedRank} is where it sits)` : "";
+  return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" is on the chart NOW at #${landedRank}${clampNote}. It holds until ${ends_on || "you remove it"}.`));
+});
+
+// OVERALL — EVERYWHERE (owner, Nov 4 2026): one push pins the song at
+// the chosen number in every Overall chart it runs in — Local Overall,
+// Regional Overall AND National Overall — at the same time, effective
+// immediately. Pushing again MOVES it: any earlier Overall placements
+// for the song are retired first, so experimenting never stacks rows.
+app.post("/admin/placements/overall", requireAdmin, (req, res) => {
+  const songId = Number(req.body.song_id);
+  const rank = Math.max(1, Math.min(100, Number(req.body.rank) || 20));
+  const song = db.prepare("SELECT id, title FROM songs WHERE id = ? AND status = 'live'").get(songId);
+  if (!song) return res.redirect("/admin/placements?msg=" + encodeURIComponent("That song isn't available — it has to be uploaded and live first."));
+  const latest = latestChartDate(db);
+  const groups = latest ? db.prepare(
+    "SELECT DISTINCT level, region_key FROM chart_entries WHERE chart_date = ? AND genre = 'Overall' AND song_id = ?"
+  ).all(latest, songId) : [];
+  if (!groups.length) return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" isn't on the Overall charts yet — it needs a charted day first.`));
+  const today = todayStr();
+  let ends_on = null;
+  const days = Number(req.body.duration);
+  if (days === 7 || days === 30) {
+    ends_on = new Date(new Date(today + "T12:00:00Z").getTime() + (days - 1) * 86400000).toISOString().slice(0, 10);
+  }
+  db.prepare(`UPDATE admin_placements SET removed_at = datetime('now'),
+    ends_on = CASE WHEN ends_on IS NULL OR ends_on > ? THEN ? ELSE ends_on END
+    WHERE song_id = ? AND genre = 'Overall' AND removed_at IS NULL`).run(today, today, songId);
+  const ins = db.prepare(`INSERT INTO admin_placements (song_id, level, genre, region_key, rank, starts_on, ends_on, note)
+    VALUES (?, ?, 'Overall', ?, ?, ?, ?, ?)`);
+  for (const g of groups) ins.run(songId, g.level, g.region_key, rank, today, ends_on, String(req.body.note || "").slice(0, 200) || null);
+  recalc(db, today);
+  snapshotDb("placement-overall");
+  const label = { national: "National", regional: "Regional", local: "Local" };
+  const order = { national: 0, regional: 1, local: 2 };
+  const parts = groups.slice().sort((a, b) => order[a.level] - order[b.level]).map((g) => {
+    const row = db.prepare("SELECT rank FROM chart_entries WHERE chart_date = ? AND level = ? AND genre = 'Overall' AND region_key = ? AND song_id = ?").get(today, g.level, g.region_key, songId);
+    const total = db.prepare("SELECT COUNT(*) AS c FROM chart_entries WHERE chart_date = ? AND level = ? AND genre = 'Overall' AND region_key = ?").get(today, g.level, g.region_key).c;
+    const r = row ? row.rank : rank;
+    return `${label[g.level]} #${r}` + (r !== rank ? ` (that chart has ${total} song${total === 1 ? "" : "s"})` : "");
+  });
+  return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" — Overall, right now: ${parts.join(" · ")}. It holds until ${ends_on || "you remove it"}.`));
 });
 
 app.post("/admin/placements/:id/remove", requireAdmin, (req, res) => {
