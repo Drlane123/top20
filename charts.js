@@ -256,6 +256,11 @@ function materializeDjVotes(db, date) {
   const setRows = db.prepare("SELECT song_id FROM dj_picks WHERE pick_date = ?").all(date);
   if (setRows.length >= 3) return;
   const taken = new Set(setRows.map((r) => r.song_id));
+  // Power Pick blocks (owner, Nov 4, 2026): a quietly blocked song
+  // keeps its votes on the board but can never take a seat this week.
+  try {
+    for (const b of db.prepare("SELECT song_id FROM pick_blocks WHERE pick_date = ?").all(date)) taken.add(b.song_id);
+  } catch (e) { /* a DB from before the Power Pick simply has no blocks */ }
   const room = 3 - setRows.length;
   const tally = db.prepare(`
     SELECT v.song_id AS song_id, COUNT(*) AS votes

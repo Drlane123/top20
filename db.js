@@ -277,6 +277,20 @@ function openDb() {
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       UNIQUE (pick_date, profile_id, song_id)
     );
+
+    -- POWER PICK blocks (owner, Nov 4, 2026): the owner's QUIET
+    -- override while the panel is small. A blocked song keeps every
+    -- vote on the public board — it simply cannot take a Pick 3 seat
+    -- that Saturday. Paired with an owner-set pick in dj_picks, it
+    -- replaces one of the panel's three without the panel ever
+    -- seeing a control, a mark, or a message.
+    CREATE TABLE IF NOT EXISTS pick_blocks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      pick_date TEXT NOT NULL,
+      song_id INTEGER NOT NULL REFERENCES songs(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE (pick_date, song_id)
+    );
   `);
 
   // Migrations for a DB created by an earlier build (seed rebuilds from

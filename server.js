@@ -5795,8 +5795,19 @@ app.get("/dj", (req, res) => {
   // owner gets the final say with his own ear: the panel below shows
   // him the tied songs with players, and putting one in is the same
   // set-pick power from his desk (it stands Saturday regardless).
-  const tallyList = standings.filter((s) => !ownerPicks.some((p) => p.song_id === s.id));
+  const pickBlocks = db.prepare(`
+    SELECT b.id, b.song_id, s.title, u.name AS artist FROM pick_blocks b
+    JOIN songs s ON s.id = b.song_id JOIN users u ON u.id = s.artist_id
+    WHERE b.pick_date = ? ORDER BY b.id`).all(target);
+  const blockedIds = new Set(pickBlocks.map((b) => b.song_id));
+  const tallyList = standings.filter((s) => !ownerPicks.some((p) => p.song_id === s.id) && !blockedIds.has(s.id));
   const seatsLeft = Math.max(0, 3 - ownerPicks.length);
+  // Saturday's Pick 3 if the chart dealt right now: the owner's set
+  // picks first, then the tally's best in order (Power Pick panel).
+  const projected = [
+    ...ownerPicks.map((p) => ({ title: p.title, artist: p.artist, mine: true })),
+    ...tallyList.slice(0, seatsLeft).map((s) => ({ title: s.title, artist: s.artist, mine: false, votes: s.votes })),
+  ];
   let deadlock = null;
   if (isOwner && seatsLeft > 0 && tallyList.length > seatsLeft && tallyList[seatsLeft].votes === tallyList[seatsLeft - 1].votes) {
     const cutVotes = tallyList[seatsLeft - 1].votes;
@@ -5854,6 +5865,24 @@ app.get("/dj", (req, res) => {
       </select></label>
       <button type="submit" style="padding:11px 20px;border-radius:10px;border:0;background:#f5c542;color:#111;font-weight:800;cursor:pointer">➕ Set this pick</button>
     </form>` : `<p class="sub" style="margin:10px 0 0">All 3 picks are set by you for this Saturday. Remove one above to open a slot back up to the panel's votes.</p>`}
+  </div>` : ""}
+  ${isOwner ? `<div class="panel" style="border:2px solid #b48cff">
+    <h2 style="margin-top:0">🤫 Power Pick — quiet override</h2>
+    <p class="sub">Only you know this exists. While the panel is small, if the votes smell like favoritism — or the streets and the clubs are telling you a record is hot that the panel is sleeping on — swap one in here. The song you knock out <b style="color:#fff">keeps its votes on the board</b>; it just can't take a seat Saturday. And all three picks wear the same 🎧 DJ Pick badge Saturday — nothing marks yours.</p>
+    <p class="sub" style="margin:12px 0 0"><b style="color:#fff">Saturday's Pick 3 if the chart dealt right now:</b></p>
+    ${projected.length ? projected.map((p, i) => `<p class="sub" style="margin:4px 0 0"><b style="color:#fff">${i + 1}. ${esc(p.title)}</b> — ${esc(p.artist)}${p.mine ? ` · <b style="color:#f5c542">SET BY YOU</b>` : ` · ${p.votes} vote${p.votes === 1 ? "" : "s"}`}</p>`).join("") : `<p class="sub" style="margin:4px 0 0">Nothing yet — no votes in, no picks set.</p>`}
+    ${pickBlocks.length ? `<p class="sub" style="margin:12px 0 0"><b style="color:#fff">Quietly OUT this week:</b></p>${pickBlocks.map((b) => `<div class="sub" style="margin:6px 0 0;display:flex;justify-content:space-between;align-items:center;gap:10px"><span><b style="color:#fff">${esc(b.title)}</b> — ${esc(b.artist)}</span><form method="post" action="/admin/pick-blocks/remove" style="margin:0"><input type="hidden" name="block_row" value="${b.id}"><button type="submit" style="padding:5px 14px;border-radius:7px;border:1px solid #3a4a6b;background:transparent;color:#bcd;font-weight:700;cursor:pointer">Let back in</button></form></div>`).join("")}` : ""}
+    ${ownerPicks.length < 3 && standings.length ? `<form method="post" action="/admin/dj-picks/swap" onsubmit="return confirm('Make this swap quietly? The panel will not be told.')" style="margin-top:14px">
+      <label class="sub">Knock out — keeps its votes, loses its seat:<br>
+      <select name="out_song_id" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        ${standings.filter((s) => !blockedIds.has(s.id) && !ownerPicks.some((p) => p.song_id === s.id)).map((s) => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)} (${s.votes} vote${s.votes === 1 ? "" : "s"})</option>`).join("")}
+      </select></label>
+      <label class="sub">Put in — your ear, the streets, the clubs:<br>
+      <select name="in_song_id" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff">
+        ${songs.filter((s) => !ownerPicks.some((p) => p.song_id === s.id) && !blockedIds.has(s.id)).map((s) => `<option value="${s.id}">${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
+      </select></label>
+      <button type="submit" style="padding:11px 20px;border-radius:10px;border:0;background:#b48cff;color:#111;font-weight:800;cursor:pointer">🔕 Make the swap — quietly</button>
+    </form>` : ""}
   </div>` : ""}
   ${deadlock ? `<div class="panel" style="border:2px solid #ff9d5c">
     <h2 style="margin-top:0">⚖️ Deadlock at the line — owner's call</h2>
@@ -7026,6 +7055,38 @@ app.post("/admin/pick-votes/strike", requireAdmin, (req, res) => {
   const info = db.prepare("DELETE FROM pick_votes WHERE pick_date = ? AND song_id = ?").run(date, songId);
   snapshotDb("pick-vote-strike");
   return res.redirect("/dj?msg=" + encodeURIComponent(`"${song ? song.title : "That song"}" is struck from the race for ${date} — ${info.changes} vote${info.changes === 1 ? "" : "s"} wiped. It can't win a pick this week unless the panel votes it back in.`));
+});
+
+// POWER PICK SWAP (owner, Nov 4 2026): one quiet move — a song the
+// owner chooses goes IN as his set pick, and a song the panel voted
+// on is quietly blocked from taking a seat that Saturday (its votes
+// stay on the board; nothing anywhere tells the panel). Plus the
+// undo for a block. Admin only, like every owner control here.
+app.post("/admin/dj-picks/swap", requireAdmin, (req, res) => {
+  const target = nextSaturdayStr();
+  const outId = Number(req.body.out_song_id);
+  const inId = Number(req.body.in_song_id);
+  const inOk = db.prepare(`
+    SELECT s.id, s.title FROM songs s JOIN users u ON u.id = s.artist_id
+    WHERE s.id = ? AND s.status = 'live' AND u.name IS NOT NULL AND u.name <> '' AND u.city IS NOT NULL AND u.city <> ''`).get(inId);
+  const outSong = db.prepare("SELECT id, title FROM songs WHERE id = ?").get(outId);
+  const outHasVotes = !!outId && db.prepare("SELECT COUNT(*) AS c FROM pick_votes WHERE pick_date = ? AND song_id = ?").get(target, outId).c > 0;
+  if (!inOk || !outSong || !outHasVotes || inId === outId) {
+    return res.redirect("/dj?msg=" + encodeURIComponent("That swap doesn't work — the song going in has to be a live song with a profiled artist, and the song coming out has to be one the panel actually voted on."));
+  }
+  const count = db.prepare("SELECT COUNT(*) AS c FROM dj_picks WHERE pick_date = ?").get(target).c;
+  if (count >= 3) return res.redirect("/dj?msg=" + encodeURIComponent("All 3 picks are already set by you for this Saturday — remove one first."));
+  db.prepare("INSERT OR IGNORE INTO dj_picks (song_id, pick_date) VALUES (?, ?)").run(inId, target);
+  db.prepare("INSERT OR IGNORE INTO pick_blocks (pick_date, song_id) VALUES (?, ?)").run(target, outId);
+  snapshotDb("dj-pick-swap");
+  return res.redirect("/dj?msg=" + encodeURIComponent(`Power pick made — quietly. "${inOk.title}" is in for Saturday; "${outSong.title}" keeps its votes but can't take a seat. The panel sees nothing but Saturday's three.`));
+});
+
+app.post("/admin/pick-blocks/remove", requireAdmin, (req, res) => {
+  const rowId = Number(req.body.block_row);
+  const row = db.prepare("SELECT b.id, s.title FROM pick_blocks b JOIN songs s ON s.id = b.song_id WHERE b.id = ?").get(rowId);
+  if (row) { db.prepare("DELETE FROM pick_blocks WHERE id = ?").run(rowId); snapshotDb("pick-block-remove"); }
+  return res.redirect("/dj?msg=" + encodeURIComponent(row ? `"${row.title}" can win a seat again.` : "That block was already gone."));
 });
 
 app.post("/admin/placements/:id/remove", requireAdmin, (req, res) => {
