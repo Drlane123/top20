@@ -416,7 +416,10 @@ header.site .hotline{position:relative;z-index:5}
 @media (max-width:560px){.crowd{height:74px;opacity:.95;bottom:110px}.crowd.cl{left:-10px}.crowd.cr{right:-10px}.wordmark .top{font-size:30px}.wordmark .twenty{font-size:34px}}
 @media (max-width:400px){.crowd{bottom:130px}}
 .wm{display:inline-block;text-align:center;position:relative;isolation:isolate}
-.site-logo{display:block;width:min(500px,92vw);height:auto;margin:0 auto}
+.logoband{position:relative;z-index:3;max-width:940px;margin:0 auto;padding:6px 6px 0}
+.site-logo{display:block;width:100%;height:auto}
+@media (min-width:901px){header.site{padding-top:16px}}
+@media (max-width:560px){.crowd{bottom:92px}.crowd.cc{height:168px}}
 @keyframes shine{from{background-position:50% 0%}to{background-position:50% 100%}}
 /* Futuristic wordmark (owner round 3): the ENTIRE mark leans right in
    italic + skew, stamped into the black surface — dark shadow pressed at
@@ -833,8 +836,8 @@ function layout(title, active, body, opts = {}) {
   <img class="crowd cc" src="/crowd-center.webp?v=7" alt="" aria-hidden="true">
   <img class="crowd cl" src="/crowd-left.webp?v=7" alt="" aria-hidden="true">
   <img class="crowd cr" src="/crowd-right.webp?v=7" alt="" aria-hidden="true">
-  <div class="wm">
-    <a href="/" aria-label="HOT TOP 20 — home"><img class="site-logo" src="/logo.png?v=1" alt="HOT TOP 20"></a>
+  <div class="logoband">
+    <a href="/" aria-label="HOT TOP 20 — home"><img class="site-logo" src="/logo.png?v=2" alt="HOT TOP 20"></a>
   </div>
   ${opts.home ? `<div class="hotline"><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — GREAT SONGS HOLD THEIR SPOT — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY SATURDAY — </span><span class="tick">— HOT 20 — TRENDING NOW — CHARTS BY CRAFT, NOT JUST CLOUT — GREAT SONGS HOLD THEIR SPOT — NEW ENTRIES HIT AT MIDNIGHT — DJ'S HOT PICKS — EVERY SATURDAY — </span></div>` : ""}
   <div class="tagline">Charts by craft, not just clout</div>
