@@ -6427,7 +6427,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   const chartName = (p) => p.level === "national" ? `National ${p.genre}`
     : p.level === "regional" ? `Regional ${p.genre} (${p.region_key})` : `Local ${p.genre} (${p.region_key})`;
   const statusOf = (p) => p.ends_on && latest && p.ends_on < latest ? "ended"
-    : latest && p.starts_on > latest ? "starts at midnight tonight" : "on the chart now";
+    : latest && p.starts_on > latest ? "starts " + p.starts_on : "on the chart now";
   const adsList = db.prepare("SELECT * FROM ads ORDER BY id DESC").all();
   let panelProfiles = [];
   try { panelProfiles = db.prepare("SELECT * FROM panel_profiles ORDER BY role, name, email").all(); } catch { panelProfiles = []; }
@@ -6456,7 +6456,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   const body = `
   <h1>Chart placements</h1>
   ${req.query.admsg ? `<p class="note" style="color:#ffd98a">${esc(req.query.admsg)}</p>` : ""}
-  <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. You can enter a placement any time — it goes onto the chart at the next 12 AM chart change, same as every entry, and holds through each midnight recalculation until it ends or you remove it (removals also land at midnight). A song's evaluation scores are never changed — this sets chart position only.</p>
+  <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. You can enter a placement any time — it goes onto the chart IMMEDIATELY, the second you place it, and holds through each midnight recalculation until it ends or you remove it (removals also take effect right away). A song's evaluation scores are never changed — this sets chart position only.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
   <div class="panel">
     <h2 style="margin-top:0">Place a song</h2>
@@ -6801,10 +6801,19 @@ app.post("/admin/placements", requireAdmin, (req, res) => {
     "SELECT id FROM chart_entries WHERE chart_date = ? AND level = ? AND genre = ? AND region_key = ? LIMIT 1"
   ).get(latestChartDate(db), level, genre, region_key);
   if (!song || !chartOk) return res.redirect("/admin/placements?msg=" + encodeURIComponent("That song or chart isn't available — the song has to be uploaded and live first."));
+  // A song can only be pinned in a chart it actually runs in — its own
+  // genre's charts and the Overall charts. Anything else could never
+  // land (the song is not in that chart's list at all), so say so up
+  // front instead of saving a placement that silently does nothing.
+  const competes = db.prepare(
+    "SELECT id FROM chart_entries WHERE chart_date = ? AND level = ? AND genre = ? AND region_key = ? AND song_id = ? LIMIT 1"
+  ).get(latestChartDate(db), level, genre, region_key, songId);
+  if (!competes) return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" doesn't run in that chart — a song only charts in its own genre and in the Overall charts. Pick one of those and the placement lands right away.`));
   const today = todayStr();
-  // Placements ride the midnight cycle like every chart entry: entered
-  // today, the song first appears on TOMORROW's chart (dealt at 12 AM).
-  const starts_on = new Date(new Date(today + "T12:00:00Z").getTime() + 86400000).toISOString().slice(0, 10);
+  // Placements land IMMEDIATELY (owner, Nov 4 2026 — this supersedes the
+  // Oct 31 midnight gate): the pin starts on today's chart and the chart
+  // is re-dealt on the spot, so the owner sees it the second he places it.
+  const starts_on = today;
   let ends_on = null;
   const days = Number(req.body.duration);
   if (days === 7 || days === 30) {
@@ -6812,7 +6821,9 @@ app.post("/admin/placements", requireAdmin, (req, res) => {
   }
   db.prepare(`INSERT INTO admin_placements (song_id, level, genre, region_key, rank, starts_on, ends_on, note)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(songId, level, genre, region_key, rank, starts_on, ends_on, String(req.body.note || "").slice(0, 200) || null);
-  return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" is set for #${rank}. It goes onto the chart tonight at 12 AM (the ${starts_on} chart) and holds until ${ends_on || "you remove it"}.`));
+  recalc(db, today);
+  snapshotDb("placement");
+  return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" is on the chart NOW at #${rank}. It holds until ${ends_on || "you remove it"}.`));
 });
 
 app.post("/admin/placements/:id/remove", requireAdmin, (req, res) => {
@@ -6821,7 +6832,9 @@ app.post("/admin/placements/:id/remove", requireAdmin, (req, res) => {
     SET removed_at = datetime('now'),
         ends_on = CASE WHEN ends_on IS NULL OR ends_on > ? THEN ? ELSE ends_on END
     WHERE id = ? AND removed_at IS NULL`).run(today, today, Number(req.params.id));
-  return res.redirect("/admin/placements?msg=" + encodeURIComponent("Placement ends tonight at 12 AM — tomorrow's chart returns that song to pure score order."));
+  recalc(db, today);
+  snapshotDb("placement-remove");
+  return res.redirect("/admin/placements?msg=" + encodeURIComponent("Placement removed — the chart is back to pure score order right now."));
 });
 
 /* --------------------------------- Outbox --------------------------------- */
