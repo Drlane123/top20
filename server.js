@@ -416,11 +416,11 @@ header.site .hotline{position:relative;z-index:5}
 @media (max-width:560px){.crowd{height:74px;opacity:.95;bottom:110px}.crowd.cl{left:-10px}.crowd.cr{right:-10px}.wordmark .top{font-size:30px}.wordmark .twenty{font-size:34px}}
 @media (max-width:400px){.crowd{bottom:130px}}
 .wm{display:inline-block;text-align:center;position:relative;isolation:isolate}
-.logoband{position:relative;z-index:3;max-width:940px;margin:0 auto 22px;padding:0 6px}
+.logoband{position:relative;z-index:3;max-width:940px;margin:-6px auto 24px;padding:0 6px}
 .site-logo{display:block;width:100%;height:auto;transform:scaleY(.94)}
-header.site{padding-top:4px}
-@media (min-width:901px){header.site{padding-top:4px}.crowd.cc{height:190px}}
-@media (max-width:560px){.logoband{padding:0}.crowd{bottom:92px}.crowd.cc{height:132px}}
+header.site{padding-top:0}
+@media (min-width:901px){header.site{padding-top:0}.crowd.cc{height:182px}}
+@media (max-width:560px){.logoband{padding:0}.crowd{bottom:92px}.crowd.cc{height:122px;bottom:2px}}
 @keyframes shine{from{background-position:50% 0%}to{background-position:50% 100%}}
 /* Futuristic wordmark (owner round 3): the ENTIRE mark leans right in
    italic + skew, stamped into the black surface — dark shadow pressed at
@@ -436,7 +436,7 @@ header.site{padding-top:4px}
    third pass at his word: a small pill, no band, no lines under it, the
    WORDS blink on and off, and it must fit a phone screen — the small
    home-screen words give way first on narrow screens). */
-.appchip{display:flex;align-items:center;justify-content:center;gap:7px;width:fit-content;max-width:calc(100% - 16px);margin:7px auto 3px;padding:6px 13px;border:none;border-radius:999px;background:linear-gradient(180deg,rgba(255,190,60,.22),rgba(255,190,60,.08));color:#fff;font:inherit;cursor:pointer;animation:chipglow 1.6s ease-in-out infinite}
+.appchip{display:flex;align-items:center;justify-content:center;gap:7px;width:fit-content;max-width:calc(100% - 16px);margin:5px auto 0;padding:6px 13px;border:none;border-radius:999px;background:linear-gradient(180deg,rgba(255,190,60,.22),rgba(255,190,60,.08));color:#fff;font:inherit;cursor:pointer;animation:chipglow 1.6s ease-in-out infinite}
 .appchip img{width:18px;height:18px;border-radius:5px;flex:0 0 auto}
 .appchip .blinkwrap{display:flex;align-items:baseline;gap:6px;animation:wordblink 1.5s ease-in-out infinite}
 .appchip-t{font-weight:900;letter-spacing:.4px;font-size:12px;color:#ffd98a;white-space:nowrap;flex:0 0 auto}
