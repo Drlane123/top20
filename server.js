@@ -818,9 +818,9 @@ function layout(title, active, body, opts = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#000000">
-<link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48x48.png?v=2">
-<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png?v=2">
-<link rel="shortcut icon" href="/favicon.ico?v=2">
+<link rel="icon" type="image/png" sizes="48x48" href="/icons/icon-48x48.png?v=3">
+<link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png?v=3">
+<link rel="shortcut icon" href="/favicon.ico?v=3">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
