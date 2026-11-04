@@ -5778,8 +5778,9 @@ app.get("/dj", (req, res) => {
     JOIN panel_profiles p ON p.id = v.profile_id
     JOIN songs s ON s.id = v.song_id AND s.status = 'live'
     JOIN users u ON u.id = s.artist_id
+    LEFT JOIN judge_scores j ON j.song_id = v.song_id
     WHERE v.pick_date = ?
-    GROUP BY v.song_id ORDER BY votes DESC, s.title ASC LIMIT 12`).all(target);
+    GROUP BY v.song_id ORDER BY votes DESC, COALESCE(j.craft_score, 0) DESC, s.id ASC LIMIT 12`).all(target);
   const ballotsCast = db.prepare("SELECT COUNT(DISTINCT profile_id) AS c FROM pick_votes WHERE pick_date = ?").get(target).c;
   // Picks the OWNER set himself for the coming Saturday (his desk,
   // below). Rows for the target Saturday only ever come from his hand —
@@ -5840,7 +5841,7 @@ app.get("/dj", (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">📊 The race so far — ${esc(prettyDate(target))}</h2>
     ${standings.length ? standings.map((s, i) => `<p class="sub" style="margin:6px 0 0">${i < 3 ? "🎧" : `<span style="display:inline-block;width:22px"></span>`} <b style="color:#fff">${i + 1}. ${esc(s.title)}</b> — ${esc(s.artist)} · <b style="color:#fff">${s.votes} vote${s.votes === 1 ? "" : "s"}</b>${i < 3 ? ` · <b style="color:#f5c542">IN THE PICKS — so far</b>` : ""}</p>${isOwner ? `<form method="post" action="/admin/pick-votes/strike" onsubmit="return confirm('Strike this song from the race? Every vote for it this week is wiped — it cannot win a pick this week unless the panel votes it back in.')" style="margin:2px 0 6px"><input type="hidden" name="song_id" value="${s.id}"><input type="hidden" name="pick_date" value="${esc(target)}"><button type="submit" style="padding:3px 12px;border-radius:6px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer;font-size:12px">✕ Strike from race</button></form>` : ""}`).join("") : `<p class="sub" style="margin:0">No ballots in yet for this Saturday. The first votes start the race.</p>`}
-    <p class="note" style="margin:10px 0 0">${ballotsCast} panel member${ballotsCast === 1 ? "" : "s"} voted so far. When Saturday's chart lands at midnight, the top 3 are the Hot Picks — no more, no less.</p>
+    <p class="note" style="margin:10px 0 0">${ballotsCast} panel member${ballotsCast === 1 ? "" : "s"} voted so far. When Saturday's chart lands at midnight, the top 3 are the Hot Picks — no more, no less. Tied on votes? The higher Craft Score takes the spot — and if that's level too, the song that's been on Top 20 longer.</p>
     ${isOwner && ballotsCast ? `<form method="post" action="/admin/pick-votes/clear" onsubmit="return confirm('Clear ALL ballots for this Saturday? The race starts over from zero.')" style="margin-top:12px"><input type="hidden" name="pick_date" value="${esc(target)}"><button type="submit" style="padding:9px 18px;border-radius:8px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">🧹 Clear all ballots for this Saturday</button></form>` : ""}
   </div>
   <div class="panel">
