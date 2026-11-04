@@ -1942,7 +1942,7 @@ app.get("/", (req, res) => {
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   const ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-  const ANN_V = 11; // announcement voice generation (Take B radio voice; v11 adds title-51 + line-51 for New Nobility "Be Cool" (Nov 4); v10 re-ships title-50 + line-50 for Lady Rackz "Breathe" (Nov 3, prior v9 push never landed); v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
+  const ANN_V = 12; // announcement voice generation (Take B radio voice; v12 re-ships title-51 + line-51 for New Nobility "Be Cool" (Nov 4, prior v11 never landed live); v11 adds title-51 + line-51 for New Nobility "Be Cool" (Nov 4); v10 re-ships title-50 + line-50 for Lady Rackz "Breathe" (Nov 3, prior v9 push never landed); v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -2522,7 +2522,7 @@ app.get("/charts", (req, res) => {
   (function(){
     var Q = ${JSON.stringify(chartQ).replace(/</g, "\\u003c")};
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 11;
+    var ANN_V = 12;
     var byId = {}; Q.forEach(function(s, i){ byId[s.id] = i; });
     var audio = document.getElementById('cAudio');
     var btn = document.getElementById('cPlayBtn');
@@ -3067,7 +3067,7 @@ app.get("/song/:id", (req, res) => {
     var a = document.querySelector('audio.profile-audio');
     if (!a) return;
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 11;
+    var ANN_V = 12;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     a._songSrc = a.getAttribute('src');
@@ -4758,7 +4758,7 @@ app.get("/artist/:id", (req, res) => {
     // what a visiting artist hears when an artist posts their profile.
     // The Stage's DJ VOICE switch is the same switch here.
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 11;
+    var ANN_V = 12;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     function countPlay(a) { if (a._counted) return; a._counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
@@ -5821,6 +5821,7 @@ app.get("/dj", (req, res) => {
     <h2 style="margin-top:0">📊 The race so far — ${esc(prettyDate(target))}</h2>
     ${standings.length ? standings.map((s, i) => `<p class="sub" style="margin:6px 0 0">${i < 3 ? "🎧" : `<span style="display:inline-block;width:22px"></span>`} <b style="color:#fff">${i + 1}. ${esc(s.title)}</b> — ${esc(s.artist)} · <b style="color:#fff">${s.votes} vote${s.votes === 1 ? "" : "s"}</b>${i < 3 ? ` · <b style="color:#f5c542">IN THE PICKS — so far</b>` : ""}</p>`).join("") : `<p class="sub" style="margin:0">No ballots in yet for this Friday. The first votes start the race.</p>`}
     <p class="note" style="margin:10px 0 0">${ballotsCast} panel member${ballotsCast === 1 ? "" : "s"} voted so far. When Friday's chart lands at midnight, the top 3 are the Hot Picks — no more, no less.</p>
+    ${isOwner && ballotsCast ? `<form method="post" action="/admin/pick-votes/clear" onsubmit="return confirm('Clear ALL ballots for this Friday? The race starts over from zero.')" style="margin-top:12px"><input type="hidden" name="pick_date" value="${esc(target)}"><button type="submit" style="padding:9px 18px;border-radius:8px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">🧹 Clear all ballots for this Friday</button></form>` : ""}
   </div>
   <div class="panel">
     <h2 style="margin-top:0">On the chart now</h2>
@@ -6929,6 +6930,18 @@ app.post("/admin/boost", requireAdmin, (req, res) => {
   const now = {};
   for (const r of db.prepare("SELECT type, count FROM engagements WHERE song_id = ?").all(songId)) now[r.type] = r.count;
   return res.redirect("/admin/placements?msg=" + encodeURIComponent(`"${song.title}" boosted: +${plays} plays, +${likes} likes. It now shows ${now.play || 0} plays and ${now.like || 0} likes.`));
+});
+
+// CLEAR FRIDAY BALLOTS (owner, Nov 4 2026): wipe every panel ballot
+// cast for a Friday so the Pick 3 race starts over from zero — the
+// owner's reset for when a ballot didn't come from the real panel.
+// Profiles themselves are untouched; the panel just votes again.
+app.post("/admin/pick-votes/clear", requireAdmin, (req, res) => {
+  const date = String(req.body.pick_date || "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return res.redirect("/dj");
+  const info = db.prepare("DELETE FROM pick_votes WHERE pick_date = ?").run(date);
+  snapshotDb("pick-votes-clear");
+  return res.redirect("/dj?msg=" + encodeURIComponent(`All ballots for ${date} are cleared — ${info.changes} vote row${info.changes === 1 ? "" : "s"} removed. The race starts over from zero; only the real panel's votes will stand.`));
 });
 
 app.post("/admin/placements/:id/remove", requireAdmin, (req, res) => {
