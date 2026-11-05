@@ -179,18 +179,45 @@ function applyAdminPlacements(db, entries, date) {
   } catch (e) { placements = []; }
   const out = entries.map((e) => ({ ...e, admin_pick: e.admin_pick || 0 }));
   if (!placements.length) return out;
+  // Apply per chart group, NOT one pin at a time in creation order:
+  // pull every pinned song OUT of its group first, then set the pins
+  // back in ASCENDING target-rank order. Setting a pin only shifts the
+  // songs at or below its spot, and every pin already set sits above
+  // that spot — so pins can never shove each other off their numbers.
+  // (The old one-at-a-time order let each later pin at or above an
+  // earlier pin's spot push that earlier pin down one more place.)
+  const byGroup = new Map();
   for (const p of placements) {
-    const isGroup = (e) => e.level === p.level && e.genre === p.genre && e.region_key === p.region_key;
+    const key = p.level + "|" + p.genre + "|" + p.region_key;
+    if (!byGroup.has(key)) byGroup.set(key, []);
+    byGroup.get(key).push(p);
+  }
+  for (const pins of byGroup.values()) {
+    const p0 = pins[0];
+    const isGroup = (e) => e.level === p0.level && e.genre === p0.genre && e.region_key === p0.region_key;
     const group = out.filter(isGroup).sort((a, b) => a.rank - b.rank);
-    const idx = group.findIndex((e) => e.song_id === p.song_id);
-    if (idx === -1) continue; // song doesn't compete in that chart
-    const [entry] = group.splice(idx, 1);
-    const target = Math.max(1, Math.min(p.rank, group.length + 1));
-    group.splice(target - 1, 0, entry);
-    group.forEach((e, i) => {
-      e.rank = i + 1;
-      if (e.song_id === p.song_id) e.admin_pick = 1;
+    if (!group.length) continue;
+    // One effective pin per song per chart — the newest row wins,
+    // matching the old behaviour when a song was pinned twice.
+    const pinBySong = new Map();
+    for (const p of pins) pinBySong.set(p.song_id, p);
+    const pinned = [];
+    const rest = [];
+    for (const e of group) (pinBySong.has(e.song_id) ? pinned : rest).push(e);
+    if (!pinned.length) continue;
+    pinned.sort((a, b) => {
+      const pa = pinBySong.get(a.song_id);
+      const pb = pinBySong.get(b.song_id);
+      return pa.rank - pb.rank || pa.id - pb.id;
     });
+    const merged = [...rest];
+    for (const e of pinned) {
+      const p = pinBySong.get(e.song_id);
+      const target = Math.max(1, Math.min(p.rank, merged.length + 1));
+      merged.splice(target - 1, 0, e);
+      e.admin_pick = 1;
+    }
+    merged.forEach((e, i) => { e.rank = i + 1; });
   }
   return out;
 }
