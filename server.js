@@ -7620,6 +7620,23 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     // it. The camera picture is cover-cropped into the frame (never
     // stretched), bottom-anchored so the feet stay on the floor.
     var s = 1 - fxBack * 0.28;
+    // Seated framing on the desk sets (owner, Nov 6): behind a desk
+    // the host sits at a natural broadcast size, anchored by the head
+    // so his chest meets the desk line — not stretched wall to wall
+    // however far back he holds the phone. The desk layer covers
+    // everything below the line. Step back reads as distance from
+    // here, and Slim narrows inside a frame that already has room
+    // around him (no more wall strips closing in at his sides).
+    // Templates draw their own host window and are not touched.
+    if (typeof vcFgKey === 'function' && vcFgKey() !== '' && (typeof vcTemplate === 'undefined' || vcTemplate === 'set')) {
+      var iw0 = hostC.width, ih0 = hostC.height;
+      if (!iw0 || !ih0) return;
+      var k = (vcFormat === 'tall' ? 0.95 : 0.78) * s;
+      var dw0 = w * k * (1 - fxSlim * 0.14), dh0 = h * k;
+      var dy0 = vcFormat === 'tall' ? -Math.round(h * 0.05) : Math.round(h * 0.13) - Math.round(dh0 * 0.10);
+      ctx.drawImage(hostC, 0, 0, iw0, ih0, x + (w - dw0) / 2, y + dy0, dw0, dh0);
+      return;
+    }
     var dw = w * s * (1 - fxSlim * 0.14), dh = h * s;
     var iw = hostC.width, ih = hostC.height;
     if (!iw || !ih) return;
@@ -7685,6 +7702,16 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       seg.onResults(function (results) {
         sizeHostC();
         if (maskC.width !== W || maskC.height !== H) { maskC.width = W; maskC.height = H; prevC.width = W; prevC.height = H; }
+        // True proportions (owner, Nov 6): the camera picture used to
+        // be STRETCHED to fill the canvas — a 4:3 camera in a 16:9
+        // frame widened the face by a third, and the figure filled
+        // the screen however far back the phone was held. Now the
+        // camera picture is FIT whole into the canvas (never cropped,
+        // never stretched), and the mask is fitted with the exact
+        // same rect so the two stay registered.
+        var pfS = Math.min(W / results.image.width, H / results.image.height);
+        var pfW = Math.round(results.image.width * pfS), pfH = Math.round(results.image.height * pfS);
+        var pfX = Math.round((W - pfW) / 2), pfY = Math.round((H - pfH) / 2);
         // Edge cleanup (owner, Nov 1): the raw mask leaves flaky scraps
         // around hair and shoulders. Blend in the previous frame's mask
         // behind this one (kills flicker and stray specks), then stamp it
@@ -7692,7 +7719,8 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         // instead of ending in a hard, scrapy line.
         maskX.save();
         maskX.globalCompositeOperation = 'copy';
-        maskX.drawImage(results.segmentationMask, 0, 0, W, H);
+        maskX.clearRect(0, 0, W, H);
+        maskX.drawImage(results.segmentationMask, pfX, pfY, pfW, pfH);
         maskX.globalCompositeOperation = 'destination-over';
         maskX.globalAlpha = 0.6;
         maskX.drawImage(prevC, 0, 0, W, H);
@@ -7715,11 +7743,11 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         if (fxSmooth > 0) {
           try { hctx.filter = (tintStr + ' blur(3px) brightness(1.04)').trim() || 'none'; } catch (e) {}
           hctx.globalAlpha = 1;
-          hctx.drawImage(results.image, 0, 0, W, H);
+          hctx.drawImage(results.image, pfX, pfY, pfW, pfH);
         }
         try { hctx.filter = (tintStr + (fxBright > 0 ? ' brightness(' + (1 + fxBright * 0.18).toFixed(3) + ')' : '')).trim() || 'none'; } catch (e) {}
         hctx.globalAlpha = fxSmooth > 0 ? 1 - 0.45 * fxSmooth : 1;
-        hctx.drawImage(results.image, 0, 0, W, H);
+        hctx.drawImage(results.image, pfX, pfY, pfW, pfH);
         hctx.globalAlpha = 1;
         try { hctx.filter = 'none'; } catch (e) {}
         hctx.restore();
