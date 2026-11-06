@@ -7273,6 +7273,14 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       <button type="button" class="fmtBtn" data-fmt="tall" onclick="setFormat('tall')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 13px;font-weight:700;cursor:pointer;margin-top:6px">📱 Phone — tall</button>
       <span style="color:#8a8f99;font-size:12.5px;display:block;margin-top:4px">Tall sets are framed so the whole HOT TOP 20 sign fits the phone screen.</span>
     </p>
+    <p style="margin:14px 0 6px"><strong>✨ Effects — shape the person to fit the room:</strong></p>
+    <div style="display:grid;gap:6px;max-width:560px">
+      <label style="color:#c9cdd6;font-size:14px">Slim — narrow the figure a touch<input type="range" id="fxSlimR" min="0" max="100" value="0" oninput="setFx('slim', this.value)" style="width:100%"></label>
+      <label style="color:#c9cdd6;font-size:14px">Step back — smaller in the room, deeper behind the desk<input type="range" id="fxBackR" min="0" max="100" value="0" oninput="setFx('back', this.value)" style="width:100%"></label>
+      <label style="color:#c9cdd6;font-size:14px">Smooth — soften the skin, keep the edge crisp<input type="range" id="fxSmoothR" min="0" max="100" value="0" oninput="setFx('smooth', this.value)" style="width:100%"></label>
+      <label style="color:#c9cdd6;font-size:14px">Brighten — lift a dim room's light on the face<input type="range" id="fxBrightR" min="0" max="100" value="0" oninput="setFx('bright', this.value)" style="width:100%"></label>
+      <p style="margin:2px 0"><button type="button" onclick="resetFx()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Reset effects</button></p>
+    </div>
     <p style="margin:12px 0 6px"><strong>Pick your set:</strong></p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${setBtns}</div>
     <p style="margin:14px 0 6px"><strong>🎡 Stage templates — the LIVE Top 20 inside your show:</strong></p>
@@ -7282,14 +7290,6 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       <button type="button" class="vtpl" data-tpl="stage-stack" onclick="pickTemplate('stage-stack')" style="background:#0a0f22;border:2px solid #232a45;border-radius:10px;padding:10px 12px;cursor:pointer;color:#e9ecf2;font-weight:700">🎡 Stacked — a ring above &amp; below me</button>
     </div>
     <p style="color:#8a8f99;font-size:12.5px;margin:6px 0 0">Both Rolodex rings carry the real Top 20 off today's chart, spinning live — not pictures. Picking any set above switches back to the sets. Your Slim / Step back / Smooth / Brighten filters work on these templates too.</p>
-    <p style="margin:14px 0 6px"><strong>✨ Effects — shape the person to fit the room:</strong></p>
-    <div style="display:grid;gap:6px;max-width:560px">
-      <label style="color:#c9cdd6;font-size:14px">Slim — narrow the figure a touch<input type="range" id="fxSlimR" min="0" max="100" value="0" oninput="setFx('slim', this.value)" style="width:100%"></label>
-      <label style="color:#c9cdd6;font-size:14px">Step back — smaller in the room, deeper behind the desk<input type="range" id="fxBackR" min="0" max="100" value="0" oninput="setFx('back', this.value)" style="width:100%"></label>
-      <label style="color:#c9cdd6;font-size:14px">Smooth — soften the skin, keep the edge crisp<input type="range" id="fxSmoothR" min="0" max="100" value="0" oninput="setFx('smooth', this.value)" style="width:100%"></label>
-      <label style="color:#c9cdd6;font-size:14px">Brighten — lift a dim room's light on the face<input type="range" id="fxBrightR" min="0" max="100" value="0" oninput="setFx('bright', this.value)" style="width:100%"></label>
-      <p style="margin:2px 0"><button type="button" onclick="resetFx()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Reset effects</button></p>
-    </div>
     <div style="display:grid;gap:8px;margin-top:14px;max-width:560px">
       <input id="vtitle" placeholder="Episode title — e.g. This Week's Uploads" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
       <input id="vname" placeholder="Name on screen — e.g. Dale · Top 20 (optional)" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
