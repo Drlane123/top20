@@ -7258,6 +7258,16 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       <button type="button" id="recBtn" onclick="startRec()" disabled style="background:#c22743;color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer;opacity:.55">● Record</button>
       <button type="button" id="stopBtn" onclick="stopRec()" disabled style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer;opacity:.55">■ Stop</button>
     </div>
+    <div id="vcRotPanel" style="display:none;margin-top:10px;border:2px solid #f2c14e;border-radius:10px;padding:12px;background:#0a0f22">
+      <p style="margin:0 0 8px"><strong>🎵 The Top 20 rotation</strong> <span id="vcRotState" style="color:#8a8f99">— loading today's chart…</span></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" id="vcPlayBtn" onclick="vcRotToggle()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">▶ Start the rotation</button>
+        <button type="button" id="vcSoundBtn" onclick="vcSoundToggle()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">🔊 Sound: ON</button>
+        <button type="button" id="vcStopBtn" onclick="vcRotStop()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">⏹ Stop</button>
+        <button type="button" onclick="vcLoadChart(true)" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">↻ Reload the chart</button>
+      </div>
+      <p style="color:#8a8f99;font-size:12.5px;margin:8px 0 0">Sound OFF mutes the songs and the DJ while you talk — the rings keep working and the songs keep changing on time, just silent. When the sound is ON, the rotation is recorded into your episode along with your voice.</p>
+    </div>
     <p style="margin:10px 0 4px"><strong>Screen:</strong><br>
       <button type="button" class="fmtBtn" data-fmt="wide" onclick="setFormat('wide')" style="background:#1a2140;color:#e9ecf2;border:2px solid #f2c14e;border-radius:8px;padding:9px 13px;font-weight:700;cursor:pointer;margin-top:6px">📺 YouTube — wide</button>
       <button type="button" class="fmtBtn" data-fmt="tall" onclick="setFormat('tall')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 13px;font-weight:700;cursor:pointer;margin-top:6px">📱 Phone — tall</button>
@@ -7272,16 +7282,6 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       <button type="button" class="vtpl" data-tpl="stage-stack" onclick="pickTemplate('stage-stack')" style="background:#0a0f22;border:2px solid #232a45;border-radius:10px;padding:10px 12px;cursor:pointer;color:#e9ecf2;font-weight:700">🎡 Stacked — a ring above &amp; below me</button>
     </div>
     <p style="color:#8a8f99;font-size:12.5px;margin:6px 0 0">Both Rolodex rings carry the real Top 20 off today's chart, spinning live — not pictures. Picking any set above switches back to the sets. Your Slim / Step back / Smooth / Brighten filters work on these templates too.</p>
-    <div id="vcRotPanel" style="display:none;margin-top:12px;border:2px solid #f2c14e;border-radius:10px;padding:12px;background:#0a0f22">
-      <p style="margin:0 0 8px"><strong>🎵 The Top 20 rotation</strong> <span id="vcRotState" style="color:#8a8f99">— loading today's chart…</span></p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button type="button" id="vcPlayBtn" onclick="vcRotToggle()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">▶ Start the rotation</button>
-        <button type="button" id="vcSoundBtn" onclick="vcSoundToggle()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">🔊 Sound: ON</button>
-        <button type="button" id="vcStopBtn" onclick="vcRotStop()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">⏹ Stop</button>
-        <button type="button" onclick="vcLoadChart(true)" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">↻ Reload the chart</button>
-      </div>
-      <p style="color:#8a8f99;font-size:12.5px;margin:8px 0 0">Sound OFF mutes the songs and the DJ while you talk — the rings keep working and the songs keep changing on time, just silent. When the sound is ON, the rotation is recorded into your episode along with your voice.</p>
-    </div>
     <p style="margin:14px 0 6px"><strong>✨ Effects — shape the person to fit the room:</strong></p>
     <div style="display:grid;gap:6px;max-width:560px">
       <label style="color:#c9cdd6;font-size:14px">Slim — narrow the figure a touch<input type="range" id="fxSlimR" min="0" max="100" value="0" oninput="setFx('slim', this.value)" style="width:100%"></label>
@@ -7385,16 +7385,23 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     var s = Math.max(w / iw, h / ih), dw = iw * s, dh = ih * s;
     ctx.drawImage(img, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
   }
+  // Backdrop draw (owner, Nov 6): the WHOLE room picture is squeezed
+  // to fit the screen edge to edge — never cropped — so the full
+  // HOT TOP 20 sign and the mics in the top corners always show,
+  // on the phone screen and the YouTube screen alike.
+  function drawFitInto(img, x, y, w, h) {
+    var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    if (!iw || !ih) return;
+    ctx.drawImage(img, x, y, w, h);
+  }
   function roundRectPath(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
   function drawChrome() {
     ctx.save();
     ctx.lineWidth = Math.max(6, H * 0.012); ctx.strokeStyle = '#c9a227'; ctx.strokeRect(6, 6, W - 12, H - 12);
     ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(233,236,242,.85)'; ctx.strokeRect(18, 18, W - 36, H - 36);
-    ctx.font = '800 ' + Math.round(H * 0.042) + 'px Arial';
-    var label = 'VIEWCAST'; var tw = ctx.measureText(label).width;
-    ctx.fillStyle = 'rgba(2,6,18,.72)'; roundRectPath(ctx, 30, 30, tw + 30, H * 0.078, 10); ctx.fill();
-    ctx.fillStyle = '#f2c14e'; ctx.fillRect(44, 30 + H * 0.024, 10, H * 0.03);
-    ctx.fillStyle = '#f2c14e'; ctx.textBaseline = 'middle'; ctx.fillText(label, 64, 30 + H * 0.039 + 2);
+    /* Owner's call (Nov 6, 2026): NO "VIEWCAST" word inside the picture.
+       The studio screen must be exactly what viewers get on YouTube /
+       Facebook — the word lives on the page, never in the frame. */
     var name = (document.getElementById('vname').value || '').trim();
     var topic = (document.getElementById('vtopic').value || '').trim();
     if (name || topic) {
@@ -7407,7 +7414,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     ctx.restore();
   }
   function drawFrameMode() {
-    drawCoverInto(backdropImg, 0, 0, W, H);
+    drawFitInto(backdropImg, 0, 0, W, H);
     var ar = (video.videoWidth && video.videoHeight) ? video.videoWidth / video.videoHeight : 16 / 9;
     var ch = H * 0.84, cw = ch * ar;
     if (cw > W * 0.88) { cw = W * 0.88; ch = cw / ar; }
@@ -7423,7 +7430,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     ctx.globalCompositeOperation = 'source-in';
     ctx.drawImage(results.image, 0, 0, W, H);
     ctx.globalCompositeOperation = 'destination-over';
-    drawCoverInto(backdropImg, 0, 0, W, H);
+    drawFitInto(backdropImg, 0, 0, W, H);
     ctx.restore();
     drawChrome();
   }
@@ -7449,10 +7456,14 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   async function startCam() {
     try {
       if (stream) { var tr = stream.getTracks(); for (var i = 0; i < tr.length; i++) tr[i].stop(); }
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: vcFormat === 'tall' ? 720 : 1280 }, height: { ideal: vcFormat === 'tall' ? 1280 : 720 } }, audio: true });
       video.srcObject = stream;
       await video.play();
-      if (video.videoWidth && video.videoHeight) { canvas.width = video.videoWidth; canvas.height = video.videoHeight; W = canvas.width; H = canvas.height; }
+      // The picked format OWNS the screen size (owner, Nov 6, 2026):
+      // the canvas stays YouTube-wide or phone-tall no matter what
+      // size the camera hands back. The old reset to the camera's own
+      // size silently wrecked the tall screen — the backdrop stopped
+      // matching it and the HOT TOP 20 sign got cropped off.
       micTrack = stream.getAudioTracks()[0] || null;
       initSeg(); pump();
       var rb = document.getElementById('recBtn'); rb.disabled = false; rb.style.opacity = 1;
@@ -7532,10 +7543,17 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     if (sa > da) { sh = ih; sw = ih * da; sx = (iw - sw) / 2; sy = 0; } else { sw = iw; sh = iw / da; sx = 0; sy = (ih - sh) / 2; }
     c.drawImage(el, sx, sy, sw, sh, x, y, w, h);
   }
+  // Backdrop onto any studio canvas: whole picture, squeezed to fit,
+  // never cropped (see drawFitInto in the solo script).
+  function drawBackdropCtx(c, img) {
+    var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    if (!iw || !ih) return;
+    c.drawImage(img, 0, 0, W, H);
+  }
   function paintHostFrame() {
     sizeHostC();
     hctx.save(); hctx.clearRect(0, 0, W, H);
-    drawCoverCtx(hctx, backdropImg, 0, 0, W, H);
+    drawBackdropCtx(hctx, backdropImg);
     var ar = (video.videoWidth && video.videoHeight) ? video.videoWidth / video.videoHeight : 16 / 9;
     var ch = H * 0.84, cw = ch * ar;
     if (cw > W * 0.88) { cw = W * 0.88; ch = cw / ar; }
@@ -7593,7 +7611,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     if (mode === 'frame') {
       ctx.drawImage(hostC, 0, 0, W, H);
     } else {
-      drawCoverCtx(ctx, backdropImg, 0, 0, W, H);
+      drawBackdropCtx(ctx, backdropImg);
       if (guestOn && layoutMode === 'split') drawCoverCtx(ctx, hostC, 30, 30, W * 0.52, H - 60);
       else { drawFeetShadow(); drawHostInto(0, 0, W, H); }
     }
@@ -7835,6 +7853,11 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     var sets = document.querySelectorAll('.vset');
     for (var j = 0; j < sets.length; j++) sets[j].style.borderColor = '#232a45';
     document.getElementById('vcRotPanel').style.display = 'block';
+    // The rotation buttons live up by the screen with the camera
+    // buttons (owner's order, Nov 6) — picking a template brings the
+    // host straight back up to the screen so nothing needs scrolling
+    // mid-show.
+    try { document.getElementById('vstage').scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (e) {}
     if (!vcChart.length) vcLoadChart(false);
     setStatus('Stage template on — the rings carry today\u2019s real Top 20. Start the rotation when you\u2019re ready.');
   }
