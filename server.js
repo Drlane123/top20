@@ -7631,7 +7631,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     if (typeof vcFgKey === 'function' && vcFgKey() !== '' && (typeof vcTemplate === 'undefined' || vcTemplate === 'set')) {
       var iw0 = hostC.width, ih0 = hostC.height;
       if (!iw0 || !ih0) return;
-      var k = (vcFormat === 'tall' ? 0.95 : 0.78) * s;
+      var k = (vcFormat === 'tall' ? 0.95 : 0.85) * s;
       var dw0 = w * k * (1 - fxSlim * 0.14), dh0 = h * k;
       var dy0 = vcFormat === 'tall' ? -Math.round(h * 0.05) : Math.round(h * 0.13) - Math.round(dh0 * 0.10);
       ctx.drawImage(hostC, 0, 0, iw0, ih0, x + (w - dw0) / 2, y + dy0, dw0, dh0);
@@ -7729,6 +7729,18 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         prevX.globalCompositeOperation = 'copy';
         prevX.drawImage(maskC, 0, 0, W, H);
         prevX.restore();
+        // Ghost gate (owner, Nov 6): the raw mask leaks a faint copy
+        // of the real room around the person. At full-frame size that
+        // leak covered the whole screen evenly and stayed invisible;
+        // at seated size it stops at the smaller picture's edge and
+        // outlines a visible BOX around him, with his arms fading at
+        // its sides. Anything under the gate is background — cut it
+        // to zero so only his solid body carries into the room.
+        try {
+          var md = maskX.getImageData(0, 0, W, H), mp = md.data;
+          for (var mi = 3; mi < mp.length; mi += 4) { if (mp[mi] < 30) mp[mi] = 0; }
+          maskX.putImageData(md, 0, 0);
+        } catch (e) {}
         hctx.save(); hctx.clearRect(0, 0, W, H);
         try { hctx.filter = 'blur(2px)'; } catch (e) {}
         hctx.drawImage(maskC, 0, 0, W, H);
