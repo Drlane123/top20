@@ -7265,6 +7265,23 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     </p>
     <p style="margin:12px 0 6px"><strong>Pick your set:</strong></p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${setBtns}</div>
+    <p style="margin:14px 0 6px"><strong>🎡 Stage templates — the LIVE Top 20 inside your show:</strong></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button type="button" class="vtpl" data-tpl="stage-below" onclick="pickTemplate('stage-below')" style="background:#0a0f22;border:2px solid #232a45;border-radius:10px;padding:10px 12px;cursor:pointer;color:#e9ecf2;font-weight:700">🎡 Rings under me</button>
+      <button type="button" class="vtpl" data-tpl="stage-split" onclick="pickTemplate('stage-split')" style="background:#0a0f22;border:2px solid #232a45;border-radius:10px;padding:10px 12px;cursor:pointer;color:#e9ecf2;font-weight:700">🎡 Rings on both sides</button>
+      <button type="button" class="vtpl" data-tpl="stage-stack" onclick="pickTemplate('stage-stack')" style="background:#0a0f22;border:2px solid #232a45;border-radius:10px;padding:10px 12px;cursor:pointer;color:#e9ecf2;font-weight:700">🎡 Stacked — a ring above &amp; below me</button>
+    </div>
+    <p style="color:#8a8f99;font-size:12.5px;margin:6px 0 0">Both Rolodex rings carry the real Top 20 off today's chart, spinning live — not pictures. Picking any set above switches back to the sets. Your Slim / Step back / Smooth / Brighten filters work on these templates too.</p>
+    <div id="vcRotPanel" style="display:none;margin-top:12px;border:2px solid #f2c14e;border-radius:10px;padding:12px;background:#0a0f22">
+      <p style="margin:0 0 8px"><strong>🎵 The Top 20 rotation</strong> <span id="vcRotState" style="color:#8a8f99">— loading today's chart…</span></p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" id="vcPlayBtn" onclick="vcRotToggle()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">▶ Start the rotation</button>
+        <button type="button" id="vcSoundBtn" onclick="vcSoundToggle()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">🔊 Sound: ON</button>
+        <button type="button" id="vcStopBtn" onclick="vcRotStop()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">⏹ Stop</button>
+        <button type="button" onclick="vcLoadChart(true)" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">↻ Reload the chart</button>
+      </div>
+      <p style="color:#8a8f99;font-size:12.5px;margin:8px 0 0">Sound OFF mutes the songs and the DJ while you talk — the rings keep working and the songs keep changing on time, just silent. When the sound is ON, the rotation is recorded into your episode along with your voice.</p>
+    </div>
     <p style="margin:14px 0 6px"><strong>✨ Effects — shape the person to fit the room:</strong></p>
     <div style="display:grid;gap:6px;max-width:560px">
       <label style="color:#c9cdd6;font-size:14px">Slim — narrow the figure a touch<input type="range" id="fxSlimR" min="0" max="100" value="0" oninput="setFx('slim', this.value)" style="width:100%"></label>
@@ -7776,6 +7793,414 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     var btns = document.querySelectorAll('.layBtn');
     for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-lay') === l) ? '#f2c14e' : '#2c3a6e';
   }
+  </script>
+  <script>
+  // ---- Viewcast Stage templates + the live Top 20 rotation ----
+  // (owner, Nov 6, 2026): TikTok-live style templates — the host in
+  // the middle, HOT TOP 20 across the top, and BOTH Rolodex rings
+  // from the home Stage working live inside the picture: the real
+  // songs off today's chart, spinning, front card on the song up
+  // front, changing on time. The host starts / pauses the rotation
+  // and can mute its sound to talk over it while the songs keep
+  // changing, exactly like the site. The Slim / Step back / Smooth /
+  // Brighten filters ride the normal host pipeline (hostC +
+  // drawHostInto), so they work on every template, these included.
+  var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
+  var ANN_V = 13; // FIFTH copy of the DJ-voice cache-bust — bump it with the other four
+  var vcTemplate = 'set';
+  var vcLogo = new Image(); vcLogo.src = '/logo.png';
+  var vcChart = [], vcCovers = {}, vcChartDate = '';
+  var vcAudio = new Audio(); vcAudio.preload = 'auto';
+  var vcElSrc = null, vcMonGain = null, vcRecGain = null;
+  var vcRot = { started: false, idx: 0, seq: 0, inSong: false, announcing: false, paused: false, wasInSong: false, soundOn: true, wired: false, stepFn: null };
+  var vcRingA = { ang: 0, dir: 1 }, vcRingB = { ang: 0, dir: -1 };
+  function vcSetState(t) { var el = document.getElementById('vcRotState'); if (el) el.textContent = t; }
+  function vcSongAt(i) { return vcChart.length ? vcChart[((i % vcChart.length) + vcChart.length) % vcChart.length] : null; }
+  function vcLoadChart(manual) {
+    fetch('/admin/viewcast/stage.json').then(function (r) { return r.json(); }).then(function (j) {
+      if (!j || !j.ok) { vcSetState('— the chart did not load; tap Reload'); return; }
+      vcChart = j.list || []; vcChartDate = j.date || '';
+      for (var i = 0; i < vcChart.length; i++) {
+        var t = vcChart[i];
+        if (!vcCovers[t.id]) { var im = new Image(); im.src = t.cover; vcCovers[t.id] = im; }
+      }
+      vcSetState('— ' + vcChart.length + ' songs loaded off the ' + vcChartDate + ' chart' + (vcRot.started ? ' (a reload applies next time you start)' : ''));
+      if (manual) setStatus('Top 20 chart loaded into the studio — ' + vcChart.length + ' songs.');
+    }).catch(function () { vcSetState('— the chart did not load; tap Reload'); });
+  }
+  function pickTemplate(t) {
+    vcTemplate = t;
+    var btns = document.querySelectorAll('.vtpl');
+    for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-tpl') === t) ? '#f2c14e' : '#232a45';
+    var sets = document.querySelectorAll('.vset');
+    for (var j = 0; j < sets.length; j++) sets[j].style.borderColor = '#232a45';
+    document.getElementById('vcRotPanel').style.display = 'block';
+    if (!vcChart.length) vcLoadChart(false);
+    setStatus('Stage template on — the rings carry today\u2019s real Top 20. Start the rotation when you\u2019re ready.');
+  }
+  var pickSetVc = pickSet;
+  pickSet = function (key) {
+    vcTemplate = 'set';
+    var btns = document.querySelectorAll('.vtpl');
+    for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = '#232a45';
+    document.getElementById('vcRotPanel').style.display = 'none';
+    pickSetVc(key);
+  };
+  // The rotation runs through the studio's own audio mix (the same
+  // mixCtx the guest interviews built): the host hears it on the
+  // phone speaker, and a recording picks it up clean next to the
+  // host's voice whenever its sound is on.
+  function vcWireAudio() {
+    try {
+      if (!mixCtx) {
+        mixCtx = new (window.AudioContext || window.webkitAudioContext)();
+        mixDest = mixCtx.createMediaStreamDestination();
+        if (stream) mixCtx.createMediaStreamSource(stream).connect(mixDest);
+      }
+      if (!vcElSrc) {
+        vcElSrc = mixCtx.createMediaElementSource(vcAudio);
+        vcMonGain = mixCtx.createGain(); vcRecGain = mixCtx.createGain();
+        vcElSrc.connect(vcMonGain); vcMonGain.connect(mixCtx.destination);
+        vcElSrc.connect(vcRecGain); vcRecGain.connect(mixDest);
+        vcRot.wired = true;
+        vcApplySound();
+      }
+      if (mixCtx.state === 'suspended') mixCtx.resume();
+    } catch (e) {}
+  }
+  function vcApplySound() {
+    var g = vcRot.soundOn ? 1 : 0;
+    if (vcMonGain) vcMonGain.gain.value = g;
+    if (vcRecGain) vcRecGain.gain.value = g;
+    var b = document.getElementById('vcSoundBtn');
+    if (b) b.textContent = vcRot.soundOn ? '🔊 Sound: ON' : '🔇 Sound: OFF — I\u2019m talking';
+  }
+  function vcSoundToggle() { vcRot.soundOn = !vcRot.soundOn; vcApplySound(); if (mixCtx && mixCtx.state === 'suspended') mixCtx.resume(); vcSyncState(); }
+  var recAudioTrackVc = recAudioTrack;
+  recAudioTrack = function () {
+    if (!vcRot.wired || !mixCtx || !mixDest) return recAudioTrackVc();
+    try {
+      if (guestOn && guestStream && guestStream.getAudioTracks().length && mixDest._wiredFor !== guestStream.id) {
+        mixCtx.createMediaStreamSource(guestStream).connect(mixDest);
+        mixDest._wiredFor = guestStream.id;
+      }
+      if (mixCtx.state === 'suspended') mixCtx.resume();
+      return mixDest.stream.getAudioTracks()[0];
+    } catch (e) { return recAudioTrackVc(); }
+  };
+  // The rotation engine mirrors the home Stage exactly: the recorded
+  // DJ calls the song (rank + title + days + closer, one narrator,
+  // a missing middle clip drops out, a missing call means the song
+  // plays bare), a beat of quiet, then the song — demos turned down.
+  // Muting never touches the engine: gains go to zero and the songs
+  // keep changing on time, silent, while the host talks.
+  function vcRotToggle() {
+    if (!vcRot.started) {
+      if (!vcChart.length) { vcSetState('— still loading the chart; one second…'); vcLoadChart(false); return; }
+      vcWireAudio();
+      vcRot.started = true; vcRot.paused = false; vcRot.idx = 0;
+      vcAnnounceThenPlay(vcSongAt(0));
+    } else if (!vcRot.paused) {
+      vcRot.seq++; vcRot.paused = true; vcRot.wasInSong = vcRot.inSong;
+      vcRot.announcing = false; vcRot.stepFn = null;
+      try { vcAudio.pause(); } catch (e) {}
+    } else {
+      vcWireAudio();
+      vcRot.paused = false;
+      if (vcRot.wasInSong && vcRot.inSong) { var p = vcAudio.play(); if (p && p.catch) p.catch(function () {}); }
+      else vcAnnounceThenPlay(vcSongAt(vcRot.idx));
+    }
+    vcSyncPlayBtn(); vcSyncState();
+  }
+  function vcRotStop() {
+    vcRot.seq++; vcRot.started = false; vcRot.paused = false; vcRot.inSong = false; vcRot.announcing = false; vcRot.stepFn = null;
+    try { vcAudio.pause(); vcAudio.removeAttribute('src'); vcAudio.load(); } catch (e) {}
+    vcSetState('— stopped. The rings are free-spinning.');
+    vcSyncPlayBtn();
+  }
+  function vcSyncPlayBtn() {
+    var b = document.getElementById('vcPlayBtn'); if (!b) return;
+    b.textContent = !vcRot.started ? '▶ Start the rotation' : (vcRot.paused ? '▶ Keep it rolling' : '⏸ Pause the rotation');
+  }
+  function vcNextSong() {
+    if (!vcRot.started || !vcChart.length) return;
+    vcRot.idx = (vcRot.idx + 1) % vcChart.length;
+    vcAnnounceThenPlay(vcSongAt(vcRot.idx));
+  }
+  function vcAnnounceThenPlay(t) {
+    if (!t) return;
+    var my = ++vcRot.seq;
+    vcRot.inSong = false; vcRot.announcing = true;
+    var daysKey = t.fresh ? 'days-fresh' : (t.days === 1 ? 'days-one' : (t.days >= 2 && t.days <= 100 ? 'days-' + t.days : null));
+    var keys = daysKey ? ['rank-' + t.rank, 'title-' + t.id, daysKey, 'closer'] : ['rank-' + t.rank, 'title-' + t.id, 'closer'];
+    keys = keys.filter(function (k) { return k.indexOf('title-') !== 0 || ANN_KEYS.indexOf(k) !== -1; });
+    if (keys.some(function (k) { return ANN_KEYS.indexOf(k) === -1; })) keys = [];
+    var i = 0, fired = false;
+    var hard = setTimeout(function () { if (my === vcRot.seq) finish(); }, 12000);
+    function finish() {
+      if (fired) return; fired = true; clearTimeout(hard);
+      if (my !== vcRot.seq) return;
+      setTimeout(function () {
+        if (my !== vcRot.seq) return;
+        vcRot.announcing = false; vcRot.stepFn = null;
+        vcAudio.ontimeupdate = null;
+        vcAudio.volume = t.demo ? 0.3 : 1;
+        vcAudio.src = t.audio;
+        vcRot.inSong = true;
+        var p = vcAudio.play();
+        if (p && p.catch) p.catch(function () {
+          if (my === vcRot.seq) { vcRot.paused = true; vcRot.wasInSong = true; vcSyncPlayBtn(); vcSetState('— your phone held the sound back; tap ▶ Keep it rolling'); }
+        });
+        vcSyncState();
+      }, 450);
+    }
+    function step() {
+      if (fired || my !== vcRot.seq) return;
+      if (i >= keys.length) { finish(); return; }
+      vcAudio.ontimeupdate = null; vcAudio.volume = 1;
+      var key = keys[i]; i++;
+      if (i >= keys.length) {
+        vcAudio.ontimeupdate = function () {
+          var d = vcAudio.duration || 0, c = vcAudio.currentTime || 0;
+          if (d > 0 && d - c < 0.35) vcAudio.volume = Math.max(0, (d - c) / 0.35);
+        };
+      }
+      vcAudio.src = '/ann/' + key + '.mp3?v=' + ANN_V;
+      var p = vcAudio.play(); if (p && p.catch) p.catch(function () { step(); });
+    }
+    vcRot.stepFn = step;
+    step();
+    vcSyncState();
+  }
+  vcAudio.onended = function () {
+    if (vcRot.announcing && vcRot.stepFn) vcRot.stepFn();
+    else if (vcRot.inSong && vcRot.started && !vcRot.paused) vcNextSong();
+  };
+  vcAudio.onerror = function () {
+    if (vcRot.announcing && vcRot.stepFn) vcRot.stepFn();
+    else if (vcRot.inSong && vcRot.started && !vcRot.paused) vcNextSong();
+  };
+  function vcSyncState() {
+    if (!vcRot.started) return;
+    var t = vcSongAt(vcRot.idx); if (!t) return;
+    if (vcRot.paused) vcSetState('— ⏸ paused on #' + t.rank + ' ' + t.title);
+    else if (vcRot.announcing) vcSetState('— 🎙 the DJ is calling #' + t.rank + ' ' + t.title + ' · ' + t.artist);
+    else vcSetState('— ▶ playing #' + t.rank + ' ' + t.title + ' · ' + t.artist + (vcRot.soundOn ? '' : ' · 🔇 sound off'));
+  }
+  // ---- the Rolodex rings, drawn live on the canvas ----
+  function vcEllip(s, maxw) {
+    s = String(s);
+    if (ctx.measureText(s).width <= maxw) return s;
+    while (s.length > 3 && ctx.measureText(s + '…').width > maxw) s = s.slice(0, -1);
+    return s + '…';
+  }
+  function vcText(s, x, y, size, color, weight, align, maxw) {
+    ctx.save();
+    ctx.font = (weight || 700) + ' ' + Math.round(size) + 'px Arial';
+    ctx.fillStyle = color; ctx.textAlign = align || 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(maxw ? vcEllip(s, maxw) : String(s), x, y);
+    ctx.restore();
+  }
+  function vcFocusLocal(from) {
+    if (!vcChart.length || !vcRot.started || vcRot.paused) return -1;
+    var cur = vcRot.idx, nxt = (vcRot.idx + 1) % vcChart.length;
+    if (cur >= from && cur < from + 10) return cur - from;
+    if (vcRot.inSong && nxt >= from && nxt < from + 10) {
+      var d = vcAudio.duration || 0, c = vcAudio.currentTime || 0;
+      if (d > 0 && d - c < 6) return nxt - from;
+    }
+    return -1;
+  }
+  function vcUpNext(from) {
+    if (!vcChart.length || !vcRot.started || vcRot.paused) return false;
+    var cur = vcRot.idx, nxt = (vcRot.idx + 1) % vcChart.length;
+    if (vcRot.announcing) return cur >= from && cur < from + 10;
+    if (vcRot.inSong) { var d = vcAudio.duration || 0, c = vcAudio.currentTime || 0; return d > 0 && d - c < 6 && nxt >= from && nxt < from + 10; }
+    return false;
+  }
+  function vcDrawRing(cx, cy, rw, cardW, songs, ring, from, label) {
+    var n = songs.length; if (!n) return;
+    var stepA = Math.PI * 2 / n;
+    var focus = vcFocusLocal(from);
+    if (focus >= 0) {
+      var want = -focus * stepA;
+      var dA = ((want - ring.ang) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+      ring.ang += dA * 0.055;
+    } else {
+      ring.ang += ring.dir * 0.0016;
+    }
+    ctx.save();
+    ctx.font = '800 ' + Math.round(cardW * 0.30) + 'px Arial';
+    var lw = ctx.measureText(label).width + 30;
+    var lx = cx - rw, ly = cy - cardW * 0.92;
+    ctx.fillStyle = '#2b5cff'; roundRectPath(ctx, lx, ly - cardW * 0.20, lw, cardW * 0.40, cardW * 0.20); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(label, lx + 15, ly + 1);
+    ctx.restore();
+    if (vcUpNext(from)) {
+      ctx.save();
+      ctx.font = '800 ' + Math.round(cardW * 0.24) + 'px Arial';
+      var uw = ctx.measureText('UP NEXT').width + 24;
+      var ux = cx + rw - uw, uy = ly;
+      if (ux < lx + lw + 6) { ux = lx; uy = ly + cardW * 0.50; }
+      ctx.fillStyle = '#f2c14e'; roundRectPath(ctx, ux, uy - cardW * 0.20, uw, cardW * 0.40, cardW * 0.20); ctx.fill();
+      ctx.fillStyle = '#131313'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('UP NEXT', ux + uw / 2, uy + 1);
+      ctx.restore();
+    }
+    var order = [];
+    for (var i = 0; i < n; i++) order.push(i);
+    order.sort(function (a, b) { return Math.cos(ring.ang + a * stepA) - Math.cos(ring.ang + b * stepA); });
+    var frontI = 0, frontAbs = 1e9;
+    for (var oi = 0; oi < n; oi++) {
+      var i2 = order[oi];
+      var a = ring.ang + i2 * stepA;
+      var z = Math.cos(a);
+      var wrapped = Math.atan2(Math.sin(a), Math.cos(a));
+      if (Math.abs(wrapped) < frontAbs) { frontAbs = Math.abs(wrapped); frontI = i2; }
+      var sc = 0.45 + 0.55 * ((z + 1) / 2);
+      var cw = cardW * sc, chh = cw * 1.18;
+      var x = cx + Math.sin(a) * rw, y = cy;
+      var al = 0.30 + 0.70 * ((z + 1) / 2);
+      var t = songs[i2];
+      var img = vcCovers[t.id];
+      ctx.save();
+      ctx.globalAlpha = al;
+      roundRectPath(ctx, x - cw / 2, y - chh / 2, cw, chh, Math.max(4, cw * 0.07)); ctx.clip();
+      if (img && img.complete && img.naturalWidth) {
+        var iw = img.naturalWidth, ih = img.naturalHeight, s2 = Math.max(cw / iw, chh / ih);
+        ctx.drawImage(img, x - iw * s2 / 2, y - ih * s2 / 2, iw * s2, ih * s2);
+      } else { ctx.fillStyle = '#1a2140'; ctx.fillRect(x - cw / 2, y - chh / 2, cw, chh); }
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = al;
+      ctx.lineWidth = Math.max(1.5, cw * 0.03);
+      ctx.strokeStyle = 'rgba(233,236,242,.35)';
+      roundRectPath(ctx, x - cw / 2, y - chh / 2, cw, chh, Math.max(4, cw * 0.07)); ctx.stroke();
+      ctx.restore();
+      if (sc > 0.55) vcText('#' + t.rank, x, y + chh / 2 + cardW * 0.14, cardW * 0.16, 'rgba(233,236,242,' + (0.35 + 0.65 * ((z + 1) / 2)).toFixed(2) + ')', 800, 'center');
+    }
+    var ft = songs[frontI];
+    var fa = ring.ang + frontI * stepA;
+    var fsc = 0.45 + 0.55 * ((Math.cos(fa) + 1) / 2);
+    var fcw = cardW * fsc, fch = fcw * 1.18;
+    var fx = cx + Math.sin(fa) * rw;
+    ctx.save();
+    ctx.lineWidth = Math.max(2.5, fcw * 0.035); ctx.strokeStyle = '#f2c14e';
+    roundRectPath(ctx, fx - fcw / 2, cy - fch / 2, fcw, fch, Math.max(4, fcw * 0.07)); ctx.stroke();
+    ctx.restore();
+    var playing = vcRot.started && vcSongAt(vcRot.idx) === ft;
+    var capY = cy + fch / 2 + cardW * 0.36;
+    vcText((playing ? '▶ #' : '#') + ft.rank + ' ' + ft.title, cx, capY, cardW * 0.235, playing ? '#f2c14e' : '#ffffff', 800, 'center', rw * 2.1);
+    vcText(ft.artist, cx, capY + cardW * 0.28, cardW * 0.185, '#a7abb5', 600, 'center', rw * 2.1);
+  }
+  function vcDrawHostWindow(x, y, w, h) {
+    ctx.save();
+    var g = ctx.createLinearGradient(x, y, x, y + h);
+    g.addColorStop(0, '#101736'); g.addColorStop(1, '#060a20');
+    roundRectPath(ctx, x, y, w, h, 14); ctx.fillStyle = g; ctx.fill();
+    ctx.restore();
+    if (mode === 'frame') {
+      ctx.save(); roundRectPath(ctx, x, y, w, h, 14); ctx.clip();
+      drawCoverCtx(ctx, video, x, y, w, h);
+      ctx.restore();
+    } else {
+      ctx.save();
+      var gy = y + h * 0.97, R = w * 0.30;
+      var grd = ctx.createRadialGradient(x + w / 2, gy, 6, x + w / 2, gy, R);
+      grd.addColorStop(0, 'rgba(0,0,0,.4)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.translate(x + w / 2, gy); ctx.scale(1, 0.12); ctx.translate(-(x + w / 2), -gy);
+      ctx.fillStyle = grd; ctx.fillRect(x + w / 2 - R, gy - R, R * 2, R * 2);
+      ctx.restore();
+      drawHostInto(x, y, w, h);
+    }
+    ctx.save();
+    ctx.lineWidth = 4; ctx.strokeStyle = '#c9a227';
+    roundRectPath(ctx, x, y, w, h, 14); ctx.stroke();
+    ctx.restore();
+    var name = (document.getElementById('vname').value || '').trim();
+    var topic = (document.getElementById('vtopic').value || '').trim();
+    if (name || topic) {
+      var bh = h * 0.17, by = y + h - bh - 10, bw = Math.min(w * 0.72, w - 20);
+      ctx.save();
+      ctx.fillStyle = 'rgba(2,6,18,.78)'; roundRectPath(ctx, x + 10, by, bw, bh, 8); ctx.fill();
+      ctx.fillStyle = '#f2c14e'; ctx.fillRect(x + 10, by, 6, bh);
+      ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      if (name) { ctx.fillStyle = '#fff'; ctx.font = '800 ' + Math.round(bh * 0.34) + 'px Arial'; ctx.fillText(vcEllip(name, bw - 30), x + 26, by + bh * (topic ? 0.32 : 0.5)); }
+      if (topic) { ctx.fillStyle = '#c9cdd6'; ctx.font = Math.round(bh * 0.26) + 'px Arial'; ctx.fillText(vcEllip(topic, bw - 30), x + 26, by + bh * (name ? 0.72 : 0.5)); }
+      ctx.restore();
+    }
+  }
+  function vcDrawLogoHeader(maxH) {
+    if (vcLogo.complete && vcLogo.naturalWidth) {
+      var lw = Math.min(W * 0.66, maxH * (vcLogo.naturalWidth / vcLogo.naturalHeight));
+      var lh = lw * (vcLogo.naturalHeight / vcLogo.naturalWidth);
+      ctx.drawImage(vcLogo, (W - lw) / 2, Math.max(8, (maxH - lh) / 2 + 4), lw, lh);
+    } else {
+      vcText('HOT TOP 20', W / 2, maxH / 2, maxH * 0.5, '#f2c14e', 900, 'center');
+    }
+  }
+  function vcDrawNowPlaying(y) {
+    var t = vcSongAt(vcRot.idx);
+    if (vcRot.started && t) {
+      var label = vcRot.announcing ? '🎙 DJ ANNOUNCING: #' + t.rank + ' — ' + t.title + ' · ' + t.artist
+        : '🎵 NOW PLAYING: #' + t.rank + ' — ' + t.title + ' · ' + t.artist;
+      vcText(label, W / 2, y, Math.min(W, H) * 0.030, '#f2c14e', 800, 'center', W * 0.94);
+      if (vcRot.inSong) {
+        var d = vcAudio.duration || 0, c = vcAudio.currentTime || 0;
+        if (d > 0) {
+          var bw = W * 0.5, bx = (W - bw) / 2, byy = y + Math.min(W, H) * 0.028;
+          ctx.save();
+          ctx.fillStyle = 'rgba(233,236,242,.18)'; roundRectPath(ctx, bx, byy, bw, 5, 3); ctx.fill();
+          ctx.fillStyle = '#f2c14e'; roundRectPath(ctx, bx, byy, bw * Math.min(1, c / d), 5, 3); ctx.fill();
+          ctx.restore();
+        }
+      }
+    } else {
+      vcText(vcChart.length ? '🎵 The rotation is loaded — hit ▶ Start the rotation when you\u2019re ready' : '🎵 Loading today\u2019s Top 20…', W / 2, y, Math.min(W, H) * 0.028, '#a7abb5', 700, 'center', W * 0.94);
+    }
+  }
+  var vcTickN = 0;
+  function vcDrawTemplate() {
+    ctx.save(); ctx.clearRect(0, 0, W, H);
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#0a1030'); g.addColorStop(0.55, '#060b24'); g.addColorStop(1, '#04061a');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+    var A = vcChart.slice(0, 10), B = vcChart.slice(10, 20);
+    var tall = H > W;
+    if (vcTemplate === 'stage-stack') {
+      vcDrawLogoHeader(H * 0.075);
+      if (A.length) vcDrawRing(W / 2, H * 0.225, W * 0.335, Math.min(W * 0.15, H * 0.145), A, vcRingA, 0, 'TOP 10');
+      vcDrawHostWindow(W * (tall ? 0.20 : 0.33), H * (tall ? 0.375 : 0.415), W * (tall ? 0.60 : 0.34), H * (tall ? 0.27 : 0.235));
+      if (B.length) vcDrawRing(W / 2, H * 0.775, W * 0.335, Math.min(W * 0.15, H * 0.145), B, vcRingB, 10, '11 – 20');
+      vcDrawNowPlaying(H * 0.955);
+    } else if (vcTemplate === 'stage-split' && !tall) {
+      vcDrawLogoHeader(H * 0.11);
+      if (A.length) vcDrawRing(W * 0.165, H * 0.54, W * 0.105, W * 0.09, A, vcRingA, 0, 'TOP 10');
+      if (B.length) vcDrawRing(W * 0.835, H * 0.54, W * 0.105, W * 0.09, B, vcRingB, 10, '11 – 20');
+      vcDrawHostWindow(W * 0.315, H * 0.17, W * 0.37, H * 0.66);
+      vcDrawNowPlaying(H * 0.925);
+    } else {
+      vcDrawLogoHeader(H * 0.105);
+      vcDrawHostWindow(W * (tall ? 0.155 : 0.30), H * 0.125, W * (tall ? 0.69 : 0.40), H * (tall ? 0.335 : 0.40));
+      if (A.length) vcDrawRing(W * 0.255, H * (tall ? 0.65 : 0.70), W * 0.225, W * (tall ? 0.132 : 0.098), A, vcRingA, 0, 'TOP 10');
+      if (B.length) vcDrawRing(W * 0.745, H * (tall ? 0.65 : 0.70), W * 0.225, W * (tall ? 0.132 : 0.098), B, vcRingB, 10, '11 – 20');
+      vcDrawNowPlaying(H * (tall ? 0.90 : 0.945));
+    }
+    ctx.save();
+    ctx.lineWidth = Math.max(5, H * 0.010); ctx.strokeStyle = '#c9a227'; ctx.strokeRect(5, 5, W - 10, H - 10);
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(233,236,242,.85)'; ctx.strokeRect(16, 16, W - 32, H - 32);
+    ctx.restore();
+    if (!vcChart.length) vcText('The Top 20 chart is loading…', W / 2, H * 0.55, Math.min(W, H) * 0.032, '#f2c14e', 800, 'center', W * 0.9);
+    vcTickN++; if (vcTickN % 30 === 0) vcSyncState();
+  }
+  var composeFrameVc = composeFrame;
+  composeFrame = function () {
+    if (vcTemplate === 'set' || (guestOn && layoutMode === 'split')) { composeFrameVc(); return; }
+    vcDrawTemplate();
+    drawGuestWin();
+  };
   </script>`));
 });
 
@@ -7820,6 +8245,51 @@ app.post("/admin/viewcast/delete", requireAdmin, (req, res) => {
   }
   res.redirect("/admin/viewcast");
 });
+
+/* ----- Viewcast Stage templates: the LIVE Top 20 inside the studio -----
+   The Stage templates run the real National Overall Top 20 — the same
+   list the home Stage plays (stagePlaylist). Song audio and cover art
+   are proxied through these routes so the studio canvas and its
+   WebAudio recording mix stay same-origin clean: a bucket redirect
+   would taint the canvas (killing captureStream) and silence the
+   audio graph for any song whose file lives only in the bucket. */
+app.get("/admin/viewcast/stage.json", requireAdmin, (req, res) => {
+  const date = latestChartDate(db);
+  const list = date ? stagePlaylist(OVERALL, date) : [];
+  res.set("Cache-Control", "no-store");
+  res.json({
+    ok: true, date,
+    list: list.map((t) => ({
+      id: t.id, rank: t.rank, title: t.title, artist: t.artist, craft: t.craft,
+      days: t.days, fresh: t.fresh, pick: t.pick, demo: t.demo,
+      cover: "/admin/viewcast/cover/" + t.id,
+      audio: "/admin/viewcast/track/" + t.id,
+    })),
+  });
+});
+async function viewcastMedia(req, res, field) {
+  const row = db.prepare("SELECT audio_path, cover_path FROM songs WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).end();
+  const stored = String((field === "audio" ? row.audio_path : row.cover_path) || "");
+  const rel = stored.replace(/^\/+/, "");
+  if (!rel || rel.includes("..")) return res.status(404).end();
+  const local = path.join(PUBLIC_DIR, rel);
+  if (fs.existsSync(local)) return res.sendFile(local);
+  if (rel.startsWith("uploads/") && storage.configured()) {
+    try {
+      const buf = await storage.getObject(rel);
+      if (buf) {
+        const ext = (rel.split(".").pop() || "").toLowerCase();
+        const types = { mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav", flac: "audio/flac", jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", webp: "image/webp" };
+        res.set("Cache-Control", "no-store");
+        return res.type(types[ext] || "application/octet-stream").send(buf);
+      }
+    } catch (e) { /* fall through to 404 */ }
+  }
+  return res.status(404).end();
+}
+app.get("/admin/viewcast/track/:id", requireAdmin, (req, res) => viewcastMedia(req, res, "audio"));
+app.get("/admin/viewcast/cover/:id", requireAdmin, (req, res) => viewcastMedia(req, res, "cover"));
 
 app.get("/viewcast", (req, res) => {
   const eps = db.prepare("SELECT * FROM viewcast_episodes WHERE status = 'live' ORDER BY id DESC").all();
