@@ -7616,9 +7616,29 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       else { drawFeetShadow(); drawHostInto(0, 0, W, H); }
     }
     ctx.restore();
+    if (vcFgReady) ctx.drawImage(vcFgImg, 0, 0, W, H);
     drawGuestWin();
     drawChrome();
   }
+  // Foreground layer — RADIO BOOTH ONLY (owner, Nov 6, 2026): the
+  // mixing console from the same photograph, drawn OVER the host so
+  // he sits BEHIND the board, in front of the wall and under the
+  // mics. Every other set keeps the Nov 1 rule: nothing in front.
+  var vcFgImg = new Image(), vcFgReady = false, vcFgSrc = '';
+  function vcLoadFg() {
+    var want = (currentSet === 'radio') ? ('/viewcast/foreground/' + (vcFormat === 'tall' ? 'radio-tall' : 'radio') + '.webp') : '';
+    if (want === vcFgSrc) return;
+    vcFgSrc = want; vcFgReady = false;
+    if (!want) return;
+    var im = new Image();
+    im.onload = function () { if (vcFgSrc === want) { vcFgImg = im; vcFgReady = true; } };
+    im.src = want;
+  }
+  var pickSetVcFg = pickSet;
+  pickSet = function (k) { pickSetVcFg(k); vcLoadFg(); };
+  var setFormatVcFg = setFormat;
+  setFormat = function (f) { setFormatVcFg(f); vcLoadFg(); };
+  vcLoadFg();
   var VC_TINT = {
     graffiti: 'brightness(.97) saturate(1.06)', neon: 'brightness(.97) saturate(1.05)',
     led: 'brightness(.96) saturate(1.02)', rnb: 'brightness(.98) saturate(1.05)',
