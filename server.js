@@ -7327,7 +7327,27 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   var video = document.getElementById('vcam'), canvas = document.getElementById('vstage'), ctx = canvas.getContext('2d');
   var W = 1280, H = 720, stream = null, facing = 'user', micTrack = null;
   var seg = null, segBusy = false, mode = 'virtual';
-  var currentSet = 'graffiti', backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/graffiti.jpg';
+  var VC_BUILD = '${BUILD}';
+  var currentSet = 'graffiti', backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/graffiti.jpg?v=' + VC_BUILD;
+  // Self-heal (owner, Nov 6): if a new build ships while this studio
+  // page sits open on the phone, refresh ONCE — an open page must
+  // never keep serving an old room or old controls. Never while a
+  // take is recording; it checks again in 45 seconds.
+  (function () {
+    if (VC_BUILD === 'dev') return;
+    function chk() {
+      fetch('/version', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+        if (!j || !j.build || j.build === VC_BUILD) return;
+        try { if (typeof recorder !== 'undefined' && recorder && recorder.state === 'recording') return; } catch (e) {}
+        try {
+          if (sessionStorage.getItem('vcHealed') === j.build) return;
+          sessionStorage.setItem('vcHealed', j.build);
+        } catch (e) {}
+        location.reload();
+      }).catch(function () {});
+    }
+    setTimeout(chk, 4000); setInterval(chk, 45000);
+  })();
   // Screen format (owner, Nov 1): wide = YouTube 16:9, tall = phone
   // 9:16. Tall sets are framed so the whole HOT TOP 20 sign fits the
   // phone screen; a set without a tall version falls back to its wide
@@ -7336,8 +7356,8 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   function loadBackdrop() {
     var img = new Image();
     img.onload = function () { backdropImg = img; };
-    img.onerror = function () { var f = new Image(); f.onload = function () { backdropImg = f; }; f.src = '/viewcast/backdrop/' + currentSet + '.jpg'; };
-    img.src = (vcFormat === 'tall' ? '/viewcast/backdrop-tall/' : '/viewcast/backdrop/') + currentSet + '.jpg';
+    img.onerror = function () { var f = new Image(); f.onload = function () { backdropImg = f; }; f.src = '/viewcast/backdrop/' + currentSet + '.jpg?v=' + VC_BUILD; };
+    img.src = (vcFormat === 'tall' ? '/viewcast/backdrop-tall/' : '/viewcast/backdrop/') + currentSet + '.jpg?v=' + VC_BUILD;
   }
   function setFormat(f) {
     vcFormat = f;
@@ -7620,13 +7640,21 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     drawGuestWin();
     drawChrome();
   }
-  // Foreground layer — RADIO BOOTH ONLY (owner, Nov 6, 2026): the
-  // mixing console from the same photograph, drawn OVER the host so
-  // he sits BEHIND the board, in front of the wall and under the
-  // mics. Every other set keeps the Nov 1 rule: nothing in front.
+  // Foreground layer — the DESK sets (owner, Nov 6, 2026): the desk
+  // or console band from the same photograph, drawn OVER the host
+  // so he sits BEHIND it, chest-up, in front of the wall and under
+  // the mics. Radio Booth (wide + tall) and the two hip-hop desk
+  // sets, Purple Hip-Hop and Hip-Hop Neon (wide). Sets without a
+  // desk keep the rule: nothing in front of the person.
   var vcFgImg = new Image(), vcFgReady = false, vcFgSrc = '';
+  function vcFgKey() {
+    if (currentSet === 'radio') return vcFormat === 'tall' ? 'radio-tall' : 'radio';
+    if (vcFormat !== 'tall' && (currentSet === 'graffiti' || currentSet === 'neon')) return currentSet;
+    return '';
+  }
   function vcLoadFg() {
-    var want = (currentSet === 'radio') ? ('/viewcast/foreground/' + (vcFormat === 'tall' ? 'radio-tall' : 'radio') + '.webp') : '';
+    var k = vcFgKey();
+    var want = k ? ('/viewcast/foreground/' + k + '.webp?v=' + VC_BUILD) : '';
     if (want === vcFgSrc) return;
     vcFgSrc = want; vcFgReady = false;
     if (!want) return;
@@ -7883,11 +7911,16 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   }
   var pickSetVc = pickSet;
   pickSet = function (key) {
+    var wasTemplate = vcTemplate !== 'set';
     vcTemplate = 'set';
     var btns = document.querySelectorAll('.vtpl');
     for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = '#232a45';
     document.getElementById('vcRotPanel').style.display = 'none';
     pickSetVc(key);
+    // Coming off a template, the line under the screen used to keep
+    // saying "Stage template on" while a set was showing (owner's
+    // screenshot, Nov 6) — say what's actually on.
+    if (wasTemplate) setStatus('Set on — you\u2019re in the room. Turn the camera on and record when you\u2019re ready.');
   };
   // The rotation runs through the studio's own audio mix (the same
   // mixCtx the guest interviews built): the host hears it on the
