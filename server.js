@@ -8194,9 +8194,9 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     var tall = H > W;
     if (vcTemplate === 'stage-stack') {
       vcDrawLogoHeader(H * 0.075);
-      if (A.length) vcDrawRing(W / 2, H * 0.225, W * 0.335, Math.min(W * 0.15, H * 0.145), A, vcRingA, 0, 'TOP 10');
+      if (A.length) vcDrawRing(W / 2, H * 0.225, W * 0.335, Math.min(W * 0.165, H * 0.145), A, vcRingA, 0, 'TOP 10');
       vcDrawHostWindow(W * (tall ? 0.20 : 0.33), H * (tall ? 0.375 : 0.415), W * (tall ? 0.60 : 0.34), H * (tall ? 0.27 : 0.235));
-      if (B.length) vcDrawRing(W / 2, H * 0.775, W * 0.335, Math.min(W * 0.15, H * 0.145), B, vcRingB, 10, '11 – 20');
+      if (B.length) vcDrawRing(W / 2, H * 0.775, W * 0.335, Math.min(W * 0.165, H * 0.145), B, vcRingB, 10, '11 – 20');
       vcDrawNowPlaying(H * 0.955);
     } else if (vcTemplate === 'stage-split' && !tall) {
       vcDrawLogoHeader(H * 0.11);
@@ -8204,12 +8204,22 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       if (B.length) vcDrawRing(W * 0.835, H * 0.54, W * 0.105, W * 0.09, B, vcRingB, 10, '11 – 20');
       vcDrawHostWindow(W * 0.315, H * 0.17, W * 0.37, H * 0.66);
       vcDrawNowPlaying(H * 0.925);
+    } else if (tall) {
+      // Phone screens (owner, Nov 6): the two rings sit ABOVE EACH
+      // OTHER down the screen — TOP 10 over 11–20, each full width,
+      // the same stack as the home Stage — never squeezed side by
+      // side into one little strip.
+      vcDrawLogoHeader(H * 0.085);
+      vcDrawHostWindow(W * 0.155, H * 0.095, W * 0.69, H * 0.29);
+      if (A.length) vcDrawRing(W / 2, H * 0.50, W * 0.335, W * 0.172, A, vcRingA, 0, 'TOP 10');
+      if (B.length) vcDrawRing(W / 2, H * 0.752, W * 0.335, W * 0.172, B, vcRingB, 10, '11 – 20');
+      vcDrawNowPlaying(H * 0.945);
     } else {
       vcDrawLogoHeader(H * 0.105);
-      vcDrawHostWindow(W * (tall ? 0.155 : 0.30), H * 0.125, W * (tall ? 0.69 : 0.40), H * (tall ? 0.335 : 0.40));
-      if (A.length) vcDrawRing(W * 0.255, H * (tall ? 0.65 : 0.70), W * 0.225, W * (tall ? 0.132 : 0.098), A, vcRingA, 0, 'TOP 10');
-      if (B.length) vcDrawRing(W * 0.745, H * (tall ? 0.65 : 0.70), W * 0.225, W * (tall ? 0.132 : 0.098), B, vcRingB, 10, '11 – 20');
-      vcDrawNowPlaying(H * (tall ? 0.90 : 0.945));
+      vcDrawHostWindow(W * 0.30, H * 0.125, W * 0.40, H * 0.40);
+      if (A.length) vcDrawRing(W * 0.255, H * 0.70, W * 0.225, W * 0.098, A, vcRingA, 0, 'TOP 10');
+      if (B.length) vcDrawRing(W * 0.745, H * 0.70, W * 0.225, W * 0.098, B, vcRingB, 10, '11 – 20');
+      vcDrawNowPlaying(H * 0.945);
     }
     ctx.save();
     ctx.lineWidth = Math.max(5, H * 0.010); ctx.strokeStyle = '#c9a227'; ctx.strokeRect(5, 5, W - 10, H - 10);
