@@ -7771,6 +7771,15 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         // past the screen, anchor top-biased so his face keeps and
         // the bottom gives up the space.
         var pfX0 = Math.round((W - pfW0) / 2), pfY0 = Math.round(pfH0 > H ? (H - pfH0) * 0.25 : (H - pfH0) / 2);
+        // FLOOR ANCHOR (owner, Nov 6 night): a WIDE camera picture
+        // on the PHONE screen was floating in the middle of the
+        // tall room — his body ended at a line partway down and
+        // the room's floor ran in front of him below it ("you put
+        // me behind the floor; that floor should be behind me").
+        // A wide picture on the tall screen now stands ON the
+        // floor: its bottom sits on the bottom of the screen, so
+        // the floor stays behind him where it belongs.
+        if (W < H && camW > camH) pfY0 = H - pfH0;
         // ZOOM (owner, Nov 6): his slider in Effects, both screens —
         // the middle (50) is exactly the fit above, untouched; left
         // halves the picture (0.5x), right doubles it (2x), scaled
