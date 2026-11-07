@@ -6555,6 +6555,11 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   ${req.query.admsg ? `<p class="note" style="color:#ffd98a">${esc(req.query.admsg)}</p>` : ""}
   <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. You can enter a placement any time — it goes onto the chart IMMEDIATELY, the second you place it, and holds through each midnight recalculation until it ends or you remove it (removals also take effect right away). A song's evaluation scores are never changed — this sets chart position only.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
+  <div class="panel">
+    <h2 style="margin-top:0">🎙️ Viewcast Studio</h2>
+    <p class="sub">Film an episode — you on camera, or an artist in front of you — inside a studio set, and post it to the Viewcast page.</p>
+    <p class="sub" style="margin:12px 0 0"><a href="/admin/viewcast" style="color:var(--accent);font-weight:700;text-decoration:none">Open the Viewcast studio →</a></p>
+  </div>
   <div class="panel" style="border:2px solid #d4af37">
     <h2 style="margin-top:0">🌍 OVERALL — EVERYWHERE</h2>
     <p class="sub">One push puts the song at your number in <b style="color:#fff">Local Overall, Regional Overall AND National Overall</b> at the same time — right away, no waiting. Push it again at a different number and it moves there.</p>
@@ -6602,7 +6607,9 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     </form>
   </div>
   <div class="panel">
-    <h2 style="margin-top:0">Placements on record</h2>
+    <details>
+    <summary style="cursor:pointer;font-size:20px;font-weight:800;color:#fff">📌 Placements on record (${active.length}) — tap to open the list ▾</summary>
+    <p class="sub">The list lives in this dropdown now so a long record doesn't push the whole page down. Tap the line above to open it; every placement keeps its own Remove button inside.</p>
     ${active.length ? active.map((p) => `
     <div style="border-bottom:1px solid #22304f;padding:10px 0">
       <p class="sub" style="margin:0"><b style="color:#fff">${esc(p.title)}</b> — ${esc(p.artist)}<br>
@@ -6612,6 +6619,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
         <button type="submit" style="padding:8px 16px;border-radius:8px;border:1px solid #5b2b2b;background:#2a1113;color:#ff9d9d;font-weight:700;cursor:pointer">Remove placement</button>
       </form>
     </div>`).join("") : `<p class="sub">No placements yet.</p>`}
+    </details>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">📈 Real-artist boost — plays &amp; likes</h2>
@@ -6788,11 +6796,6 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
         <form method="post" action="/admin/panel-profiles/${p.id}/delete" onsubmit="return confirm('Delete this ${r === "dj" ? "DJ" : "A&R"} profile for good?')"><button class="mini">Kick out</button></form>
       </div>`).join("") : `<p class="note" style="margin:0 0 8px">None yet — hand the ${r === "dj" ? "DJ" : "A&R"} profile code out and they'll build their own.</p>`);
     }).join("")}
-  </div>
-  <div class="panel">
-    <h2 style="margin-top:0">🎙️ Viewcast Studio</h2>
-    <p class="sub">Film an episode — you on camera, or an artist in front of you — inside a studio set, and post it to the Viewcast page.</p>
-    <p class="sub" style="margin:12px 0 0"><a href="/admin/viewcast" style="color:var(--accent);font-weight:700;text-decoration:none">Open the Viewcast studio →</a></p>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">🎬 Site media — Cloudflare storage</h2>
