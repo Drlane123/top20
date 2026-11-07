@@ -7857,20 +7857,25 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         // past the screen, anchor top-biased so his face keeps and
         // the bottom gives up the space.
         var pfX0 = Math.round((W - pfW0) / 2), pfY0 = Math.round(pfH0 > H ? (H - pfH0) * 0.25 : (H - pfH0) / 2);
-        // STAND-IN-THE-ROOM ANCHOR (owner, Nov 6 night, 21:40 —
-        // his size ruling rides with it: "don't resize me, just
-        // fix the framing… keep that Facebook size"). At the
-        // natural size above, a wide camera picture on the phone
-        // screen stands IN the room: picture bottom at ~86% of
-        // the screen, so his head stays up in front of the WALL,
-        // his shoulders cross the wall/floor seam, and the floor
-        // shows only BELOW him. Two placements he rejected by
-        // screenshot tonight: floating mid-room (the room's wall
-        // strip and floor ran in front of his body, 21:40) and
-        // parked at the very bottom (wall towering over his
-        // head, forehead clipped, 21:23–21:25). The size is NOT
-        // touched here — this line only moves the picture.
-        if (W < H && camW > camH) pfY0 = Math.round(H * 0.86) - pfH0;
+        // PICTURE-HEIGHT RULE (owner, Nov 6 night, 21:49–22:02 —
+        // his words: "you still got the YouTube view on the phone
+        // camera", "we ain't never had this issue — how did you do
+        // that?"). The original phone build never placed a WIDE
+        // picture on the tall screen at all — the camera arrived
+        // tall and the picture filled the screen, so there was no
+        // short picture, no edge across his forehead, and no band
+        // under his chest. Every one of tonight's anchors (band at
+        // the bottom, centered float, stand-at-86%) was still
+        // PLACING A SHORT WIDE PICTURE and so kept printing that
+        // edge. The cure is height, not position: on the phone
+        // screen a wide picture now stretches its HEIGHT to the
+        // full screen (top edge at 0, bottom edge at H) while its
+        // WIDTH stays at the natural size he approved. His head
+        // can never meet a picture edge again — the edge is the
+        // screen's own top — and no band can open under him. The
+        // width he sees is the Facebook width; only the empty
+        // vertical room-margin goes away.
+        if (W < H && camW > camH) { pfH0 = H; pfY0 = 0; }
         // ZOOM (owner, Nov 6): his slider in Effects, both screens —
         // the middle (50) is exactly the fit above, untouched; left
         // halves the picture (0.5x), right doubles it (2x), scaled
