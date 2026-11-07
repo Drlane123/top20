@@ -7687,6 +7687,22 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       var sx0 = vcPfW > 0 ? vcPfX : 0, sy0 = vcPfW > 0 ? vcPfY : 0;
       var sw0 = vcPfW > 0 ? vcPfW : iw0, sh0 = vcPfW > 0 ? vcPfH : ih0;
       var dwR, dhR, dxR, dyR;
+      if (vcFormat === 'tall' && vcBox && vcBox.w > 10 && vcBox.h > 10) {
+        // Person-anchored seat — TALL desk sets (owner, Nov 6): the
+        // body is placed by its own outline here too. The formula
+        // below scales the CAMERA FRAME by height; when his phone's
+        // picture rides in a band of the tall canvas, that zoomed
+        // him face-first across the whole screen (his 7:27 PM shot
+        // on the short-lived tall desk). The box can't zoom wrong:
+        // it IS him, at one steady seated size.
+        var pScaleT = Math.min((h * 0.66) / vcBox.h, (w * 0.96) / vcBox.w) * s;
+        dhR = vcBox.h * pScaleT;
+        dwR = vcBox.w * pScaleT * (1 - fxSlim * 0.14);
+        dxR = x + (w - dwR) / 2;
+        dyR = y + h * 0.94 - dhR;
+        ctx.drawImage(hostC, vcBox.x, vcBox.y, vcBox.w, vcBox.h, dxR, dyR, dwR, dhR);
+        return;
+      }
       if (vcFormat === 'tall') {
         dhR = h * s;
         dwR = dhR * (sw0 / sh0) * (1 - fxSlim * 0.14);
@@ -7723,6 +7739,18 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         dyR = y - dhR * 0.06;
       }
       ctx.drawImage(hostC, sx0, sy0, sw0, sh0, dxR, dyR, dwR, dhR);
+      return;
+    }
+    // Standing sets on the WIDE screen (owner, Nov 6): place the
+    // body at a natural standing size — you can see him, and he
+    // looks like he's IN the picture — instead of drawing the raw
+    // camera frame, whose shape (a tall phone column, a letterbox
+    // band) used to decide his size and crop. The tall standing
+    // sets keep the framing he called perfect, untouched.
+    if (w > h && vcBox && vcBox.w > 10 && vcBox.h > 10) {
+      var pScaleS = Math.min((h * 0.86) / vcBox.h, (w * 0.90) / vcBox.w) * s;
+      var dwS = vcBox.w * pScaleS * (1 - fxSlim * 0.14), dhS = vcBox.h * pScaleS;
+      ctx.drawImage(hostC, vcBox.x, vcBox.y, vcBox.w, vcBox.h, x + (w - dwS) / 2, y + h * 0.99 - dhS, dwS, dhS);
       return;
     }
     var dw = w * s * (1 - fxSlim * 0.14), dh = h * s;
