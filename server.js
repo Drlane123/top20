@@ -7369,6 +7369,13 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   // phone screen; a set without a tall version falls back to its wide
   // picture rather than breaking.
   var vcFormat = 'wide';
+  // The studio opens on the screen he used LAST (owner, Nov 6
+  // night): it used to always open on the wide YouTube screen,
+  // so his phone sessions started with a wide camera before he
+  // ever tapped Phone — tall. Remembering his last pick means
+  // his phone opens on the phone screen, camera shaped right
+  // from the first tap.
+  try { var savedFmt = localStorage.getItem('vcfmt'); if (savedFmt === 'tall' || savedFmt === 'wide') vcFormat = savedFmt; } catch (e) {}
   function loadBackdrop() {
     var img = new Image();
     img.onload = function () { backdropImg = img; };
@@ -7377,12 +7384,16 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   }
   function setFormat(f) {
     vcFormat = f;
+    try { localStorage.setItem('vcfmt', f); } catch (e) {}
     W = f === 'tall' ? 720 : 1280; H = f === 'tall' ? 1280 : 720;
     canvas.width = W; canvas.height = H;
     var btns = document.querySelectorAll('.fmtBtn');
     for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-fmt') === f) ? '#f2c14e' : '#2c3a6e';
     loadBackdrop();
   }
+  // Open on his remembered screen right away — canvas size,
+  // button highlight, and the right room picture from the start.
+  if (vcFormat === 'tall') setFormat('tall');
   // ✨ Effects (owner, Nov 1): the host shapes their own picture to fit
   // the room — slim, step back, smooth, brighten. Saved on this phone.
   var fxSlim = 0, fxBack = 0, fxSmooth = 0, fxBright = 0, fxWide = 0, fxZoom = 0.5;
@@ -7527,6 +7538,31 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: wantW }, height: { ideal: wantH } }, audio: true });
       video.srcObject = stream;
       await video.play();
+      // SHAPE CHECK (owner's diagnosis, Nov 6 night — "you still
+      // got the YouTube view on the phone camera, you mixing it
+      // up"): a polite IDEAL ask can still hand back the wrong
+      // shape — the studio page opens on the wide screen, so a
+      // camera started there stayed wide on the phone screen and
+      // every framing fix fought the wrong picture. Now the
+      // studio checks the shape it actually GOT against the
+      // screen he picked, and if they fight, it asks ONE more
+      // time with the shape as an exact demand. If the phone
+      // still refuses, the fit in onResults handles what arrived
+      // — but the mix-up never sails through unchecked again.
+      if (video.videoWidth && ((video.videoWidth < video.videoHeight) !== (vcFormat === 'tall'))) {
+        try {
+          var oldTr = stream.getTracks(); for (var oi = 0; oi < oldTr.length; oi++) oldTr[oi].stop();
+          stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { exact: wantW }, height: { exact: wantH } }, audio: true });
+          video.srcObject = stream;
+          await video.play();
+        } catch (e2) {
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: wantW }, height: { ideal: wantH } }, audio: true });
+            video.srcObject = stream;
+            await video.play();
+          } catch (e3) {}
+        }
+      }
       // The picked format OWNS the screen size (owner, Nov 6, 2026):
       // the canvas stays YouTube-wide or phone-tall no matter what
       // size the camera hands back. The old reset to the camera's own
