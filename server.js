@@ -7569,6 +7569,12 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   // The fitted camera region inside hostC (set by onResults each
   // frame) — the desk framing draws THIS region, not the raw canvas.
   var vcPfX = 0, vcPfY = 0, vcPfW = 0, vcPfH = 0;
+  // The person's own outline box in canvas coordinates, tracked
+  // from the mask each frame (smoothed). The wide desk framing and
+  // the template windows place THIS — never a slice of the raw
+  // camera frame — so a tall phone picture on the wide screen can
+  // no longer blow him up, shove him off-angle, or crop his face.
+  var vcBox = null;
   var roomCode = null, pc = null, guestStream = null, guestOn = false, layoutMode = 'split', offerOut = false, hostPollTimer = null;
   var mixCtx = null, mixDest = null;
   function sizeHostC() { if (hostC.width !== W || hostC.height !== H) { hostC.width = W; hostC.height = H; } }
@@ -7651,6 +7657,18 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     if (typeof vcTemplate !== 'undefined' && vcTemplate !== 'set') {
       var iwT = hostC.width, ihT = hostC.height;
       if (!iwT || !ihT) return;
+      // Person-anchored (owner, Nov 6): fit the BODY's box into the
+      // window, not the whole camera canvas — on the wide templates
+      // his tall phone picture left him a small column in the middle
+      // of the window; the box fills the window with HIM, whole,
+      // face always inside. Falls back to the whole canvas until
+      // the first mask frame lands.
+      if (vcBox && vcBox.w > 10 && vcBox.h > 10) {
+        var csB = Math.min(w / vcBox.w, h / vcBox.h) * s;
+        var dwB2 = vcBox.w * csB * (1 - fxSlim * 0.14), dhB2 = vcBox.h * csB;
+        ctx.drawImage(hostC, vcBox.x, vcBox.y, vcBox.w, vcBox.h, x + (w - dwB2) / 2, y + (h - dhB2) / 2, dwB2, dhB2);
+        return;
+      }
       var csT = Math.min(w / iwT, h / ihT) * s;
       var dwT = iwT * csT * (1 - fxSlim * 0.14), dhT = ihT * csT;
       ctx.drawImage(hostC, 0, 0, iwT, ihT, x + (w - dwT) / 2, y + (h - dhT) / 2, dwT, dhT);
@@ -7673,6 +7691,22 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         dhR = h * s;
         dwR = dhR * (sw0 / sh0) * (1 - fxSlim * 0.14);
         dxR = x + (w - dwR) / 2; dyR = y + h * 0.78 - dhR * 0.78;
+      } else if (vcBox && vcBox.w > 10 && vcBox.h > 10) {
+        // Person-anchored framing (owner, Nov 6): the wide screen
+        // places the BODY, sized off the body's own box — one steady
+        // broadcast size (about three quarters of the screen tall,
+        // seat at the desk line) no matter his distance, his phone's
+        // picture shape, or which way he leans. The zoomed-slice
+        // framings before this blew him up across the whole screen
+        // and showed the top slice of his tall picture (the "camera
+        // aiming up" fault — his face fell below the slice).
+        var pScale = Math.min((h * 0.74) / vcBox.h, (w * 0.94) / vcBox.w) * s;
+        dhR = vcBox.h * pScale;
+        dwR = vcBox.w * pScale * (1 - fxSlim * 0.14);
+        dxR = x + (w - dwR) / 2;
+        dyR = y + h * 0.88 - dhR;
+        ctx.drawImage(hostC, vcBox.x, vcBox.y, vcBox.w, vcBox.h, dxR, dyR, dwR, dhR);
+        return;
       } else {
         // Seated framing v3 (owner, Nov 6): place the camera frame
         // by WIDTH, its top riding just above the screen. Placed by
@@ -7720,7 +7754,11 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   var vcFgImg = new Image(), vcFgReady = false, vcFgSrc = '';
   function vcFgKey() {
     if (currentSet === 'radio') return vcFormat === 'tall' ? 'radio-tall' : 'radio';
-    if (vcFormat !== 'tall' && (currentSet === 'graffiti' || currentSet === 'neon')) return currentSet;
+    // Purple Hip-Hop got its podcast desk in BOTH shapes (Nov 6) —
+    // the tall room's glossy floor used to sit in front of him like
+    // a tabletop; now he sits behind its desk too.
+    if (currentSet === 'graffiti') return vcFormat === 'tall' ? 'graffiti-tall' : 'graffiti';
+    if (vcFormat !== 'tall' && currentSet === 'neon') return 'neon';
     return '';
   }
   function vcLoadFg() {
@@ -7795,6 +7833,33 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
           var md = maskX.getImageData(0, 0, W, H), mp = md.data;
           for (var mi = 3; mi < mp.length; mi += 4) { if (mp[mi] < 30) mp[mi] = 0; }
           maskX.putImageData(md, 0, 0);
+          // Person box: scan the gated mask for the body's outline
+          // (stride 8 — plenty for a bounding box) and keep a
+          // smoothed copy. Everything OUTSIDE the body is clear
+          // cutout anyway, so placing this box loses nothing.
+          var bx0 = W, by0 = H, bx1 = -1, by1 = -1;
+          for (var byy = 0; byy < H; byy += 8) {
+            var brow = byy * W * 4 + 3;
+            for (var bxx = 0; bxx < W; bxx += 8) {
+              if (mp[brow + bxx * 4] >= 60) {
+                if (bxx < bx0) bx0 = bxx;
+                if (bxx > bx1) bx1 = bxx;
+                if (byy < by0) by0 = byy;
+                if (byy > by1) by1 = byy;
+              }
+            }
+          }
+          if (bx1 - bx0 > 60 && by1 - by0 > 60) {
+            var bpadX = (bx1 - bx0) * 0.10, bpadY = (by1 - by0) * 0.08;
+            var nx0 = Math.max(0, bx0 - bpadX), ny0 = Math.max(0, by0 - bpadY);
+            var nb2 = { x: nx0, y: ny0, w: Math.min(W, bx1 + bpadX) - nx0, h: Math.min(H, by1 + bpadY) - ny0 };
+            if (!vcBox) vcBox = nb2;
+            else {
+              var BL = 0.35;
+              vcBox.x += (nb2.x - vcBox.x) * BL; vcBox.y += (nb2.y - vcBox.y) * BL;
+              vcBox.w += (nb2.w - vcBox.w) * BL; vcBox.h += (nb2.h - vcBox.h) * BL;
+            }
+          }
         } catch (e) {}
         hctx.save(); hctx.clearRect(0, 0, W, H);
         try { hctx.filter = 'blur(2px)'; } catch (e) {}
