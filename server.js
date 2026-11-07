@@ -7711,6 +7711,15 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     // Recipe: the segmentation model follows the screen shape —
     // landscape model on wide screens, general model tall.
     if (seg && seg.setOptions) { try { seg.setOptions({ modelSelection: f === 'tall' ? 0 : 1 }); } catch (e) {} }
+    // CAMERA FOLLOWS THE SCREEN (owner, Nov 6 night): a camera
+    // started on the wide screen hands back a WIDE picture, and it
+    // used to stay wide after he switched to the phone screen —
+    // every fit then had to squeeze a wide picture into a tall
+    // room (band at the bottom, wall over his head, or a giant
+    // fill). Facebook never hits this: it starts its camera tall.
+    // Now switching screens restarts the camera, which asks for
+    // the newly picked screen's shape.
+    if (stream && typeof startCam === 'function') { try { startCam(); } catch (e) {} }
   };
   vcLoadFg();
   var VC_TINT = {
@@ -7760,17 +7769,17 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         if ((camW < camH) !== (W < H)) {
           var fitCover = Math.max(W / camW, H / camH);
           if (W < H) {
-            // PHONE screen, WIDE camera picture (owner's shot,
-            // Nov 6, 21:23): the whole-picture fit letterboxed his
-            // picture into a band and his head rose ABOVE the
-            // band's top edge — the wall covered his forehead and
-            // he had to duck the camera down to get his face in. A
-            // wide picture cannot sit in a band inside a tall room.
-            // It FILLS the screen, the way Facebook fills it — head
-            // and body in the room at full height, floor behind
-            // him — and his ZOOM slider pulls the size back to
-            // exactly where he wants it.
-            fitS = fitCover;
+            // PHONE screen, WIDE camera picture: the WHOLE picture
+            // at its natural size — Dale's ruling (Nov 6, 21:30):
+            // "I liked it smaller than the Facebook… a little
+            // smaller, not right up on the camera." The fill/cover
+            // version blew his face up to fill the screen and he
+            // sent the side-by-side to prove it. This mismatch now
+            // only happens if the camera started while the wide
+            // screen was picked — switching screens restarts the
+            // camera in the new screen's shape (see setFormat), so
+            // the phone screen gets its tall picture back.
+            fitS = fitContain;
           } else {
             // Wide screen, tall phone picture (where the whole-
             // picture fit IS the height fit): Dale's WIDEN slider
@@ -7785,15 +7794,16 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         // past the screen, anchor top-biased so his face keeps and
         // the bottom gives up the space.
         var pfX0 = Math.round((W - pfW0) / 2), pfY0 = Math.round(pfH0 > H ? (H - pfH0) * 0.25 : (H - pfH0) / 2);
-        // FLOOR ANCHOR (owner, Nov 6 night): a WIDE camera picture
-        // on the PHONE screen was floating in the middle of the
-        // tall room — his body ended at a line partway down and
-        // the room's floor ran in front of him below it ("you put
-        // me behind the floor; that floor should be behind me").
-        // A wide picture on the tall screen now stands ON the
-        // floor: its bottom sits on the bottom of the screen, so
-        // the floor stays behind him where it belongs.
-        if (W < H && camW > camH) pfY0 = H - pfH0;
+        // SEAM ANCHOR (owner, Nov 6 night): a WIDE camera picture
+        // on the PHONE screen belongs standing IN the room — head
+        // up in front of the wall, feet down at the wall/floor
+        // seam — not floating in the middle (floor ran in front
+        // of him below the picture) and not parked at the very
+        // bottom (wall towering over his head, forehead clipped
+        // at the picture's top edge — both his shots, 21:17 and
+        // 21:23). The seam sits ~55% down the tall rooms, so the
+        // picture's bottom lands there: pfY0 = H*0.55 − pfH0.
+        if (W < H && camW > camH) pfY0 = Math.round(H * 0.55) - pfH0;
         // ZOOM (owner, Nov 6): his slider in Effects, both screens —
         // the middle (50) is exactly the fit above, untouched; left
         // halves the picture (0.5x), right doubles it (2x), scaled
