@@ -7553,6 +7553,9 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   // lay the guest's camera in as a studio window, and keep the VIEWCAST
   // chrome on top. Recording picks up the mixed host+guest audio.
   var hostC = document.createElement('canvas'), hctx = hostC.getContext('2d');
+  // The fitted camera region inside hostC (set by onResults each
+  // frame) — the desk framing draws THIS region, not the raw canvas.
+  var vcPfX = 0, vcPfY = 0, vcPfW = 0, vcPfH = 0;
   var roomCode = null, pc = null, guestStream = null, guestOn = false, layoutMode = 'split', offerOut = false, hostPollTimer = null;
   var mixCtx = null, mixDest = null;
   function sizeHostC() { if (hostC.width !== W || hostC.height !== H) { hostC.width = W; hostC.height = H; } }
@@ -7628,13 +7631,34 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     // here, and Slim narrows inside a frame that already has room
     // around him (no more wall strips closing in at his sides).
     // Templates draw their own host window and are not touched.
+    // Stage templates (owner, Nov 6): the WHOLE figure fits inside
+    // the host window — never cover-cropped. The old bottom-anchored
+    // cover showed only his lower body on phone screens and cut his
+    // face clean off. Contain-fit, centered: all of him, always.
+    if (typeof vcTemplate !== 'undefined' && vcTemplate !== 'set') {
+      var iwT = hostC.width, ihT = hostC.height;
+      if (!iwT || !ihT) return;
+      var csT = Math.min(w / iwT, h / ihT) * s;
+      var dwT = iwT * csT * (1 - fxSlim * 0.14), dhT = ihT * csT;
+      ctx.drawImage(hostC, 0, 0, iwT, ihT, x + (w - dwT) / 2, y + (h - dhT) / 2, dwT, dhT);
+      return;
+    }
     if (typeof vcFgKey === 'function' && vcFgKey() !== '' && (typeof vcTemplate === 'undefined' || vcTemplate === 'set')) {
       var iw0 = hostC.width, ih0 = hostC.height;
       if (!iw0 || !ih0) return;
-      var k = (vcFormat === 'tall' ? 0.95 : 0.85) * s;
-      var dw0 = w * k * (1 - fxSlim * 0.14), dh0 = h * k;
-      var dy0 = vcFormat === 'tall' ? -Math.round(h * 0.05) : Math.round(h * 0.13) - Math.round(dh0 * 0.10);
-      ctx.drawImage(hostC, 0, 0, iw0, ih0, x + (w - dw0) / 2, y + dy0, dw0, dh0);
+      // Seated framing v2 (owner, Nov 6): draw the CAMERA FRAME
+      // itself (the fitted region inside hostC), scaled by height
+      // and anchored on the desk line. His seat no longer swings
+      // with a canvas-scale guess, the frame's edges sit out near
+      // the screen's edges so a sideways lean is not sliced
+      // mid-screen, and the desk layer tucks his lower body behind
+      // the desk however far back he holds the phone.
+      var sx0 = vcPfW > 0 ? vcPfX : 0, sy0 = vcPfW > 0 ? vcPfY : 0;
+      var sw0 = vcPfW > 0 ? vcPfW : iw0, sh0 = vcPfW > 0 ? vcPfH : ih0;
+      var dhR = h * (vcFormat === 'tall' ? 1.0 : 1.06) * s;
+      var dwR = dhR * (sw0 / sh0) * (1 - fxSlim * 0.14);
+      var dxR = x + (w - dwR) / 2, dyR = y + h * 0.78 - dhR * 0.78;
+      ctx.drawImage(hostC, sx0, sy0, sw0, sh0, dxR, dyR, dwR, dhR);
       return;
     }
     var dw = w * s * (1 - fxSlim * 0.14), dh = h * s;
@@ -7712,6 +7736,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         var pfS = Math.min(W / results.image.width, H / results.image.height);
         var pfW = Math.round(results.image.width * pfS), pfH = Math.round(results.image.height * pfS);
         var pfX = Math.round((W - pfW) / 2), pfY = Math.round((H - pfH) / 2);
+        vcPfX = pfX; vcPfY = pfY; vcPfW = pfW; vcPfH = pfH;
         // Edge cleanup (owner, Nov 1): the raw mask leaves flaky scraps
         // around hair and shoulders. Blend in the previous frame's mask
         // behind this one (kills flicker and stray specks), then stamp it
@@ -8303,9 +8328,9 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       // the same stack as the home Stage — never squeezed side by
       // side into one little strip.
       vcDrawLogoHeader(H * 0.085);
-      vcDrawHostWindow(W * 0.155, H * 0.095, W * 0.69, H * 0.29);
-      if (A.length) vcDrawRing(W / 2, H * 0.50, W * 0.335, W * 0.172, A, vcRingA, 0, 'TOP 10');
-      if (B.length) vcDrawRing(W / 2, H * 0.752, W * 0.335, W * 0.172, B, vcRingB, 10, '11 – 20');
+      vcDrawHostWindow(W * 0.13, H * 0.09, W * 0.74, H * 0.31);
+      if (A.length) vcDrawRing(W / 2, H * 0.51, W * 0.335, W * 0.172, A, vcRingA, 0, 'TOP 10');
+      if (B.length) vcDrawRing(W / 2, H * 0.76, W * 0.335, W * 0.172, B, vcRingB, 10, '11 – 20');
       vcDrawNowPlaying(H * 0.945);
     } else {
       vcDrawLogoHeader(H * 0.105);
