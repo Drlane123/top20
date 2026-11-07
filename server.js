@@ -7462,7 +7462,10 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     try {
       if (typeof SelfieSegmentation === 'undefined') { mode = 'frame'; return; }
       seg = new SelfieSegmentation({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f; } });
-      seg.setOptions({ modelSelection: 1 });
+      // Recipe: the segmentation model follows the screen shape —
+      // the landscape model (1) for wide scenes, the general
+      // model (0) for tall ones, as the reference projects ship it.
+      seg.setOptions({ modelSelection: vcFormat === 'tall' ? 0 : 1 });
       seg.onResults(onSeg);
     } catch (e) { seg = null; mode = 'frame'; }
   }
@@ -7479,17 +7482,14 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   async function startCam() {
     try {
       if (stream) { var tr = stream.getTracks(); for (var i = 0; i < tr.length; i++) tr[i].stop(); }
-      // Ask for the picked screen's shape FIRST as an exact fit: a
-      // phone held upright otherwise hands back a TALL picture for
-      // the wide screen, and that tall slice down the middle is the
-      // invisible frame the owner kept hitting. If the camera can't
-      // give the exact shape, fall back to asking nicely.
+      // Ask for the picked screen's shape as an IDEAL, the way the
+      // reference projects request capture — phones hand back their
+      // sensor's shape regardless, and the recipe fit in onResults
+      // reads the stream's real size and fits THAT. (An exact demand
+      // from earlier tonight is gone: it changed nothing the fit
+      // didn't already have to handle.)
       var wantW = vcFormat === 'tall' ? 720 : 1280, wantH = vcFormat === 'tall' ? 1280 : 720;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { exact: wantW }, height: { exact: wantH } }, audio: true });
-      } catch (e1) {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: wantW }, height: { ideal: wantH } }, audio: true });
-      }
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: wantW }, height: { ideal: wantH } }, audio: true });
       video.srcObject = stream;
       await video.play();
       // The picked format OWNS the screen size (owner, Nov 6, 2026):
@@ -7567,14 +7567,11 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   // chrome on top. Recording picks up the mixed host+guest audio.
   var hostC = document.createElement('canvas'), hctx = hostC.getContext('2d');
   // The fitted camera region inside hostC (set by onResults each
-  // frame) — the desk framing draws THIS region, not the raw canvas.
+  // frame from the open-source recipe fit). The template windows
+  // fit this fixed region into their window; nothing about the
+  // person's body is measured or tracked for placement — that is
+  // the whole point of the recipe.
   var vcPfX = 0, vcPfY = 0, vcPfW = 0, vcPfH = 0;
-  // The person's own outline box in canvas coordinates, tracked
-  // from the mask each frame (smoothed). The wide desk framing and
-  // the template windows place THIS — never a slice of the raw
-  // camera frame — so a tall phone picture on the wide screen can
-  // no longer blow him up, shove him off-angle, or crop his face.
-  var vcBox = null;
   var roomCode = null, pc = null, guestStream = null, guestOn = false, layoutMode = 'split', offerOut = false, hostPollTimer = null;
   var mixCtx = null, mixDest = null;
   function sizeHostC() { if (hostC.width !== W || hostC.height !== H) { hostC.width = W; hostC.height = H; } }
@@ -7638,126 +7635,29 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     ctx.restore();
   }
   function drawHostInto(x, y, w, h) {
-    // Step back shrinks the figure toward the floor line; Slim narrows
-    // it. The camera picture is cover-cropped into the frame (never
-    // stretched), bottom-anchored so the feet stay on the floor.
+    // THE OPEN-SOURCE RECIPE (owner-directed research, Nov 6): the
+    // person layer (hostC) already holds the camera frame fitted
+    // into the canvas by the fixed recipe math in onResults — mask
+    // and image sharing one rect, nothing ever measured off his
+    // body. Drawing the layer is therefore ONE fixed draw: the full
+    // layer into the frame (or, for a stage template, the fixed
+    // camera region contained in its window), shaped only by Dale's
+    // own Step back / Slim settings. A layer drawn at a fixed size
+    // cannot swim when he moves, cannot draw a box around him, and
+    // cannot slice him at a line when he leans.
     var s = 1 - fxBack * 0.28;
-    // Seated framing on the desk sets (owner, Nov 6): behind a desk
-    // the host sits at a natural broadcast size, anchored by the head
-    // so his chest meets the desk line — not stretched wall to wall
-    // however far back he holds the phone. The desk layer covers
-    // everything below the line. Step back reads as distance from
-    // here, and Slim narrows inside a frame that already has room
-    // around him (no more wall strips closing in at his sides).
-    // Templates draw their own host window and are not touched.
-    // Stage templates (owner, Nov 6): the WHOLE figure fits inside
-    // the host window — never cover-cropped. The old bottom-anchored
-    // cover showed only his lower body on phone screens and cut his
-    // face clean off. Contain-fit, centered: all of him, always.
+    var iw = hostC.width, ih = hostC.height;
+    if (!iw || !ih) return;
     if (typeof vcTemplate !== 'undefined' && vcTemplate !== 'set') {
-      var iwT = hostC.width, ihT = hostC.height;
-      if (!iwT || !ihT) return;
-      // Person-anchored (owner, Nov 6): fit the BODY's box into the
-      // window, not the whole camera canvas — on the wide templates
-      // his tall phone picture left him a small column in the middle
-      // of the window; the box fills the window with HIM, whole,
-      // face always inside. Falls back to the whole canvas until
-      // the first mask frame lands.
-      if (vcBox && vcBox.w > 10 && vcBox.h > 10) {
-        var csB = Math.min(w / vcBox.w, h / vcBox.h) * s;
-        var dwB2 = vcBox.w * csB * (1 - fxSlim * 0.14), dhB2 = vcBox.h * csB;
-        ctx.drawImage(hostC, vcBox.x, vcBox.y, vcBox.w, vcBox.h, x + (w - dwB2) / 2, y + (h - dhB2) / 2, dwB2, dhB2);
-        return;
-      }
-      var csT = Math.min(w / iwT, h / ihT) * s;
-      var dwT = iwT * csT * (1 - fxSlim * 0.14), dhT = ihT * csT;
-      ctx.drawImage(hostC, 0, 0, iwT, ihT, x + (w - dwT) / 2, y + (h - dhT) / 2, dwT, dhT);
-      return;
-    }
-    if (typeof vcFgKey === 'function' && vcFgKey() !== '' && (typeof vcTemplate === 'undefined' || vcTemplate === 'set')) {
-      var iw0 = hostC.width, ih0 = hostC.height;
-      if (!iw0 || !ih0) return;
-      // Seated framing v2 (owner, Nov 6): draw the CAMERA FRAME
-      // itself (the fitted region inside hostC), scaled by height
-      // and anchored on the desk line. His seat no longer swings
-      // with a canvas-scale guess, the frame's edges sit out near
-      // the screen's edges so a sideways lean is not sliced
-      // mid-screen, and the desk layer tucks his lower body behind
-      // the desk however far back he holds the phone.
-      var sx0 = vcPfW > 0 ? vcPfX : 0, sy0 = vcPfW > 0 ? vcPfY : 0;
-      var sw0 = vcPfW > 0 ? vcPfW : iw0, sh0 = vcPfW > 0 ? vcPfH : ih0;
-      var dwR, dhR, dxR, dyR;
-      if (vcFormat === 'tall' && vcBox && vcBox.w > 10 && vcBox.h > 10) {
-        // Person-anchored seat — TALL desk sets (owner, Nov 6): the
-        // body is placed by its own outline here too. The formula
-        // below scales the CAMERA FRAME by height; when his phone's
-        // picture rides in a band of the tall canvas, that zoomed
-        // him face-first across the whole screen (his 7:27 PM shot
-        // on the short-lived tall desk). The box can't zoom wrong:
-        // it IS him, at one steady seated size.
-        var pScaleT = Math.min((h * 0.66) / vcBox.h, (w * 0.96) / vcBox.w) * s;
-        dhR = vcBox.h * pScaleT;
-        dwR = vcBox.w * pScaleT * (1 - fxSlim * 0.14);
-        dxR = x + (w - dwR) / 2;
-        dyR = y + h * 0.94 - dhR;
-        ctx.drawImage(hostC, vcBox.x, vcBox.y, vcBox.w, vcBox.h, dxR, dyR, dwR, dhR);
-        return;
-      }
-      if (vcFormat === 'tall') {
-        dhR = h * s;
-        dwR = dhR * (sw0 / sh0) * (1 - fxSlim * 0.14);
-        dxR = x + (w - dwR) / 2; dyR = y + h * 0.78 - dhR * 0.78;
-      } else if (vcBox && vcBox.w > 10 && vcBox.h > 10) {
-        // Person-anchored framing (owner, Nov 6): the wide screen
-        // places the BODY, sized off the body's own box — one steady
-        // broadcast size (about three quarters of the screen tall,
-        // seat at the desk line) no matter his distance, his phone's
-        // picture shape, or which way he leans. The zoomed-slice
-        // framings before this blew him up across the whole screen
-        // and showed the top slice of his tall picture (the "camera
-        // aiming up" fault — his face fell below the slice).
-        var pScale = Math.min((h * 0.74) / vcBox.h, (w * 0.94) / vcBox.w) * s;
-        dhR = vcBox.h * pScale;
-        dwR = vcBox.w * pScale * (1 - fxSlim * 0.14);
-        dxR = x + (w - dwR) / 2;
-        dyR = y + h * 0.88 - dhR;
-        ctx.drawImage(hostC, vcBox.x, vcBox.y, vcBox.w, vcBox.h, dxR, dyR, dwR, dhR);
-        return;
-      } else {
-        // Seated framing v3 (owner, Nov 6): place the camera frame
-        // by WIDTH, its top riding just above the screen. Placed by
-        // height (v2), a tall phone picture shrank into a narrow
-        // slice down the middle of the wide screen — the invisible
-        // picture frame around him, slicing his body whenever he
-        // leaned. By width, the frame's edges leave the screen
-        // entirely: no line to see, nothing mid-screen to cut him.
-        // The desk layer covers everything below its line.
-        var dwB = w * (sh0 > sw0 * 1.4 ? 0.88 : 0.96) * s;
-        dhR = dwB * (sh0 / sw0);
-        dwR = dwB * (1 - fxSlim * 0.14);
-        dxR = x + (w - dwR) / 2;
-        dyR = y - dhR * 0.06;
-      }
-      ctx.drawImage(hostC, sx0, sy0, sw0, sh0, dxR, dyR, dwR, dhR);
-      return;
-    }
-    // Standing sets on the WIDE screen (owner, Nov 6): place the
-    // body at a natural standing size — you can see him, and he
-    // looks like he's IN the picture — instead of drawing the raw
-    // camera frame, whose shape (a tall phone column, a letterbox
-    // band) used to decide his size and crop. The tall standing
-    // sets keep the framing he called perfect, untouched.
-    if (w > h && vcBox && vcBox.w > 10 && vcBox.h > 10) {
-      var pScaleS = Math.min((h * 0.86) / vcBox.h, (w * 0.90) / vcBox.w) * s;
-      var dwS = vcBox.w * pScaleS * (1 - fxSlim * 0.14), dhS = vcBox.h * pScaleS;
-      ctx.drawImage(hostC, vcBox.x, vcBox.y, vcBox.w, vcBox.h, x + (w - dwS) / 2, y + h * 0.99 - dhS, dwS, dhS);
+      var sxT = vcPfW > 0 ? vcPfX : 0, syT = vcPfW > 0 ? vcPfY : 0;
+      var swT = vcPfW > 0 ? vcPfW : iw, shT = vcPfW > 0 ? vcPfH : ih;
+      var csT = Math.min(w / swT, h / shT) * s;
+      var dwT = swT * csT * (1 - fxSlim * 0.14), dhT = shT * csT;
+      ctx.drawImage(hostC, sxT, syT, swT, shT, x + (w - dwT) / 2, y + (h - dhT) / 2, dwT, dhT);
       return;
     }
     var dw = w * s * (1 - fxSlim * 0.14), dh = h * s;
-    var iw = hostC.width, ih = hostC.height;
-    if (!iw || !ih) return;
-    var cs = Math.max(dw / iw, dh / ih), cw = dw / cs, ch = dh / cs;
-    ctx.drawImage(hostC, (iw - cw) / 2, ih - ch, cw, ch, x + (w - dw) / 2, y + (h - dh), dw, dh);
+    ctx.drawImage(hostC, 0, 0, iw, ih, x + (w - dw) / 2, y + (h - dh), dw, dh);
   }
   function composeFrame() {
     ctx.save(); ctx.clearRect(0, 0, W, H);
@@ -7798,7 +7698,12 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   var pickSetVcFg = pickSet;
   pickSet = function (k) { pickSetVcFg(k); vcLoadFg(); };
   var setFormatVcFg = setFormat;
-  setFormat = function (f) { setFormatVcFg(f); vcLoadFg(); };
+  setFormat = function (f) {
+    setFormatVcFg(f); vcLoadFg();
+    // Recipe: the segmentation model follows the screen shape —
+    // landscape model on wide screens, general model tall.
+    if (seg && seg.setOptions) { try { seg.setOptions({ modelSelection: f === 'tall' ? 0 : 1 }); } catch (e) {} }
+  };
   vcLoadFg();
   var VC_TINT = {
     graffiti: 'brightness(.97) saturate(1.06)', neon: 'brightness(.97) saturate(1.05)',
@@ -7814,20 +7719,30 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     try {
       if (typeof SelfieSegmentation === 'undefined') { mode = 'frame'; return; }
       seg = new SelfieSegmentation({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f; } });
-      seg.setOptions({ modelSelection: 1 });
+      // Recipe: the segmentation model follows the screen shape —
+      // the landscape model (1) for wide scenes, the general
+      // model (0) for tall ones, as the reference projects ship it.
+      seg.setOptions({ modelSelection: vcFormat === 'tall' ? 0 : 1 });
       seg.onResults(function (results) {
         sizeHostC();
         if (maskC.width !== W || maskC.height !== H) { maskC.width = W; maskC.height = H; prevC.width = W; prevC.height = H; }
-        // True proportions (owner, Nov 6): the camera picture used to
-        // be STRETCHED to fill the canvas — a 4:3 camera in a 16:9
-        // frame widened the face by a third, and the figure filled
-        // the screen however far back the phone was held. Now the
-        // camera picture is FIT whole into the canvas (never cropped,
-        // never stretched), and the mask is fitted with the exact
-        // same rect so the two stay registered.
-        var pfS = Math.min(W / results.image.width, H / results.image.height);
-        var pfW = Math.round(results.image.width * pfS), pfH = Math.round(results.image.height * pfS);
-        var pfX = Math.round((W - pfW) / 2), pfY = Math.round((H - pfH) / 2);
+        // THE OPEN-SOURCE RECIPE (owner-directed research, Nov 6):
+        // every established project that composites a segmented
+        // person (MediaPipe's own demo, Twilio, Jitsi, OBS) fits the
+        // CAMERA FRAME into the scene with fixed math and NEVER
+        // measures the person — mask-derived sizing is what made his
+        // size swim and drew the box around him. The fit: cover,
+        // EXCEPT when the frame's orientation fights the scene's (a
+        // tall phone picture in the wide room), where it fits by
+        // HEIGHT instead — fitting a tall picture by width is the
+        // giant-face blow-up. Anchored top-biased (0.25) so the face
+        // keeps and the bottom crops first. Mask and image share
+        // this one rect, exactly as the reference code draws them.
+        var camW = results.image.width, camH = results.image.height;
+        var fitS = Math.max(W / camW, H / camH);
+        if ((camW < camH) !== (W < H)) fitS = H / camH;
+        var pfW = Math.round(camW * fitS), pfH = Math.round(camH * fitS);
+        var pfX = Math.round((W - pfW) / 2), pfY = Math.round((H - pfH) * 0.25);
         vcPfX = pfX; vcPfY = pfY; vcPfW = pfW; vcPfH = pfH;
         // Edge cleanup (owner, Nov 1): the raw mask leaves flaky scraps
         // around hair and shoulders. Blend in the previous frame's mask
@@ -7855,55 +7770,18 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         // to zero so only his solid body carries into the room.
         try {
           var md = maskX.getImageData(0, 0, W, H), mp = md.data;
-          // Gate height (owner, Nov 6): on the WIDE screen the placed
-          // figure is a sub-rectangle, so even a faint room-ghost
-          // prints as a visible slab with a hard edge — the "portrait
-          // box" he kept reporting. The wide gate sits high (only the
-          // solid body passes); the tall screen keeps the gentle gate
-          // he called perfect.
-          var gateT = W > H ? 90 : 30;
+          // Gate height: the gentle denoise floor only, both
+          // screens. The proven projects keep the mask's SOFT alpha
+          // (hysteresis at most) — a hard cut-off is what can print
+          // an edge, so the wide screen's high gate from earlier
+          // tonight is gone; this is the floor the tall screen was
+          // perfect on.
+          var gateT = 30;
           for (var mi = 3; mi < mp.length; mi += 4) { if (mp[mi] < gateT) mp[mi] = 0; }
           maskX.putImageData(md, 0, 0);
-          // Person box: scan the gated mask for the body's outline
-          // (stride 8 — plenty for a bounding box) and keep a
-          // smoothed copy. Everything OUTSIDE the body is clear
-          // cutout anyway, so placing this box loses nothing.
-          var bx0 = W, by0 = H, bx1 = -1, by1 = -1;
-          for (var byy = 0; byy < H; byy += 8) {
-            var brow = byy * W * 4 + 3;
-            for (var bxx = 0; bxx < W; bxx += 8) {
-              if (mp[brow + bxx * 4] >= 60) {
-                if (bxx < bx0) bx0 = bxx;
-                if (bxx > bx1) bx1 = bxx;
-                if (byy < by0) by0 = byy;
-                if (byy > by1) by1 = byy;
-              }
-            }
-          }
-          if (bx1 - bx0 > 60 && by1 - by0 > 60) {
-            var bpadX = (bx1 - bx0) * 0.16, bpadY = (by1 - by0) * 0.12;
-            var nx0 = Math.max(0, bx0 - bpadX), ny0 = Math.max(0, by0 - bpadY);
-            var nb2 = { x: nx0, y: ny0, w: Math.min(W, bx1 + bpadX) - nx0, h: Math.min(H, by1 + bpadY) - ny0 };
-            if (!vcBox) vcBox = nb2;
-            else {
-              // Fast attack, slow release (owner, Nov 6): ease toward
-              // the union of the old and fresh boxes, then hard-clamp
-              // so the placed box ALWAYS contains the body right now
-              // — a lean or an arm swing can never poke out of it and
-              // get sliced mid-screen, which read as a "line" cutting
-              // his body when he moved.
-              var ux0 = Math.min(vcBox.x, nb2.x), uy0 = Math.min(vcBox.y, nb2.y);
-              var ux1 = Math.max(vcBox.x + vcBox.w, nb2.x + nb2.w), uy1 = Math.max(vcBox.y + vcBox.h, nb2.y + nb2.h);
-              var ex0 = ux0 + (nb2.x - ux0) * 0.25, ey0 = uy0 + (nb2.y - uy0) * 0.25;
-              var ex1 = ux1 + ((nb2.x + nb2.w) - ux1) * 0.25, ey1 = uy1 + ((nb2.y + nb2.h) - uy1) * 0.25;
-              ex0 = Math.min(ex0, nb2.x); ey0 = Math.min(ey0, nb2.y);
-              ex1 = Math.max(ex1, nb2.x + nb2.w); ey1 = Math.max(ey1, nb2.y + nb2.h);
-              vcBox = { x: ex0, y: ey0, w: ex1 - ex0, h: ey1 - ey0 };
-            }
-          }
         } catch (e) {}
         hctx.save(); hctx.clearRect(0, 0, W, H);
-        try { hctx.filter = 'blur(2px)'; } catch (e) {}
+        try { hctx.filter = 'blur(4px)'; } catch (e) {}
         hctx.drawImage(maskC, 0, 0, W, H);
         try { hctx.filter = 'none'; } catch (e) {}
         hctx.globalCompositeOperation = 'source-in';
@@ -7923,33 +7801,6 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         hctx.drawImage(results.image, pfX, pfY, pfW, pfH);
         hctx.globalAlpha = 1;
         try { hctx.filter = 'none'; } catch (e) {}
-        // Edge dissolve — WIDE only (owner, Nov 6): the fitted camera
-        // picture is a portrait column inside the wide canvas, and
-        // every hard edge of that column can print on the placed
-        // figure as a visible line — the "portrait box" from his
-        // reports. Fade the cutout out at the camera frame's own
-        // edges, so where his body meets the frame's edge it
-        // dissolves instead of slicing, and no rectangle boundary
-        // can ever show. The tall screen is untouched by design.
-        if (W > H) {
-          try {
-            hctx.globalCompositeOperation = 'destination-out';
-            var efX = Math.max(8, pfW * 0.12), efY = Math.max(8, pfH * 0.07), egF;
-            egF = hctx.createLinearGradient(pfX, 0, pfX + efX, 0);
-            egF.addColorStop(0, 'rgba(0,0,0,1)'); egF.addColorStop(1, 'rgba(0,0,0,0)');
-            hctx.fillStyle = egF; hctx.fillRect(pfX, pfY, efX, pfH);
-            egF = hctx.createLinearGradient(pfX + pfW, 0, pfX + pfW - efX, 0);
-            egF.addColorStop(0, 'rgba(0,0,0,1)'); egF.addColorStop(1, 'rgba(0,0,0,0)');
-            hctx.fillStyle = egF; hctx.fillRect(pfX + pfW - efX, pfY, efX, pfH);
-            egF = hctx.createLinearGradient(0, pfY, 0, pfY + efY);
-            egF.addColorStop(0, 'rgba(0,0,0,1)'); egF.addColorStop(1, 'rgba(0,0,0,0)');
-            hctx.fillStyle = egF; hctx.fillRect(pfX, pfY, pfW, efY);
-            egF = hctx.createLinearGradient(0, pfY + pfH, 0, pfY + pfH - efY);
-            egF.addColorStop(0, 'rgba(0,0,0,1)'); egF.addColorStop(1, 'rgba(0,0,0,0)');
-            hctx.fillStyle = egF; hctx.fillRect(pfX, pfY + pfH - efY, pfW, efY);
-            hctx.globalCompositeOperation = 'source-over';
-          } catch (e) {}
-        }
         hctx.restore();
       });
     } catch (e) { seg = null; mode = 'frame'; }
