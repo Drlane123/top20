@@ -287,4 +287,132 @@ function renderFbBadge({ songId, title, artist, coverAbs, standing, chartDate, c
   });
 }
 
-module.exports = { headlineStanding, chartLabelText, renderCard, renderProfileCard, renderBadge, renderFbBadge };
+module.exports = { headlineStanding, chartLabelText, renderCard, renderProfileCard, renderBadge, renderFbBadge, top10Standing, plaqueTier, renderPlaque };
+
+// ---------------------------------------------------------------------------
+// Top 10 AWARD PLAQUES (owner, Nov 7, 2026) — Dale's settled design,
+// baked from his own final renders (plaque-data.js masters, 1142x1377):
+// a slim black frame with gold trim, HOT TOP 20 across the top with the
+// rank number at the left, the artist's cover art in the center of a big
+// record wrapped in headphones, the silver mic beside it, and the
+// artist's name in platinum under the record with their song title
+// beneath it. Tiers: #6-#10 GOLD (gold record), #1-#5 PLATINUM
+// (platinum record), and #1 deluxe mixes gold and platinum on black
+// and adds a credentials line under the title — craft score, days
+// charted, and the month it hit #1. Earned = a Top 10 spot on the
+// NATIONAL OVERALL chart, current or any past chart day (an award,
+// once earned, is kept). renderPlaque swaps the per-artist pieces into
+// the master: cover photo (round), rank number, award line, name,
+// title, and the #1 credentials line.
+let PLAQUE_FRAMES = null;
+function plaqueFrames() {
+  if (!PLAQUE_FRAMES) { try { PLAQUE_FRAMES = require("./plaque-data"); } catch { PLAQUE_FRAMES = {}; } }
+  return PLAQUE_FRAMES;
+}
+function plaqueTier(rank) { return rank === 1 ? "numberone" : rank <= 5 ? "platinum" : "gold"; }
+function top10Standing(db, songId) {
+  const date = latestChartDate(db);
+  if (!date) return null;
+  const cur = db.prepare(
+    "SELECT rank FROM chart_entries WHERE song_id = ? AND chart_date = ? AND level = 'national' AND genre = 'Overall' AND region_key = 'ALL'"
+  ).get(songId, date);
+  if (cur && cur.rank <= 10) return { rank: cur.rank, date, current: true, tier: plaqueTier(cur.rank) };
+  const best = db.prepare(
+    "SELECT rank, chart_date FROM chart_entries WHERE song_id = ? AND level = 'national' AND genre = 'Overall' AND region_key = 'ALL' AND rank <= 10 ORDER BY rank ASC, chart_date ASC LIMIT 1"
+  ).get(songId);
+  if (best) return { rank: best.rank, date: best.chart_date, current: false, tier: plaqueTier(best.rank) };
+  return null;
+}
+const PLAQUE_MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+function plaqueDateText(iso) {
+  const p = String(iso || "").split("-");
+  if (p.length !== 3) return "";
+  return `${PLAQUE_MONTHS[Number(p[1]) - 1] || ""} ${Number(p[2])}, ${p[0]}`;
+}
+const FONT_SERIF = "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf";
+function renderPlaque({ songId, title, artist, coverAbs, award, craftScore, days }) {
+  const tier = award.tier;
+  const key = ["award2", songId, tier, award.rank, award.date, title, artist, craftScore, days].join("|");
+  if (cache.has(key)) return Promise.resolve(cache.get(key));
+  const frames = plaqueFrames();
+  if (!frames[tier]) return Promise.reject(new Error("plaque frame missing: " + tier));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "plaque-"));
+  const put = (name, text) => { const p = path.join(dir, name); fs.writeFileSync(p, cardText(text, 200)); return p; };
+  const framePath = path.join(dir, "frame.jpg");
+  fs.writeFileSync(framePath, Buffer.from(frames[tier], "base64"));
+  const up = (s) => String(s || "").toUpperCase();
+  const artistText = up(cardText(artist, 26));
+  const titleText = '"' + up(cardText(title, 26)) + '"';
+  const fNum = put("num.txt", String(award.rank));
+  const fArtist = put("artist.txt", artistText);
+  const fTitle = put("title.txt", titleText);
+  const GOLD = "0xFFC44D", PLAT = "0xF4F8FF", PLATD = "0x54657F", INK = "0x070707";
+  const awardText = tier === "gold" ? "TOP 10 GOLD AWARD - NATIONAL OVERALL"
+    : tier === "platinum" ? "TOP 10 PLATINUM AWARD - NATIONAL OVERALL"
+    : "NO. 1 PLATINUM AWARD - NATIONAL OVERALL";
+  const fAward = put("award.txt", awardText);
+  const numFace = tier === "platinum" ? PLAT : "0xF5B921";
+  const numShadow = tier === "platinum" ? PLATD : "0x8A5A00";
+  const awardCol = tier === "platinum" ? PLAT : GOLD;
+  // The award line runs under HOT TOP 20 up to the logo on the right —
+  // cap its width at 470px so it never touches the logo.
+  // Font sizes fitted to the master's own lettering (measured on the
+  // settled renders): the name runs as wide as the master's, the title
+  // and lines shrink to stay inside their bands on long names.
+  const nameSize = Math.min(150, Math.floor(920 / (0.62 * Math.max(4, artistText.length))));
+  const titleSize = Math.min(48, Math.floor(640 / (0.58 * Math.max(6, titleText.length))));
+  const titleW = Math.ceil(0.58 * titleSize * titleText.length);
+  const numSize = award.rank >= 10 ? 84 : 105;
+  const awardSize = Math.min(24, Math.floor(470 / (0.55 * Math.max(10, awardText.length))));
+  const erase = [
+    `drawbox=x=118:y=168:w=104:h=108:color=${INK}:t=fill`,
+    `drawbox=x=245:y=178:w=560:h=48:color=${INK}:t=fill`,
+    `drawbox=x=90:y=892:w=962:h=140:color=${INK}:t=fill`,
+    `drawbox=x=${Math.floor((1142 - titleW) / 2) - 15}:y=1022:w=${titleW + 30}:h=64:color=${INK}:t=fill`,
+  ];
+  const dt = (file, font, size, color, x, y) =>
+    `drawtext=fontfile=${font}:textfile=${file}:fontsize=${size}:fontcolor=${color}:x=${x}:y=${y}`;
+  const texts = [
+    dt(fNum, FONT, numSize, numShadow, "171-text_w/2+2", 177),
+    dt(fNum, FONT, numSize, numFace, "171-text_w/2", 174),
+    dt(fAward, FONT, awardSize, awardCol, 252, 186),
+    dt(fArtist, FONT_SERIF, nameSize, PLATD, "(w-text_w)/2+3", 912),
+    dt(fArtist, FONT_SERIF, nameSize, PLAT, "(w-text_w)/2", 908),
+    dt(fTitle, FONT, titleSize, "0xE8EEF7", "(w-text_w)/2", 1032),
+  ];
+  if (tier === "numberone") {
+    erase.push(`drawbox=x=250:y=1088:w=642:h=30:color=${INK}:t=fill`);
+    const p = String(award.date || "").split("-");
+    const monYr = p.length === 3 ? `${PLAQUE_MONTHS[Number(p[1]) - 1] || ""} ${p[0]}` : "";
+    const creds = [
+      craftScore != null ? `CRAFT SCORE ${craftScore}` : null,
+      days > 0 ? `DAYS CHARTED ${days}` : null,
+      monYr || null,
+    ].filter(Boolean).join(" \u2022 ");
+    const fCred = put("cred.txt", creds);
+    texts.push(dt(fCred, FONT, 24, GOLD, "(w-text_w)/2", 1091));
+  }
+  // The cover sits in the record's round center (measured center
+  // 464,571 and hole ~246 across on the 1142x1377 masters); the swap
+  // runs 8px wider so the new photo fully covers the old one's edge.
+  const D = 254, covX = 464 - D / 2, covY = 571 - D / 2, RR = (D / 2 - 3) * (D / 2 - 3);
+  const graph = [
+    "[0:v]" + erase.join(",") + "[base0]",
+    `[1:v]scale=${D}:${D}:force_original_aspect_ratio=increase,crop=${D}:${D},format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte((X-W/2)*(X-W/2)+(Y-H/2)*(Y-H/2),${RR}),255,0)'[cov]`,
+    `[base0][cov]overlay=${covX}:${covY}[base]`,
+    "[base]" + texts.join(",") + "[out]",
+  ].join(";");
+  const out = path.join(dir, "plaque.jpg");
+  return new Promise((resolve, reject) => {
+    execFile("ffmpeg", ["-y", "-i", framePath, "-i", coverAbs, "-filter_complex", graph, "-map", "[out]", "-frames:v", "1", "-q:v", "3", out],
+      { timeout: 30000 }, (err) => {
+        let buf = null, readErr = err;
+        if (!err) { try { buf = fs.readFileSync(out); } catch (e) { readErr = e; } }
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* temp cleanup */ }
+        if (readErr) return reject(readErr);
+        if (cache.size > 200) cache.clear();
+        cache.set(key, buf);
+        resolve(buf);
+      });
+  });
+}
