@@ -7255,6 +7255,26 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     <video id="vcam" playsinline muted style="display:none"></video>
     <p id="vstatus" style="color:#f2c14e;margin:10px 0 4px">Tap “Turn camera on” to open the studio.</p>
     <p style="margin:4px 0"><span id="vtimer" style="font-weight:800;color:#ff5f6b"></span></p>
+    <div style="margin:12px 0 4px">
+      <p style="margin:0 0 6px"><strong>🎚️ Adjust — tap one, its slider drops down right here under the screen:</strong></p>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="fxBtn" data-fx="slim" onclick="fxShow('slim')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">Slim</button>
+        <button type="button" class="fxBtn" data-fx="back" onclick="fxShow('back')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">Step back</button>
+        <button type="button" class="fxBtn" data-fx="smooth" onclick="fxShow('smooth')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">Smooth</button>
+        <button type="button" class="fxBtn" data-fx="bright" onclick="fxShow('bright')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">Brighten</button>
+        <button type="button" class="fxBtn" data-fx="wide" onclick="fxShow('wide')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">Widen</button>
+        <button type="button" class="fxBtn" data-fx="zoom" onclick="fxShow('zoom')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">Zoom</button>
+      </div>
+      <div id="fxPanel" style="display:none;margin-top:8px;max-width:560px;background:#0a0f22;border:1px solid #2c3a6e;border-radius:10px;padding:10px 12px">
+        <div class="fxSlide" data-fx="slim" style="display:none"><label style="color:#c9cdd6;font-size:14px">Slim — narrow the figure a touch<input type="range" id="fxSlimR" min="0" max="100" value="0" oninput="setFx('slim', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="back" style="display:none"><label style="color:#c9cdd6;font-size:14px">Step back — smaller in the room, deeper behind the desk<input type="range" id="fxBackR" min="0" max="100" value="0" oninput="setFx('back', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="smooth" style="display:none"><label style="color:#c9cdd6;font-size:14px">Smooth — soften the skin, keep the edge crisp<input type="range" id="fxSmoothR" min="0" max="100" value="0" oninput="setFx('smooth', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="bright" style="display:none"><label style="color:#c9cdd6;font-size:14px">Brighten — lift a dim room's light on the face<input type="range" id="fxBrightR" min="0" max="100" value="0" oninput="setFx('bright', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="wide" style="display:none"><label style="color:#c9cdd6;font-size:14px">Widen — stretch your picture wider to fill the room, so your arms stay in view<input type="range" id="fxWideR" min="0" max="100" value="0" oninput="setFx('wide', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="zoom" style="display:none"><label style="color:#c9cdd6;font-size:14px">Zoom — middle is your normal size; slide left to sit farther back, right to come closer<input type="range" id="fxZoomR" min="0" max="100" value="50" oninput="setFx('zoom', this.value)" style="width:100%"></label></div>
+        <p style="margin:8px 0 0"><button type="button" onclick="resetFx()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Reset effects</button></p>
+      </div>
+    </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
       <button type="button" onclick="startCam()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">📷 Turn camera on</button>
       <button type="button" onclick="flipCam()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">🔄 Flip camera</button>
@@ -7276,16 +7296,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       <button type="button" class="fmtBtn" data-fmt="tall" onclick="setFormat('tall')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 13px;font-weight:700;cursor:pointer;margin-top:6px">📱 Phone — tall</button>
       <span style="color:#8a8f99;font-size:12.5px;display:block;margin-top:4px">Tall sets are framed so the whole HOT TOP 20 sign fits the phone screen.</span>
     </p>
-    <p style="margin:14px 0 6px"><strong>✨ Effects — shape the person to fit the room:</strong></p>
-    <div style="display:grid;gap:6px;max-width:560px">
-      <label style="color:#c9cdd6;font-size:14px">Slim — narrow the figure a touch<input type="range" id="fxSlimR" min="0" max="100" value="0" oninput="setFx('slim', this.value)" style="width:100%"></label>
-      <label style="color:#c9cdd6;font-size:14px">Step back — smaller in the room, deeper behind the desk<input type="range" id="fxBackR" min="0" max="100" value="0" oninput="setFx('back', this.value)" style="width:100%"></label>
-      <label style="color:#c9cdd6;font-size:14px">Smooth — soften the skin, keep the edge crisp<input type="range" id="fxSmoothR" min="0" max="100" value="0" oninput="setFx('smooth', this.value)" style="width:100%"></label>
-      <label style="color:#c9cdd6;font-size:14px">Brighten — lift a dim room's light on the face<input type="range" id="fxBrightR" min="0" max="100" value="0" oninput="setFx('bright', this.value)" style="width:100%"></label>
-      <label style="color:#c9cdd6;font-size:14px">Widen — stretch your picture wider to fill the room, so your arms stay in view<input type="range" id="fxWideR" min="0" max="100" value="0" oninput="setFx('wide', this.value)" style="width:100%"></label>
-      <label style="color:#c9cdd6;font-size:14px">Zoom — middle is your normal size; slide left to sit farther back, right to come closer<input type="range" id="fxZoomR" min="0" max="100" value="50" oninput="setFx('zoom', this.value)" style="width:100%"></label>
-      <p style="margin:2px 0"><button type="button" onclick="resetFx()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Reset effects</button></p>
-    </div>
+    <p style="color:#8a8f99;font-size:12.5px;margin:14px 0 6px">✨ Effects live in the <strong>🎚️ Adjust</strong> row right under the screen now — tap Zoom, Brighten, and the rest there and the slider drops down where you can watch the screen while you slide.</p>
     <p style="margin:12px 0 6px"><strong>Pick your set:</strong></p>
     <div style="display:flex;gap:8px;flex-wrap:wrap">${setBtns}</div>
     <p style="margin:14px 0 6px"><strong>🎡 Stage templates — the LIVE Top 20 inside your show:</strong></p>
@@ -7385,6 +7396,22 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     fxZoom = (savedFx.zoom == null ? 50 : savedFx.zoom) / 100;
   } catch (e) {}
   function saveFx() { try { localStorage.setItem('vcfx', JSON.stringify({ slim: fxSlim * 100, back: fxBack * 100, smooth: fxSmooth * 100, bright: fxBright * 100, wide: fxWide * 100, zoom: fxZoom * 100 })); } catch (e) {} }
+  // 🎚️ Adjust row (owner, Nov 6 night): the effect sliders live
+  // right under the screen now, one button per effect — tap a
+  // button and ONLY that slider drops down, so he can watch the
+  // screen while he slides instead of scrolling away and
+  // accidentally dragging the other levels. Tap the open one
+  // again to close it.
+  var fxOpen = '';
+  function fxShow(which) {
+    fxOpen = (fxOpen === which) ? '' : which;
+    var panel = document.getElementById('fxPanel');
+    if (panel) panel.style.display = fxOpen ? 'block' : 'none';
+    var slides = document.querySelectorAll('.fxSlide');
+    for (var i = 0; i < slides.length; i++) slides[i].style.display = (slides[i].getAttribute('data-fx') === fxOpen) ? 'block' : 'none';
+    var btns = document.querySelectorAll('.fxBtn');
+    for (var j = 0; j < btns.length; j++) btns[j].style.borderColor = (btns[j].getAttribute('data-fx') === fxOpen) ? '#f2c14e' : '#2c3a6e';
+  }
   function setFx(which, v) {
     var f = Math.max(0, Math.min(100, +v || 0)) / 100;
     if (which === 'slim') fxSlim = f; else if (which === 'back') fxBack = f;
