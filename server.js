@@ -7401,6 +7401,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-fmt') === f) ? '#f2c14e' : '#2c3a6e';
     loadBackdrop();
     if (typeof fxReady !== 'undefined' && fxReady) fxPresetPaint(null);
+    vcMuteRadio();
   }
   // Open on his remembered screen right away — canvas size,
   // button highlight, and the right room picture from the start.
@@ -7489,7 +7490,18 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   fxReady = true;
   var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
   function setStatus(t) { document.getElementById('vstatus').textContent = t; }
+  // Radio Booth is MUTED on the phone view (owner, Nov 6 night):
+  // in the tall room its console covers his head. The button hides
+  // in tall, a radio pick falls back to Purple Hip-Hop, and the
+  // YouTube view keeps Radio Booth untouched (Separation Rule).
+  function vcMuteRadio() {
+    var rb = document.querySelector('.vset[data-key="radio"]');
+    if (rb) rb.style.display = (vcFormat === 'tall') ? 'none' : '';
+    if (vcFormat === 'tall' && currentSet === 'radio') pickSet('graffiti');
+    if (typeof window.vcStageOff === 'function') window.vcStageOff();
+  }
   function pickSet(key) {
+    if (key === 'radio' && vcFormat === 'tall') key = 'graffiti';
     currentSet = key; loadBackdrop();
     var btns = document.querySelectorAll('.vset');
     for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-key') === key) ? '#f2c14e' : '#232a45';
