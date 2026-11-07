@@ -7283,6 +7283,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       <label style="color:#c9cdd6;font-size:14px">Smooth — soften the skin, keep the edge crisp<input type="range" id="fxSmoothR" min="0" max="100" value="0" oninput="setFx('smooth', this.value)" style="width:100%"></label>
       <label style="color:#c9cdd6;font-size:14px">Brighten — lift a dim room's light on the face<input type="range" id="fxBrightR" min="0" max="100" value="0" oninput="setFx('bright', this.value)" style="width:100%"></label>
       <label style="color:#c9cdd6;font-size:14px">Widen — stretch your picture wider to fill the room, so your arms stay in view<input type="range" id="fxWideR" min="0" max="100" value="0" oninput="setFx('wide', this.value)" style="width:100%"></label>
+      <label style="color:#c9cdd6;font-size:14px">Zoom — middle is your normal size; slide left to sit farther back, right to come closer<input type="range" id="fxZoomR" min="0" max="100" value="50" oninput="setFx('zoom', this.value)" style="width:100%"></label>
       <p style="margin:2px 0"><button type="button" onclick="resetFx()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Reset effects</button></p>
     </div>
     <p style="margin:12px 0 6px"><strong>Pick your set:</strong></p>
@@ -7373,29 +7374,33 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   }
   // ✨ Effects (owner, Nov 1): the host shapes their own picture to fit
   // the room — slim, step back, smooth, brighten. Saved on this phone.
-  var fxSlim = 0, fxBack = 0, fxSmooth = 0, fxBright = 0, fxWide = 0;
+  var fxSlim = 0, fxBack = 0, fxSmooth = 0, fxBright = 0, fxWide = 0, fxZoom = 0.5;
   try {
     var savedFx = JSON.parse(localStorage.getItem('vcfx') || '{}');
     fxSlim = (savedFx.slim || 0) / 100; fxBack = (savedFx.back || 0) / 100;
     fxSmooth = (savedFx.smooth || 0) / 100; fxBright = (savedFx.bright || 0) / 100;
     fxWide = (savedFx.wide || 0) / 100;
+    // Zoom's normal is the MIDDLE (50) — a phone that saved its
+    // effects before Zoom existed must land on normal, not zero.
+    fxZoom = (savedFx.zoom == null ? 50 : savedFx.zoom) / 100;
   } catch (e) {}
-  function saveFx() { try { localStorage.setItem('vcfx', JSON.stringify({ slim: fxSlim * 100, back: fxBack * 100, smooth: fxSmooth * 100, bright: fxBright * 100, wide: fxWide * 100 })); } catch (e) {} }
+  function saveFx() { try { localStorage.setItem('vcfx', JSON.stringify({ slim: fxSlim * 100, back: fxBack * 100, smooth: fxSmooth * 100, bright: fxBright * 100, wide: fxWide * 100, zoom: fxZoom * 100 })); } catch (e) {} }
   function setFx(which, v) {
     var f = Math.max(0, Math.min(100, +v || 0)) / 100;
     if (which === 'slim') fxSlim = f; else if (which === 'back') fxBack = f;
     else if (which === 'smooth') fxSmooth = f; else if (which === 'bright') fxBright = f;
-    else if (which === 'wide') fxWide = f;
+    else if (which === 'wide') fxWide = f; else if (which === 'zoom') fxZoom = f;
     saveFx();
   }
   function resetFx() {
-    fxSlim = fxBack = fxSmooth = fxBright = fxWide = 0;
+    fxSlim = fxBack = fxSmooth = fxBright = fxWide = 0; fxZoom = 0.5;
     var ids = ['fxSlimR', 'fxBackR', 'fxSmoothR', 'fxBrightR', 'fxWideR'];
     for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.value = 0; }
+    var zr = document.getElementById('fxZoomR'); if (zr) zr.value = 50;
     saveFx();
   }
   (function initFxSliders() {
-    var pairs = [['fxSlimR', fxSlim], ['fxBackR', fxBack], ['fxSmoothR', fxSmooth], ['fxBrightR', fxBright], ['fxWideR', fxWide]];
+    var pairs = [['fxSlimR', fxSlim], ['fxBackR', fxBack], ['fxSmoothR', fxSmooth], ['fxBrightR', fxBright], ['fxWideR', fxWide], ['fxZoomR', fxZoom]];
     for (var i = 0; i < pairs.length; i++) { var el = document.getElementById(pairs[i][0]); if (el) el.value = Math.round(pairs[i][1] * 100); }
   })();
   var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
@@ -7761,11 +7766,21 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
           var fitCover = Math.max(W / camW, H / camH);
           fitS = fitContain + (fitCover - fitContain) * fxWide;
         }
-        var pfW = Math.round(camW * fitS), pfH = Math.round(camH * fitS);
-        // Centered while the whole picture shows; once Widen zooms
+        var pfW0 = Math.round(camW * fitS), pfH0 = Math.round(camH * fitS);
+        // Centered while the whole picture shows; once Widen walks
         // past the screen, anchor top-biased so his face keeps and
         // the bottom gives up the space.
-        var pfX = Math.round((W - pfW) / 2), pfY = Math.round(pfH > H ? (H - pfH) * 0.25 : (H - pfH) / 2);
+        var pfX0 = Math.round((W - pfW0) / 2), pfY0 = Math.round(pfH0 > H ? (H - pfH0) * 0.25 : (H - pfH0) / 2);
+        // ZOOM (owner, Nov 6): his slider in Effects, both screens —
+        // the middle (50) is exactly the fit above, untouched; left
+        // halves the picture (0.5x), right doubles it (2x), scaled
+        // about the picture's own center and clamped so it can
+        // never slide off the screen or open a void at an edge.
+        var zz = Math.pow(2, fxZoom * 2 - 1);
+        var pfW = Math.round(pfW0 * zz), pfH = Math.round(pfH0 * zz);
+        var pfX = Math.round(pfX0 + (pfW0 - pfW) / 2), pfY = Math.round(pfY0 + (pfH0 - pfH) / 2);
+        pfX = pfW >= W ? Math.max(W - pfW, Math.min(0, pfX)) : Math.max(0, Math.min(W - pfW, pfX));
+        pfY = pfH >= H ? Math.max(H - pfH, Math.min(0, pfY)) : Math.max(0, Math.min(H - pfH, pfY));
         vcPfX = pfX; vcPfY = pfY; vcPfW = pfW; vcPfH = pfH;
         // Edge cleanup (owner, Nov 1): the raw mask leaves flaky scraps
         // around hair and shoulders. Blend in the previous frame's mask
