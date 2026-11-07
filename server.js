@@ -7476,7 +7476,17 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   async function startCam() {
     try {
       if (stream) { var tr = stream.getTracks(); for (var i = 0; i < tr.length; i++) tr[i].stop(); }
-      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: vcFormat === 'tall' ? 720 : 1280 }, height: { ideal: vcFormat === 'tall' ? 1280 : 720 } }, audio: true });
+      // Ask for the picked screen's shape FIRST as an exact fit: a
+      // phone held upright otherwise hands back a TALL picture for
+      // the wide screen, and that tall slice down the middle is the
+      // invisible frame the owner kept hitting. If the camera can't
+      // give the exact shape, fall back to asking nicely.
+      var wantW = vcFormat === 'tall' ? 720 : 1280, wantH = vcFormat === 'tall' ? 1280 : 720;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { exact: wantW }, height: { exact: wantH } }, audio: true });
+      } catch (e1) {
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: wantW }, height: { ideal: wantH } }, audio: true });
+      }
       video.srcObject = stream;
       await video.play();
       // The picked format OWNS the screen size (owner, Nov 6, 2026):
@@ -7655,9 +7665,26 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       // the desk however far back he holds the phone.
       var sx0 = vcPfW > 0 ? vcPfX : 0, sy0 = vcPfW > 0 ? vcPfY : 0;
       var sw0 = vcPfW > 0 ? vcPfW : iw0, sh0 = vcPfW > 0 ? vcPfH : ih0;
-      var dhR = h * (vcFormat === 'tall' ? 1.0 : 1.06) * s;
-      var dwR = dhR * (sw0 / sh0) * (1 - fxSlim * 0.14);
-      var dxR = x + (w - dwR) / 2, dyR = y + h * 0.78 - dhR * 0.78;
+      var dwR, dhR, dxR, dyR;
+      if (vcFormat === 'tall') {
+        dhR = h * s;
+        dwR = dhR * (sw0 / sh0) * (1 - fxSlim * 0.14);
+        dxR = x + (w - dwR) / 2; dyR = y + h * 0.78 - dhR * 0.78;
+      } else {
+        // Seated framing v3 (owner, Nov 6): place the camera frame
+        // by WIDTH, its top riding just above the screen. Placed by
+        // height (v2), a tall phone picture shrank into a narrow
+        // slice down the middle of the wide screen — the invisible
+        // picture frame around him, slicing his body whenever he
+        // leaned. By width, the frame's edges leave the screen
+        // entirely: no line to see, nothing mid-screen to cut him.
+        // The desk layer covers everything below its line.
+        var dwB = w * (sh0 > sw0 * 1.4 ? 0.88 : 0.96) * s;
+        dhR = dwB * (sh0 / sw0);
+        dwR = dwB * (1 - fxSlim * 0.14);
+        dxR = x + (w - dwR) / 2;
+        dyR = y - dhR * 0.06;
+      }
       ctx.drawImage(hostC, sx0, sy0, sw0, sh0, dxR, dyR, dwR, dhR);
       return;
     }
