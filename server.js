@@ -7758,13 +7758,27 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         var fitContain = Math.min(W / camW, H / camH);
         var fitS = fitContain;
         if ((camW < camH) !== (W < H)) {
-          // Mismatch only (tall phone picture, wide room — where
-          // the whole-picture fit IS the height fit): Dale's WIDEN
-          // slider (Effects) walks the fit from whole-picture
-          // toward full cover under HIS hand, so his arms stay in
-          // view on the wide screen. At 0, pure whole-picture fit.
           var fitCover = Math.max(W / camW, H / camH);
-          fitS = fitContain + (fitCover - fitContain) * fxWide;
+          if (W < H) {
+            // PHONE screen, WIDE camera picture (owner's shot,
+            // Nov 6, 21:23): the whole-picture fit letterboxed his
+            // picture into a band and his head rose ABOVE the
+            // band's top edge — the wall covered his forehead and
+            // he had to duck the camera down to get his face in. A
+            // wide picture cannot sit in a band inside a tall room.
+            // It FILLS the screen, the way Facebook fills it — head
+            // and body in the room at full height, floor behind
+            // him — and his ZOOM slider pulls the size back to
+            // exactly where he wants it.
+            fitS = fitCover;
+          } else {
+            // Wide screen, tall phone picture (where the whole-
+            // picture fit IS the height fit): Dale's WIDEN slider
+            // walks the fit from whole-picture toward full cover
+            // under HIS hand, so his arms stay in view. At 0, pure
+            // whole-picture fit.
+            fitS = fitContain + (fitCover - fitContain) * fxWide;
+          }
         }
         var pfW0 = Math.round(camW * fitS), pfH0 = Math.round(camH * fitS);
         // Centered while the whole picture shows; once Widen walks
