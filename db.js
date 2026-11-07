@@ -349,6 +349,29 @@ function openDb() {
   if (!ceCols.includes("admin_pick")) {
     db.exec("ALTER TABLE chart_entries ADD COLUMN admin_pick INTEGER NOT NULL DEFAULT 0");
   }
+  // Physical Top 10 award plaque orders (owner, Nov 7, 2026): an artist
+  // whose song earned a Top 10 National Overall plaque can order the
+  // real framed plaque from the song's order page. The owner sets the
+  // price and the wait time (admin_config plaque_price / plaque_eta);
+  // the customer pays the owner directly, off-site.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS plaque_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      song_id INTEGER NOT NULL REFERENCES songs(id),
+      rank INTEGER NOT NULL,
+      tier TEXT NOT NULL,
+      buyer_name TEXT NOT NULL,
+      email TEXT NOT NULL,
+      ship_name TEXT NOT NULL,
+      ship_street TEXT NOT NULL,
+      ship_city TEXT NOT NULL,
+      ship_state TEXT NOT NULL,
+      ship_zip TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   // Status vocabulary moved from 'active' to 'live' (Phase 2).
   db.exec("UPDATE songs SET status = 'live' WHERE status = 'active'");
 
