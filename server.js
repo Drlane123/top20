@@ -7742,20 +7742,30 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         // keeps and the bottom crops first. Mask and image share
         // this one rect, exactly as the reference code draws them.
         var camW = results.image.width, camH = results.image.height;
-        var fitS = Math.max(W / camW, H / camH);
+        // FIT THE WHOLE PICTURE (owner's call, Nov 6 night — his
+        // Facebook Live shot is the reference): the camera picture
+        // shows ENTIRE, at its natural size, never zoomed or cropped
+        // by the fit. This is the exact fit the phone build he
+        // called perfect used. The open-source cover default fills
+        // the screen, which zoomed him ~a third bigger than life on
+        // the phone screen, because his camera's picture is not the
+        // screen's exact shape — cover only behaves when it is.
+        var fitContain = Math.min(W / camW, H / camH);
+        var fitS = fitContain;
         if ((camW < camH) !== (W < H)) {
-          // Mismatch (tall phone picture, wide room): the recipe
-          // fits by HEIGHT, above. Dale's WIDEN slider (Effects,
-          // Nov 6) walks the fit from that height-fit toward full
-          // cover under HIS hand — at 0 this line is the pure
-          // recipe; as he slides, the picture widens to fill the
-          // room so his arms stay in view, and he stops where his
-          // own eyes say it sits right. Saved on his phone (vcfx).
-          var fitH = H / camH, fitW = W / camW;
-          fitS = fitH + (fitW - fitH) * fxWide;
+          // Mismatch only (tall phone picture, wide room — where
+          // the whole-picture fit IS the height fit): Dale's WIDEN
+          // slider (Effects) walks the fit from whole-picture
+          // toward full cover under HIS hand, so his arms stay in
+          // view on the wide screen. At 0, pure whole-picture fit.
+          var fitCover = Math.max(W / camW, H / camH);
+          fitS = fitContain + (fitCover - fitContain) * fxWide;
         }
         var pfW = Math.round(camW * fitS), pfH = Math.round(camH * fitS);
-        var pfX = Math.round((W - pfW) / 2), pfY = Math.round((H - pfH) * 0.25);
+        // Centered while the whole picture shows; once Widen zooms
+        // past the screen, anchor top-biased so his face keeps and
+        // the bottom gives up the space.
+        var pfX = Math.round((W - pfW) / 2), pfY = Math.round(pfH > H ? (H - pfH) * 0.25 : (H - pfH) / 2);
         vcPfX = pfX; vcPfY = pfY; vcPfW = pfW; vcPfH = pfH;
         // Edge cleanup (owner, Nov 1): the raw mask leaves flaky scraps
         // around hair and shoulders. Blend in the previous frame's mask
