@@ -7266,12 +7266,12 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         <button type="button" class="fxBtn" data-fx="zoom" onclick="fxShow('zoom')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">Zoom</button>
       </div>
       <div id="fxPanel" style="display:none;margin-top:8px;max-width:560px;background:#0a0f22;border:1px solid #2c3a6e;border-radius:10px;padding:10px 12px">
-        <div class="fxSlide" data-fx="slim" style="display:none"><label style="color:#c9cdd6;font-size:14px">Slim — narrow the figure a touch<input type="range" id="fxSlimR" min="0" max="100" value="0" oninput="setFx('slim', this.value)" style="width:100%"></label></div>
-        <div class="fxSlide" data-fx="back" style="display:none"><label style="color:#c9cdd6;font-size:14px">Step back — smaller in the room, deeper behind the desk<input type="range" id="fxBackR" min="0" max="100" value="0" oninput="setFx('back', this.value)" style="width:100%"></label></div>
-        <div class="fxSlide" data-fx="smooth" style="display:none"><label style="color:#c9cdd6;font-size:14px">Smooth — soften the skin, keep the edge crisp<input type="range" id="fxSmoothR" min="0" max="100" value="0" oninput="setFx('smooth', this.value)" style="width:100%"></label></div>
-        <div class="fxSlide" data-fx="bright" style="display:none"><label style="color:#c9cdd6;font-size:14px">Brighten — lift a dim room's light on the face<input type="range" id="fxBrightR" min="0" max="100" value="0" oninput="setFx('bright', this.value)" style="width:100%"></label></div>
-        <div class="fxSlide" data-fx="wide" style="display:none"><label style="color:#c9cdd6;font-size:14px">Widen — stretch your picture wider to fill the room, so your arms stay in view<input type="range" id="fxWideR" min="0" max="100" value="0" oninput="setFx('wide', this.value)" style="width:100%"></label></div>
-        <div class="fxSlide" data-fx="zoom" style="display:none"><label style="color:#c9cdd6;font-size:14px">Zoom — middle is your normal size; slide left to sit farther back, right to come closer<input type="range" id="fxZoomR" min="0" max="100" value="50" oninput="setFx('zoom', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="slim" style="display:none"><label style="color:#c9cdd6;font-size:14px">Slim — narrow the figure a touch <span id="fxSlimPct" style="color:#f2c14e;font-weight:800">0%</span><input type="range" id="fxSlimR" min="0" max="100" value="0" oninput="setFx('slim', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="back" style="display:none"><label style="color:#c9cdd6;font-size:14px">Step back — smaller in the room, deeper behind the desk <span id="fxBackPct" style="color:#f2c14e;font-weight:800">0%</span><input type="range" id="fxBackR" min="0" max="100" value="0" oninput="setFx('back', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="smooth" style="display:none"><label style="color:#c9cdd6;font-size:14px">Smooth — soften the skin, keep the edge crisp <span id="fxSmoothPct" style="color:#f2c14e;font-weight:800">0%</span><input type="range" id="fxSmoothR" min="0" max="100" value="0" oninput="setFx('smooth', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="bright" style="display:none"><label style="color:#c9cdd6;font-size:14px">Brighten — lift a dim room's light on the face <span id="fxBrightPct" style="color:#f2c14e;font-weight:800">0%</span><input type="range" id="fxBrightR" min="0" max="100" value="0" oninput="setFx('bright', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="wide" style="display:none"><label style="color:#c9cdd6;font-size:14px">Widen — stretch your picture wider to fill the room, so your arms stay in view <span id="fxWidePct" style="color:#f2c14e;font-weight:800">0%</span><input type="range" id="fxWideR" min="0" max="100" value="0" oninput="setFx('wide', this.value)" style="width:100%"></label></div>
+        <div class="fxSlide" data-fx="zoom" style="display:none"><label style="color:#c9cdd6;font-size:14px">Zoom — middle is your normal size; slide left to sit farther back, right to come closer <span id="fxZoomPct" style="color:#f2c14e;font-weight:800">50%</span><input type="range" id="fxZoomR" min="0" max="100" value="50" oninput="setFx('zoom', this.value)" style="width:100%"></label></div>
         <p style="margin:8px 0 0"><button type="button" onclick="resetFx()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Reset effects</button></p>
       </div>
     </div>
@@ -7423,23 +7423,32 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     var btns = document.querySelectorAll('.fxBtn');
     for (var j = 0; j < btns.length; j++) btns[j].style.borderColor = (btns[j].getAttribute('data-fx') === fxOpen) ? '#f2c14e' : '#2c3a6e';
   }
+  function paintFxPcts() {
+    // Percentage readouts (owner, Nov 6 night): every slider shows
+    // its number in gold, live as he slides, so he can read the
+    // settings back and have them made the open-every-time
+    // defaults. The number is the slider's own position.
+    var m = [['fxSlimPct', fxSlim], ['fxBackPct', fxBack], ['fxSmoothPct', fxSmooth], ['fxBrightPct', fxBright], ['fxWidePct', fxWide], ['fxZoomPct', fxZoom]];
+    for (var i = 0; i < m.length; i++) { var el = document.getElementById(m[i][0]); if (el) el.textContent = Math.round(m[i][1] * 100) + '%'; }
+  }
   function setFx(which, v) {
     var f = Math.max(0, Math.min(100, +v || 0)) / 100;
     if (which === 'slim') fxSlim = f; else if (which === 'back') fxBack = f;
     else if (which === 'smooth') fxSmooth = f; else if (which === 'bright') fxBright = f;
     else if (which === 'wide') fxWide = f; else if (which === 'zoom') fxZoom = f;
-    saveFx();
+    saveFx(); paintFxPcts();
   }
   function resetFx() {
     fxSlim = fxBack = fxSmooth = fxBright = fxWide = 0; fxZoom = 0.5;
     var ids = ['fxSlimR', 'fxBackR', 'fxSmoothR', 'fxBrightR', 'fxWideR'];
     for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.value = 0; }
     var zr = document.getElementById('fxZoomR'); if (zr) zr.value = 50;
-    saveFx();
+    saveFx(); paintFxPcts();
   }
   (function initFxSliders() {
     var pairs = [['fxSlimR', fxSlim], ['fxBackR', fxBack], ['fxSmoothR', fxSmooth], ['fxBrightR', fxBright], ['fxWideR', fxWide], ['fxZoomR', fxZoom]];
     for (var i = 0; i < pairs.length; i++) { var el = document.getElementById(pairs[i][0]); if (el) el.value = Math.round(pairs[i][1] * 100); }
+    paintFxPcts();
   })();
   var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
   function setStatus(t) { document.getElementById('vstatus').textContent = t; }
