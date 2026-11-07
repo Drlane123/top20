@@ -7400,6 +7400,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     var btns = document.querySelectorAll('.fmtBtn');
     for (var i = 0; i < btns.length; i++) btns[i].style.borderColor = (btns[i].getAttribute('data-fmt') === f) ? '#f2c14e' : '#2c3a6e';
     loadBackdrop();
+    if (typeof fxReady !== 'undefined' && fxReady) fxPresetPaint(null);
   }
   // Open on his remembered screen right away — canvas size,
   // button highlight, and the right room picture from the start.
@@ -7407,12 +7408,14 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   // ✨ Effects (owner, Nov 1): the host shapes their own picture to fit
   // the room — slim, step back, smooth, brighten. Saved on this phone.
   // Per-screen effect defaults (owner, Nov 6 night; SEPARATION
-  // RULE: the two screens never share settings). PHONE view opens
-  // on Dale's own numbers — Zoom 49, Step back 47, Slim 58 — baked
-  // here at his word, and his ⭐ Save as my default (below) can
-  // overwrite them on his phone any time. YouTube view keeps the
-  // plain defaults until he reads its numbers.
-  var FX_DEF = { tall: { slim: 58, back: 47, smooth: 0, bright: 0, wide: 0, zoom: 49 }, wide: { slim: 0, back: 0, smooth: 0, bright: 0, wide: 0, zoom: 50 } };
+  // RULE: the two screens never share settings). Both sets are
+  // Dale's own numbers, read off the percentage readouts and
+  // baked here at his word: PHONE view — Zoom 49, Step back 47,
+  // Slim 58; YOUTUBE view — Zoom 27, Step back 38, Slim 68. Each
+  // screen OPENS on its default every time; sliding is for the
+  // session, and on the phone view his ⭐ Save as my default can
+  // overwrite the phone default on his phone any time.
+  var FX_DEF = { tall: { slim: 58, back: 47, smooth: 0, bright: 0, wide: 0, zoom: 49 }, wide: { slim: 68, back: 38, smooth: 0, bright: 0, wide: 0, zoom: 27 } };
   var fxSlim = 0, fxBack = 0, fxSmooth = 0, fxBright = 0, fxWide = 0, fxZoom = 0.5;
   var fxReady = false, fxStash = {};
   function fxGet(key) { try { var s = JSON.parse(localStorage.getItem(key) || 'null'); return (s && typeof s === 'object') ? s : null; } catch (e) { return null; } }
@@ -7421,7 +7424,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   function fxSyncSliders() { var pairs = [['fxSlimR', fxSlim], ['fxBackR', fxBack], ['fxSmoothR', fxSmooth], ['fxBrightR', fxBright], ['fxWideR', fxWide], ['fxZoomR', fxZoom]]; for (var i = 0; i < pairs.length; i++) { var el = document.getElementById(pairs[i][0]); if (el) el.value = Math.round(pairs[i][1] * 100); } paintFxPcts(); fxPresetPaint(''); }
   function fxLoadForFormat() {
     if (vcFormat === 'tall') fxSetVars(fxGet('vcfx_def'), FX_DEF.tall);
-    else fxSetVars(fxGet('vcfx_wide'), FX_DEF.wide);
+    else fxSetVars(null, FX_DEF.wide);
     fxSyncSliders();
   }
   function fxSwitchFormat(f) {
@@ -7429,12 +7432,12 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     fxStash[vcFormat] = fxCurrentPct();
     if (fxStash[f]) { fxSetVars(fxStash[f], FX_DEF[f]); fxSyncSliders(); }
     else if (f === 'tall') { fxSetVars(fxGet('vcfx_def'), FX_DEF.tall); fxSyncSliders(); }
-    else { fxSetVars(fxGet('vcfx_wide'), FX_DEF.wide); fxSyncSliders(); }
+    else { fxSetVars(null, FX_DEF.wide); fxSyncSliders(); }
   }
-  // Sliding auto-saves on the YouTube view only. The phone view
-  // saves DELIBERATELY — ⭐ default + setups — so an experiment
-  // never overwrites the setup he opens on.
-  function saveFx() { if (vcFormat !== 'tall') { try { localStorage.setItem('vcfx_wide', JSON.stringify(fxCurrentPct())); } catch (e) {} } }
+  // Sliding never auto-saves on either screen now — each screen
+  // opens on its baked default every time, and the phone view's
+  // deliberate saves (⭐ default + setups) are the only writes.
+  function saveFx() {}
   // 💾 Saved setups — PHONE VIEW ONLY (owner, Nov 6 night): a
   // default the phone view opens on (every save overwrites it),
   // plus three setups for different filming distances.
