@@ -7282,6 +7282,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
       <label style="color:#c9cdd6;font-size:14px">Step back — smaller in the room, deeper behind the desk<input type="range" id="fxBackR" min="0" max="100" value="0" oninput="setFx('back', this.value)" style="width:100%"></label>
       <label style="color:#c9cdd6;font-size:14px">Smooth — soften the skin, keep the edge crisp<input type="range" id="fxSmoothR" min="0" max="100" value="0" oninput="setFx('smooth', this.value)" style="width:100%"></label>
       <label style="color:#c9cdd6;font-size:14px">Brighten — lift a dim room's light on the face<input type="range" id="fxBrightR" min="0" max="100" value="0" oninput="setFx('bright', this.value)" style="width:100%"></label>
+      <label style="color:#c9cdd6;font-size:14px">Widen — stretch your picture wider to fill the room, so your arms stay in view<input type="range" id="fxWideR" min="0" max="100" value="0" oninput="setFx('wide', this.value)" style="width:100%"></label>
       <p style="margin:2px 0"><button type="button" onclick="resetFx()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Reset effects</button></p>
     </div>
     <p style="margin:12px 0 6px"><strong>Pick your set:</strong></p>
@@ -7372,27 +7373,29 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   }
   // ✨ Effects (owner, Nov 1): the host shapes their own picture to fit
   // the room — slim, step back, smooth, brighten. Saved on this phone.
-  var fxSlim = 0, fxBack = 0, fxSmooth = 0, fxBright = 0;
+  var fxSlim = 0, fxBack = 0, fxSmooth = 0, fxBright = 0, fxWide = 0;
   try {
     var savedFx = JSON.parse(localStorage.getItem('vcfx') || '{}');
     fxSlim = (savedFx.slim || 0) / 100; fxBack = (savedFx.back || 0) / 100;
     fxSmooth = (savedFx.smooth || 0) / 100; fxBright = (savedFx.bright || 0) / 100;
+    fxWide = (savedFx.wide || 0) / 100;
   } catch (e) {}
-  function saveFx() { try { localStorage.setItem('vcfx', JSON.stringify({ slim: fxSlim * 100, back: fxBack * 100, smooth: fxSmooth * 100, bright: fxBright * 100 })); } catch (e) {} }
+  function saveFx() { try { localStorage.setItem('vcfx', JSON.stringify({ slim: fxSlim * 100, back: fxBack * 100, smooth: fxSmooth * 100, bright: fxBright * 100, wide: fxWide * 100 })); } catch (e) {} }
   function setFx(which, v) {
     var f = Math.max(0, Math.min(100, +v || 0)) / 100;
     if (which === 'slim') fxSlim = f; else if (which === 'back') fxBack = f;
     else if (which === 'smooth') fxSmooth = f; else if (which === 'bright') fxBright = f;
+    else if (which === 'wide') fxWide = f;
     saveFx();
   }
   function resetFx() {
-    fxSlim = fxBack = fxSmooth = fxBright = 0;
-    var ids = ['fxSlimR', 'fxBackR', 'fxSmoothR', 'fxBrightR'];
+    fxSlim = fxBack = fxSmooth = fxBright = fxWide = 0;
+    var ids = ['fxSlimR', 'fxBackR', 'fxSmoothR', 'fxBrightR', 'fxWideR'];
     for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.value = 0; }
     saveFx();
   }
   (function initFxSliders() {
-    var pairs = [['fxSlimR', fxSlim], ['fxBackR', fxBack], ['fxSmoothR', fxSmooth], ['fxBrightR', fxBright]];
+    var pairs = [['fxSlimR', fxSlim], ['fxBackR', fxBack], ['fxSmoothR', fxSmooth], ['fxBrightR', fxBright], ['fxWideR', fxWide]];
     for (var i = 0; i < pairs.length; i++) { var el = document.getElementById(pairs[i][0]); if (el) el.value = Math.round(pairs[i][1] * 100); }
   })();
   var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
@@ -7740,7 +7743,17 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         // this one rect, exactly as the reference code draws them.
         var camW = results.image.width, camH = results.image.height;
         var fitS = Math.max(W / camW, H / camH);
-        if ((camW < camH) !== (W < H)) fitS = H / camH;
+        if ((camW < camH) !== (W < H)) {
+          // Mismatch (tall phone picture, wide room): the recipe
+          // fits by HEIGHT, above. Dale's WIDEN slider (Effects,
+          // Nov 6) walks the fit from that height-fit toward full
+          // cover under HIS hand — at 0 this line is the pure
+          // recipe; as he slides, the picture widens to fill the
+          // room so his arms stay in view, and he stops where his
+          // own eyes say it sits right. Saved on his phone (vcfx).
+          var fitH = H / camH, fitW = W / camW;
+          fitS = fitH + (fitW - fitH) * fxWide;
+        }
         var pfW = Math.round(camW * fitS), pfH = Math.round(camH * fitS);
         var pfX = Math.round((W - pfW) / 2), pfY = Math.round((H - pfH) * 0.25);
         vcPfX = pfX; vcPfY = pfY; vcPfW = pfW; vcPfH = pfH;
