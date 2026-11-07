@@ -7264,6 +7264,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         <button type="button" class="fxBtn" data-fx="bright" onclick="fxShow('bright')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">Brighten</button>
         <button type="button" class="fxBtn" data-fx="wide" onclick="fxShow('wide')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">Widen</button>
         <button type="button" class="fxBtn" data-fx="zoom" onclick="fxShow('zoom')" style="background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">Zoom</button>
+        <button type="button" class="fxBtn" id="fxSavesBtn" data-fx="saves" onclick="fxShow('saves')" style="display:none;background:#1a2140;color:#e9ecf2;border:2px solid #2c3a6e;border-radius:8px;padding:9px 12px;font-weight:700;cursor:pointer">💾 Saves</button>
       </div>
       <div id="fxPanel" style="display:none;margin-top:8px;max-width:560px;background:#0a0f22;border:1px solid #2c3a6e;border-radius:10px;padding:10px 12px">
         <div class="fxSlide" data-fx="slim" style="display:none"><label style="color:#c9cdd6;font-size:14px">Slim — narrow the figure a touch <span id="fxSlimPct" style="color:#f2c14e;font-weight:800">0%</span><input type="range" id="fxSlimR" min="0" max="100" value="0" oninput="setFx('slim', this.value)" style="width:100%"></label></div>
@@ -7273,6 +7274,14 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         <div class="fxSlide" data-fx="wide" style="display:none"><label style="color:#c9cdd6;font-size:14px">Widen — stretch your picture wider to fill the room, so your arms stay in view <span id="fxWidePct" style="color:#f2c14e;font-weight:800">0%</span><input type="range" id="fxWideR" min="0" max="100" value="0" oninput="setFx('wide', this.value)" style="width:100%"></label></div>
         <div class="fxSlide" data-fx="zoom" style="display:none"><label style="color:#c9cdd6;font-size:14px">Zoom — middle is your normal size; slide left to sit farther back, right to come closer <span id="fxZoomPct" style="color:#f2c14e;font-weight:800">50%</span><input type="range" id="fxZoomR" min="0" max="100" value="50" oninput="setFx('zoom', this.value)" style="width:100%"></label></div>
         <p style="margin:8px 0 0"><button type="button" onclick="resetFx()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Reset effects</button></p>
+        <div id="fxPresets" style="display:none;margin-top:10px;border-top:1px solid #2c3a6e;padding-top:10px">
+          <div style="color:#f2c14e;font-weight:800;font-size:14px;margin-bottom:6px">💾 My saved setups — phone view</div>
+          <p style="margin:0 0 8px"><button type="button" onclick="fxSaveDefault()" style="background:#f2c14e;color:#0a0f22;border:0;border-radius:8px;padding:9px 14px;font-weight:800;cursor:pointer">⭐ Save as my default</button> <span style="color:#9aa3b8;font-size:12px">The phone view opens on your default every time. Saving again overwrites it.</span></p>
+          <p style="margin:0 0 6px;color:#c9cdd6;font-size:14px">Setup 1 — <span id="fxP1Sum" style="color:#9aa3b8">empty</span><br><button type="button" onclick="fxUsePreset(1)" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;margin-top:4px">Use setup 1</button> <button type="button" onclick="fxSavePreset(1)" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;margin-top:4px">Save setup 1</button></p>
+          <p style="margin:0 0 6px;color:#c9cdd6;font-size:14px">Setup 2 — <span id="fxP2Sum" style="color:#9aa3b8">empty</span><br><button type="button" onclick="fxUsePreset(2)" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;margin-top:4px">Use setup 2</button> <button type="button" onclick="fxSavePreset(2)" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;margin-top:4px">Save setup 2</button></p>
+          <p style="margin:0;color:#c9cdd6;font-size:14px">Setup 3 — <span id="fxP3Sum" style="color:#9aa3b8">empty</span><br><button type="button" onclick="fxUsePreset(3)" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;margin-top:4px">Use setup 3</button> <button type="button" onclick="fxSavePreset(3)" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer;margin-top:4px">Save setup 3</button></p>
+          <div id="fxSaveMsg" style="color:#9fd08a;font-size:13px;margin-top:8px"></div>
+        </div>
       </div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
@@ -7383,6 +7392,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     img.src = (vcFormat === 'tall' ? '/viewcast/backdrop-tall/' : '/viewcast/backdrop/') + currentSet + '.jpg?v=' + VC_BUILD;
   }
   function setFormat(f) {
+    if (typeof fxReady !== 'undefined' && fxReady) fxSwitchFormat(f);
     vcFormat = f;
     try { localStorage.setItem('vcfmt', f); } catch (e) {}
     W = f === 'tall' ? 720 : 1280; H = f === 'tall' ? 1280 : 720;
@@ -7396,17 +7406,43 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   if (vcFormat === 'tall') setFormat('tall');
   // ✨ Effects (owner, Nov 1): the host shapes their own picture to fit
   // the room — slim, step back, smooth, brighten. Saved on this phone.
+  // Per-screen effect defaults (owner, Nov 6 night; SEPARATION
+  // RULE: the two screens never share settings). PHONE view opens
+  // on Dale's own numbers — Zoom 49, Step back 47, Slim 58 — baked
+  // here at his word, and his ⭐ Save as my default (below) can
+  // overwrite them on his phone any time. YouTube view keeps the
+  // plain defaults until he reads its numbers.
+  var FX_DEF = { tall: { slim: 58, back: 47, smooth: 0, bright: 0, wide: 0, zoom: 49 }, wide: { slim: 0, back: 0, smooth: 0, bright: 0, wide: 0, zoom: 50 } };
   var fxSlim = 0, fxBack = 0, fxSmooth = 0, fxBright = 0, fxWide = 0, fxZoom = 0.5;
-  try {
-    var savedFx = JSON.parse(localStorage.getItem('vcfx') || '{}');
-    fxSlim = (savedFx.slim || 0) / 100; fxBack = (savedFx.back || 0) / 100;
-    fxSmooth = (savedFx.smooth || 0) / 100; fxBright = (savedFx.bright || 0) / 100;
-    fxWide = (savedFx.wide || 0) / 100;
-    // Zoom's normal is the MIDDLE (50) — a phone that saved its
-    // effects before Zoom existed must land on normal, not zero.
-    fxZoom = (savedFx.zoom == null ? 50 : savedFx.zoom) / 100;
-  } catch (e) {}
-  function saveFx() { try { localStorage.setItem('vcfx', JSON.stringify({ slim: fxSlim * 100, back: fxBack * 100, smooth: fxSmooth * 100, bright: fxBright * 100, wide: fxWide * 100, zoom: fxZoom * 100 })); } catch (e) {} }
+  var fxReady = false, fxStash = {};
+  function fxGet(key) { try { var s = JSON.parse(localStorage.getItem(key) || 'null'); return (s && typeof s === 'object') ? s : null; } catch (e) { return null; } }
+  function fxCurrentPct() { return { slim: Math.round(fxSlim * 100), back: Math.round(fxBack * 100), smooth: Math.round(fxSmooth * 100), bright: Math.round(fxBright * 100), wide: Math.round(fxWide * 100), zoom: Math.round(fxZoom * 100) }; }
+  function fxSetVars(s, dflt) { s = s || dflt; fxSlim = (s.slim || 0) / 100; fxBack = (s.back || 0) / 100; fxSmooth = (s.smooth || 0) / 100; fxBright = (s.bright || 0) / 100; fxWide = (s.wide || 0) / 100; fxZoom = (s.zoom == null ? dflt.zoom : s.zoom) / 100; }
+  function fxSyncSliders() { var pairs = [['fxSlimR', fxSlim], ['fxBackR', fxBack], ['fxSmoothR', fxSmooth], ['fxBrightR', fxBright], ['fxWideR', fxWide], ['fxZoomR', fxZoom]]; for (var i = 0; i < pairs.length; i++) { var el = document.getElementById(pairs[i][0]); if (el) el.value = Math.round(pairs[i][1] * 100); } paintFxPcts(); fxPresetPaint(''); }
+  function fxLoadForFormat() {
+    if (vcFormat === 'tall') fxSetVars(fxGet('vcfx_def'), FX_DEF.tall);
+    else fxSetVars(fxGet('vcfx_wide'), FX_DEF.wide);
+    fxSyncSliders();
+  }
+  function fxSwitchFormat(f) {
+    if (f === vcFormat) return;
+    fxStash[vcFormat] = fxCurrentPct();
+    if (fxStash[f]) { fxSetVars(fxStash[f], FX_DEF[f]); fxSyncSliders(); }
+    else if (f === 'tall') { fxSetVars(fxGet('vcfx_def'), FX_DEF.tall); fxSyncSliders(); }
+    else { fxSetVars(fxGet('vcfx_wide'), FX_DEF.wide); fxSyncSliders(); }
+  }
+  // Sliding auto-saves on the YouTube view only. The phone view
+  // saves DELIBERATELY — ⭐ default + setups — so an experiment
+  // never overwrites the setup he opens on.
+  function saveFx() { if (vcFormat !== 'tall') { try { localStorage.setItem('vcfx_wide', JSON.stringify(fxCurrentPct())); } catch (e) {} } }
+  // 💾 Saved setups — PHONE VIEW ONLY (owner, Nov 6 night): a
+  // default the phone view opens on (every save overwrites it),
+  // plus three setups for different filming distances.
+  function fxSummary(s) { if (!s) return 'empty'; var p = ['Zoom ' + s.zoom + '%', 'Step back ' + s.back + '%', 'Slim ' + s.slim + '%']; if (s.smooth) p.push('Smooth ' + s.smooth + '%'); if (s.bright) p.push('Brighten ' + s.bright + '%'); if (s.wide) p.push('Widen ' + s.wide + '%'); return p.join(' · '); }
+  function fxPresetPaint(msg) { for (var n = 1; n <= 3; n++) { var el = document.getElementById('fxP' + n + 'Sum'); if (el) el.textContent = fxSummary(fxGet('vcfx_p' + n)); } var m = document.getElementById('fxSaveMsg'); if (m && msg != null) m.textContent = msg; var pr = document.getElementById('fxPresets'); if (pr) pr.style.display = (vcFormat === 'tall' && fxOpen) ? 'block' : 'none'; var sb = document.getElementById('fxSavesBtn'); if (sb) sb.style.visibility = (vcFormat === 'tall') ? 'visible' : 'hidden'; }
+  function fxSaveDefault() { try { localStorage.setItem('vcfx_def', JSON.stringify(fxCurrentPct())); } catch (e) {} fxPresetPaint('⭐ Saved — the phone view opens on these settings every time now.'); }
+  function fxSavePreset(n) { try { localStorage.setItem('vcfx_p' + n, JSON.stringify(fxCurrentPct())); } catch (e) {} fxPresetPaint('💾 Setup ' + n + ' saved — ' + fxSummary(fxCurrentPct())); }
+  function fxUsePreset(n) { var s = fxGet('vcfx_p' + n); if (!s) { fxPresetPaint('Setup ' + n + ' is empty — dial in your settings, then tap Save setup ' + n + '.'); return; } fxSetVars(s, FX_DEF.tall); fxSyncSliders(); fxPresetPaint('Setup ' + n + ' is on the screen — ' + fxSummary(s)); }
   // 🎚️ Adjust row (owner, Nov 6 night): the effect sliders live
   // right under the screen now, one button per effect — tap a
   // button and ONLY that slider drops down, so he can watch the
@@ -7422,6 +7458,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     for (var i = 0; i < slides.length; i++) slides[i].style.display = (slides[i].getAttribute('data-fx') === fxOpen) ? 'block' : 'none';
     var btns = document.querySelectorAll('.fxBtn');
     for (var j = 0; j < btns.length; j++) btns[j].style.borderColor = (btns[j].getAttribute('data-fx') === fxOpen) ? '#f2c14e' : '#2c3a6e';
+    fxPresetPaint(null);
   }
   function paintFxPcts() {
     // Percentage readouts (owner, Nov 6 night): every slider shows
@@ -7439,17 +7476,14 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     saveFx(); paintFxPcts();
   }
   function resetFx() {
-    fxSlim = fxBack = fxSmooth = fxBright = fxWide = 0; fxZoom = 0.5;
-    var ids = ['fxSlimR', 'fxBackR', 'fxSmoothR', 'fxBrightR', 'fxWideR'];
-    for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.value = 0; }
-    var zr = document.getElementById('fxZoomR'); if (zr) zr.value = 50;
-    saveFx(); paintFxPcts();
+    // Back to THIS screen's default: on the phone view, the
+    // default he saved (or his baked numbers); on YouTube, plain.
+    if (vcFormat === 'tall') fxSetVars(fxGet('vcfx_def'), FX_DEF.tall);
+    else { try { localStorage.removeItem('vcfx_wide'); } catch (e) {} fxSetVars(null, FX_DEF.wide); }
+    fxSyncSliders();
   }
-  (function initFxSliders() {
-    var pairs = [['fxSlimR', fxSlim], ['fxBackR', fxBack], ['fxSmoothR', fxSmooth], ['fxBrightR', fxBright], ['fxWideR', fxWide], ['fxZoomR', fxZoom]];
-    for (var i = 0; i < pairs.length; i++) { var el = document.getElementById(pairs[i][0]); if (el) el.value = Math.round(pairs[i][1] * 100); }
-    paintFxPcts();
-  })();
+  fxLoadForFormat();
+  fxReady = true;
   var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
   function setStatus(t) { document.getElementById('vstatus').textContent = t; }
   function pickSet(key) {
