@@ -7754,11 +7754,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   var vcFgImg = new Image(), vcFgReady = false, vcFgSrc = '';
   function vcFgKey() {
     if (currentSet === 'radio') return vcFormat === 'tall' ? 'radio-tall' : 'radio';
-    // Purple Hip-Hop got its podcast desk in BOTH shapes (Nov 6) —
-    // the tall room's glossy floor used to sit in front of him like
-    // a tabletop; now he sits behind its desk too.
-    if (currentSet === 'graffiti') return vcFormat === 'tall' ? 'graffiti-tall' : 'graffiti';
-    if (vcFormat !== 'tall' && currentSet === 'neon') return 'neon';
+    if (vcFormat !== 'tall' && (currentSet === 'graffiti' || currentSet === 'neon')) return currentSet;
     return '';
   }
   function vcLoadFg() {
@@ -7831,7 +7827,14 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         // to zero so only his solid body carries into the room.
         try {
           var md = maskX.getImageData(0, 0, W, H), mp = md.data;
-          for (var mi = 3; mi < mp.length; mi += 4) { if (mp[mi] < 30) mp[mi] = 0; }
+          // Gate height (owner, Nov 6): on the WIDE screen the placed
+          // figure is a sub-rectangle, so even a faint room-ghost
+          // prints as a visible slab with a hard edge — the "portrait
+          // box" he kept reporting. The wide gate sits high (only the
+          // solid body passes); the tall screen keeps the gentle gate
+          // he called perfect.
+          var gateT = W > H ? 90 : 30;
+          for (var mi = 3; mi < mp.length; mi += 4) { if (mp[mi] < gateT) mp[mi] = 0; }
           maskX.putImageData(md, 0, 0);
           // Person box: scan the gated mask for the body's outline
           // (stride 8 — plenty for a bounding box) and keep a
@@ -7850,14 +7853,24 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
             }
           }
           if (bx1 - bx0 > 60 && by1 - by0 > 60) {
-            var bpadX = (bx1 - bx0) * 0.10, bpadY = (by1 - by0) * 0.08;
+            var bpadX = (bx1 - bx0) * 0.16, bpadY = (by1 - by0) * 0.12;
             var nx0 = Math.max(0, bx0 - bpadX), ny0 = Math.max(0, by0 - bpadY);
             var nb2 = { x: nx0, y: ny0, w: Math.min(W, bx1 + bpadX) - nx0, h: Math.min(H, by1 + bpadY) - ny0 };
             if (!vcBox) vcBox = nb2;
             else {
-              var BL = 0.35;
-              vcBox.x += (nb2.x - vcBox.x) * BL; vcBox.y += (nb2.y - vcBox.y) * BL;
-              vcBox.w += (nb2.w - vcBox.w) * BL; vcBox.h += (nb2.h - vcBox.h) * BL;
+              // Fast attack, slow release (owner, Nov 6): ease toward
+              // the union of the old and fresh boxes, then hard-clamp
+              // so the placed box ALWAYS contains the body right now
+              // — a lean or an arm swing can never poke out of it and
+              // get sliced mid-screen, which read as a "line" cutting
+              // his body when he moved.
+              var ux0 = Math.min(vcBox.x, nb2.x), uy0 = Math.min(vcBox.y, nb2.y);
+              var ux1 = Math.max(vcBox.x + vcBox.w, nb2.x + nb2.w), uy1 = Math.max(vcBox.y + vcBox.h, nb2.y + nb2.h);
+              var ex0 = ux0 + (nb2.x - ux0) * 0.25, ey0 = uy0 + (nb2.y - uy0) * 0.25;
+              var ex1 = ux1 + ((nb2.x + nb2.w) - ux1) * 0.25, ey1 = uy1 + ((nb2.y + nb2.h) - uy1) * 0.25;
+              ex0 = Math.min(ex0, nb2.x); ey0 = Math.min(ey0, nb2.y);
+              ex1 = Math.max(ex1, nb2.x + nb2.w); ey1 = Math.max(ey1, nb2.y + nb2.h);
+              vcBox = { x: ex0, y: ey0, w: ex1 - ex0, h: ey1 - ey0 };
             }
           }
         } catch (e) {}
@@ -7882,6 +7895,33 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         hctx.drawImage(results.image, pfX, pfY, pfW, pfH);
         hctx.globalAlpha = 1;
         try { hctx.filter = 'none'; } catch (e) {}
+        // Edge dissolve — WIDE only (owner, Nov 6): the fitted camera
+        // picture is a portrait column inside the wide canvas, and
+        // every hard edge of that column can print on the placed
+        // figure as a visible line — the "portrait box" from his
+        // reports. Fade the cutout out at the camera frame's own
+        // edges, so where his body meets the frame's edge it
+        // dissolves instead of slicing, and no rectangle boundary
+        // can ever show. The tall screen is untouched by design.
+        if (W > H) {
+          try {
+            hctx.globalCompositeOperation = 'destination-out';
+            var efX = Math.max(8, pfW * 0.12), efY = Math.max(8, pfH * 0.07), egF;
+            egF = hctx.createLinearGradient(pfX, 0, pfX + efX, 0);
+            egF.addColorStop(0, 'rgba(0,0,0,1)'); egF.addColorStop(1, 'rgba(0,0,0,0)');
+            hctx.fillStyle = egF; hctx.fillRect(pfX, pfY, efX, pfH);
+            egF = hctx.createLinearGradient(pfX + pfW, 0, pfX + pfW - efX, 0);
+            egF.addColorStop(0, 'rgba(0,0,0,1)'); egF.addColorStop(1, 'rgba(0,0,0,0)');
+            hctx.fillStyle = egF; hctx.fillRect(pfX + pfW - efX, pfY, efX, pfH);
+            egF = hctx.createLinearGradient(0, pfY, 0, pfY + efY);
+            egF.addColorStop(0, 'rgba(0,0,0,1)'); egF.addColorStop(1, 'rgba(0,0,0,0)');
+            hctx.fillStyle = egF; hctx.fillRect(pfX, pfY, pfW, efY);
+            egF = hctx.createLinearGradient(0, pfY + pfH, 0, pfY + pfH - efY);
+            egF.addColorStop(0, 'rgba(0,0,0,1)'); egF.addColorStop(1, 'rgba(0,0,0,0)');
+            hctx.fillStyle = egF; hctx.fillRect(pfX, pfY + pfH - efY, pfW, efY);
+            hctx.globalCompositeOperation = 'source-over';
+          } catch (e) {}
+        }
         hctx.restore();
       });
     } catch (e) { seg = null; mode = 'frame'; }
