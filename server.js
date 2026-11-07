@@ -1926,6 +1926,7 @@ app.get("/", (req, res) => {
       <div class="ringnow" id="ringNowB"></div>
     </div></div>
   </div></div>
+  ${plaqueStrip}
   ${djPicksHtml}
   ${spotlightHtml}
   <div class="homegrid">
@@ -2962,6 +2963,229 @@ app.get("/fbadge/:id.jpg", async (req, res) => {
 // is read locally when present, else pulled from storage by the server
 // itself. Any failure falls back to the photo/cover path, never a
 // broken image.
+// TOP 10 AWARD PLAQUES (owner, Nov 7, 2026) — the framed record plaque:
+// download route, the public /plaques explainer, and the physical
+// order form. Earned = Top 10 on the National Overall chart, current
+// or any past chart day. Price + wait live in admin_config.
+function plaqueCfg(key) {
+  try {
+    const r = db.prepare("SELECT value FROM admin_config WHERE key = ?").get(key);
+    if (r) return String(JSON.parse(r.value) || "");
+  } catch { /* not set */ }
+  return "";
+}
+
+app.get("/award/:id.jpg", async (req, res) => {
+  const song = db.prepare(`
+    SELECT s.id, s.title, s.cover_path, u.name AS artist FROM songs s
+    JOIN users u ON u.id = s.artist_id WHERE s.id = ?`).get(req.params.id);
+  if (!song) return res.status(404).end();
+  const award = sharecard.top10Standing(db, song.id);
+  if (!award) return res.redirect(`/card/${song.id}.jpg`);
+  let coverAbs = [path.join(__dirname, "public", song.cover_path), path.join(__dirname, song.cover_path)]
+    .find((p) => fs.existsSync(p));
+  let tmpFile = null;
+  if (!coverAbs && storage.configured()) {
+    try {
+      const bytes = await storage.getObject(String(song.cover_path).replace(/^\//, ""));
+      if (bytes && bytes.length) {
+        const ext = (path.extname(song.cover_path) || ".jpg").toLowerCase();
+        tmpFile = path.join(require("node:os").tmpdir(), `award-src-${song.id}${ext}`);
+        fs.writeFileSync(tmpFile, bytes);
+        coverAbs = tmpFile;
+      }
+    } catch { /* fall through to the story plaque */ }
+  }
+  if (!coverAbs) return res.redirect(`/card/${song.id}.jpg`);
+  try {
+    const judge = db.prepare("SELECT craft_score FROM judge_scores WHERE song_id = ?").get(song.id);
+    const dc = daysCharted(song.id);
+    const buf = await sharecard.renderPlaque({
+      songId: song.id, title: song.title, artist: song.artist, coverAbs, award,
+      craftScore: judge ? judge.craft_score : null, days: dc ? dc.days : 0,
+    });
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(buf);
+  } catch {
+    res.redirect(`/card/${song.id}.jpg`);
+  } finally {
+    if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* temp cleanup */ } }
+  }
+});
+
+// The three settled plaque designs, served straight from the baked
+// masters (Amara Cole samples) for the home panel and /plaques page.
+app.get("/plaque-sample/:tier.jpg", (req, res) => {
+  let frames = {};
+  try { frames = require("./plaque-data"); } catch { /* masters missing */ }
+  const b64 = frames[String(req.params.tier || "")];
+  if (!b64) return res.status(404).end();
+  res.setHeader("Content-Type", "image/jpeg");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  res.end(Buffer.from(b64, "base64"));
+});
+
+app.get("/plaques", (req, res) => {
+  const price = plaqueCfg("plaque_price");
+  const eta = plaqueCfg("plaque_eta");
+  const body = `
+  <h1>🏆 Top 10 Award Plaques</h1>
+  <p class="sub">When a record goes <b style="color:#fff">Top 10 on the National Overall chart</b>, it earns a real award plaque — the way the industry has always marked a hit. A slim black frame with <b style="color:#fff">HOT TOP 20</b> across the top, your <b style="color:#fff">cover art in the center of the record</b>, headphones wrapped around it, and <b style="color:#fff">your name in platinum</b> under it. Every plaque is <b style="color:#fff">free to download</b> — and you can <b style="color:#fff">order the real framed plaque</b> for your wall.</p>
+  <div class="panel" style="border:1px solid rgba(255,196,77,.55)">
+    <h2 style="margin-top:0;color:#ffd98a">🥇 Gold — spots #6 through #10</h2>
+    <img src="/plaque-sample/gold.jpg" alt="Gold award plaque" style="width:100%;max-width:340px;display:block;margin:0 auto 10px;border-radius:10px">
+    <p class="sub">The gold record with your cover in its center, the silver mic beside it, your name in platinum with the little notes in gold.</p>
+  </div>
+  <div class="panel" style="border:1px solid rgba(230,236,245,.55)">
+    <h2 style="margin-top:0;color:#f4f8ff">💿 Platinum — spots #1 through #5</h2>
+    <img src="/plaque-sample/platinum.jpg" alt="Platinum award plaque" style="width:100%;max-width:340px;display:block;margin:0 auto 10px;border-radius:10px">
+    <p class="sub">The platinum record, platinum trim — the whole plaque shines silver, with your cover in the center and your name in platinum.</p>
+  </div>
+  <div class="panel" style="border:1px solid rgba(255,196,77,.8);background:linear-gradient(180deg,rgba(255,170,40,.10),rgba(255,170,40,.03))">
+    <h2 style="margin-top:0;color:#ffd98a">👑 Number One — the deluxe plaque</h2>
+    <img src="/plaque-sample/numberone.jpg" alt="Number One deluxe plaque" style="width:100%;max-width:340px;display:block;margin:0 auto 10px;border-radius:10px">
+    <p class="sub">The #1 plaque mixes <b style="color:#fff">gold and platinum</b> — platinum record, gold No. 1 — and carries more: your credentials printed in gold on the plaque itself: your <b style="color:#fff">Craft Score</b>, your <b style="color:#fff">days charted</b>, and the <b style="color:#fff">month you hit #1</b>.</p>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">How you get yours</h2>
+    <p class="sub">1. <b style="color:#fff">Upload your song</b> — free — and let the 15-Point Scale judge it.<br>
+    2. <b style="color:#fff">Reach the Top 10</b> on the National Overall chart. The plaque is yours from that day on — an award you earned is an award you keep.<br>
+    3. <b style="color:#fff">Download it free</b> from your song's page, ready to post.<br>
+    4. <b style="color:#fff">Order the real plaque</b> for your wall, straight from that same page.</p>
+    <p class="sub" style="margin-top:10px">${price ? `The framed physical plaque is <b style="color:#fff">$${esc(price)}</b>.` : `Pricing for the framed physical plaque is being set now — place your order and we will confirm the price with you before anything is made.`}${eta ? ` Please allow <b style="color:#fff">${esc(eta)}</b> for your plaque to be made and shipped.` : ``}</p>
+    <p style="margin-top:12px"><a class="btn btn-blue" href="/upload">Upload your song — free</a> <a class="btn" href="/charts" style="margin-left:8px">See the charts</a></p>
+  </div>`;
+  res.send(layout("Top 10 Award Plaques", "", body));
+});
+
+app.get("/order-plaque/:id", (req, res) => {
+  const song = db.prepare(`
+    SELECT s.id, s.title, s.cover_path, u.name AS artist FROM songs s
+    JOIN users u ON u.id = s.artist_id WHERE s.id = ?`).get(req.params.id);
+  if (!song) return res.status(404).end();
+  const award = sharecard.top10Standing(db, song.id);
+  if (!award) return res.redirect(`/song/${song.id}`);
+  const price = plaqueCfg("plaque_price");
+  const eta = plaqueCfg("plaque_eta");
+  const tierName = award.tier === "gold" ? "Gold" : award.tier === "platinum" ? "Platinum" : "Number One deluxe";
+  const err = req.query.err ? `<div class="panel err"><p class="sub" style="color:#fff">Please fill in your name, your email, and the full shipping address — every line of it — so your plaque reaches you.</p></div>` : "";
+  const body = `
+  <h1>📦 Order your plaque</h1>
+  <p class="sub"><b style="color:#fff">&quot;${esc(song.title)}&quot;</b> — ${esc(song.artist)} reached <b style="color:#fff">#${award.rank} on the National Overall chart</b> and earned the <b style="color:#fff">${tierName}</b> plaque. This is the real framed plaque for your wall — your cover art, your record, your name on the plate.</p>
+  <img src="/award/${song.id}.jpg" alt="Your award plaque" style="width:100%;border-radius:12px;border:1px solid rgba(255,190,60,.45)">
+  <div class="panel" style="margin-top:12px">
+    ${price ? `<p class="sub">Price: <b style="color:#fff;font-size:18px">$${esc(price)}</b>${eta ? ` · Please allow <b style="color:#fff">${esc(eta)}</b> for your plaque to be made and shipped.` : ``}</p>` : `<p class="sub">The price is being set now. Place your order and <b style="color:#fff">we will confirm the price with you by email before anything is made</b> — you pay nothing until you say go.${eta ? ` Please allow <b style="color:#fff">${esc(eta)}</b> once your plaque is in production.` : ``}</p>`}
+    ${err}
+    <form method="post" action="/order-plaque/${song.id}">
+      <label>Your name<input name="buyer_name" required maxlength="120" autocomplete="name"></label>
+      <label>Your email<input name="email" type="email" required maxlength="160" autocomplete="email"></label>
+      <label>Ship to — name<input name="ship_name" required maxlength="120"></label>
+      <label>Street address<input name="ship_street" required maxlength="200" autocomplete="street-address"></label>
+      <label>City<input name="ship_city" required maxlength="80"></label>
+      <label>State<input name="ship_state" required maxlength="40"></label>
+      <label>ZIP code<input name="ship_zip" required maxlength="16"></label>
+      <label>Anything we should know? (optional)<textarea name="notes" rows="2" maxlength="500"></textarea></label>
+      <button class="btn btn-blue btn-block" type="submit" style="margin-top:12px">Place my order</button>
+    </form>
+    <p class="note" style="margin-top:10px">Your digital plaque stays free forever — <a href="/award/${song.id}.jpg" download>download it here</a>. This order is only for the physical framed plaque.</p>
+  </div>`;
+  res.send(layout("Order your plaque", "", body));
+});
+
+app.post("/order-plaque/:id", (req, res) => {
+  const song = db.prepare(`
+    SELECT s.id, s.title, u.name AS artist FROM songs s
+    JOIN users u ON u.id = s.artist_id WHERE s.id = ?`).get(req.params.id);
+  if (!song) return res.status(404).end();
+  const award = sharecard.top10Standing(db, song.id);
+  if (!award) return res.redirect(`/song/${song.id}`);
+  const b = req.body || {};
+  const clean = (v, n) => String(v || "").trim().slice(0, n);
+  const row = {
+    buyer_name: clean(b.buyer_name, 120), email: clean(b.email, 160),
+    ship_name: clean(b.ship_name, 120), ship_street: clean(b.ship_street, 200),
+    ship_city: clean(b.ship_city, 80), ship_state: clean(b.ship_state, 40),
+    ship_zip: clean(b.ship_zip, 16), notes: clean(b.notes, 500),
+  };
+  if (!row.buyer_name || !row.email || !row.ship_name || !row.ship_street || !row.ship_city || !row.ship_state || !row.ship_zip) {
+    return res.redirect("/order-plaque/" + song.id + "?err=1");
+  }
+  const tierName = award.tier === "gold" ? "Gold" : award.tier === "platinum" ? "Platinum" : "Number One deluxe";
+  const info = db.prepare(`INSERT INTO plaque_orders
+    (song_id, rank, tier, buyer_name, email, ship_name, ship_street, ship_city, ship_state, ship_zip, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+    song.id, award.rank, tierName, row.buyer_name, row.email, row.ship_name,
+    row.ship_street, row.ship_city, row.ship_state, row.ship_zip, row.notes || null);
+  try { snapshotDb("plaque-order"); } catch { /* best-effort */ }
+  const body = `
+  <div class="panel" style="border:1px solid rgba(255,190,60,.55)">
+    <h2 style="margin-top:0;color:#ffd98a">🏆 Order received — #${info.lastInsertRowid}</h2>
+    <p class="sub" style="color:#fff;font-size:16px">Your ${tierName} plaque for <b>&quot;${esc(song.title)}&quot;</b> is on the books.</p>
+    <p class="sub">We will email <b style="color:#fff">${esc(row.email)}</b> to confirm your order and the payment details before your plaque is made. Keep an eye on that inbox.</p>
+    <p style="margin-top:12px"><a class="btn btn-blue" href="/song/${song.id}">Back to your song</a> <a class="btn" href="/award/${song.id}.jpg" download style="margin-left:8px">Download the digital plaque</a></p>
+  </div>`;
+  res.send(layout("Order received", "", body));
+});
+
+// TOP 10 AWARD PLAQUES — part 2 (owner, Nov 7, 2026): the home-page
+// strip, the award buttons on the song page and the dashboard, the
+// owner's orders card on Chart placements, and the price/wait save.
+const plaqueStrip = `
+  <div class="panel" style="border:1px solid rgba(255,190,60,.65);background:linear-gradient(180deg,rgba(255,170,40,.12),rgba(255,170,40,.03))">
+    <h2 style="margin-top:0;color:#ffd98a">🏆 Top 10 Award Plaques</h2>
+    <p class="sub">Land a <b style="color:#fff">Top 10 spot on the National Overall chart</b> and the plaque is yours — <b style="color:#fff">download it free</b> from your song's page, or <b style="color:#fff">order the real framed plaque</b> for your wall. Gold for #6–#10, platinum for #1–#5, and the No. 1 deluxe mixes gold and platinum.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <figure style="flex:1 1 150px;margin:0;text-align:center"><img src="/plaque-sample/gold.jpg" alt="Gold plaque — spots 6 through 10" style="width:100%;border-radius:10px;border:1px solid rgba(255,196,77,.5)"><figcaption class="sub" style="margin-top:6px">🥇 <b style="color:#ffd98a">GOLD</b> · #6–#10</figcaption></figure>
+      <figure style="flex:1 1 150px;margin:0;text-align:center"><img src="/plaque-sample/platinum.jpg" alt="Platinum plaque — spots 1 through 5" style="width:100%;border-radius:10px;border:1px solid rgba(230,236,245,.5)"><figcaption class="sub" style="margin-top:6px">💿 <b style="color:#f4f8ff">PLATINUM</b> · #1–#5</figcaption></figure>
+      <figure style="flex:1 1 150px;margin:0;text-align:center"><img src="/plaque-sample/numberone.jpg" alt="Number One deluxe plaque" style="width:100%;border-radius:10px;border:1px solid rgba(255,196,77,.8)"><figcaption class="sub" style="margin-top:6px">👑 <b style="color:#ffd98a">NUMBER ONE</b> · deluxe</figcaption></figure>
+    </div>
+    <p style="margin-top:12px;text-align:center"><a class="btn btn-blue" href="/plaques">See the plaques — how to get yours</a></p>
+  </div>`;
+function awardButtons(songId, songObj) {
+  const aw = sharecard.top10Standing(db, songId);
+  if (!aw) return "";
+  const tierName = aw.tier === "gold" ? "Gold" : aw.tier === "platinum" ? "Platinum" : "Number One deluxe";
+  return `<p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/award/${songId}.jpg" download>🏆 Download your Top 10 award plaque — ${tierName} (#${aw.rank} National Overall)</a></p>
+    <p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/order-plaque/${songId}">📦 Order the real framed plaque for your wall</a></p>`;
+}
+function plaqueOrdersCard() {
+  let orders = [];
+  try {
+    orders = db.prepare("SELECT o.*, s.title, u.name AS artist FROM plaque_orders o JOIN songs s ON s.id = o.song_id JOIN users u ON u.id = s.artist_id ORDER BY o.id DESC LIMIT 100").all();
+  } catch { orders = []; }
+  const list = !orders.length
+    ? `<p class="sub" style="margin-top:12px">No plaque orders yet.</p>`
+    : `<details style="margin-top:14px"><summary style="cursor:pointer;font-weight:700;color:#ffd98a">📦 Plaque orders (${orders.length}) — tap to open the list ▾</summary>
+      <p class="sub" style="margin-top:8px">Newest first. Email the buyer to confirm payment before the plaque is made.</p>` +
+      orders.map((o) => `<div style="border-top:1px solid #232429;padding:10px 0">
+        <b style="color:#fff">#${o.id} · ${esc(o.tier)} plaque (#${o.rank})</b> — &quot;${esc(o.title)}&quot; by ${esc(o.artist)}<br>
+        <span class="sub">Buyer: ${esc(o.buyer_name)} · ${esc(o.email)}<br>
+        Ship to: ${esc(o.ship_name)}, ${esc(o.ship_street)}, ${esc(o.ship_city)}, ${esc(o.ship_state)} ${esc(o.ship_zip)}<br>
+        Ordered ${esc(o.created_at)}${o.notes ? `<br>Note: ${esc(o.notes)}` : ""}</span>
+      </div>`).join("") + `</details>`;
+  return `
+  <div class="panel">
+    <h2 style="margin-top:0">🏆 Plaque orders</h2>
+    <p class="sub">Artists who earned a Top 10 plaque can order the real framed one from their song page. Orders land here. Set your price and your wait time — they show on the order page and on /plaques the moment you save them. The customer pays you directly; this desk just keeps the orders.</p>
+    <form method="post" action="/admin/plaque-settings" style="display:grid;gap:8px;margin-top:10px">
+      <label>Plaque price (just the number, like 149)<input name="price" inputmode="decimal" value="${esc(plaqueCfg("plaque_price"))}" placeholder="not set yet"></label>
+      <label>Wait time (like: 2 to 3 weeks)<input name="eta" value="${esc(plaqueCfg("plaque_eta"))}" placeholder="not set yet"></label>
+      <button class="btn btn-blue" type="submit">Save plaque price + wait time</button>
+    </form>
+    ${list}
+  </div>`;
+}
+app.post("/admin/plaque-settings", requireAdmin, (req, res) => {
+  const setCfg = (key, val) => db.prepare(
+    "INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  ).run(key, JSON.stringify(String(val || "").trim().slice(0, 60)));
+  setCfg("plaque_price", (req.body || {}).price);
+  setCfg("plaque_eta", (req.body || {}).eta);
+  try { snapshotDb("plaque-settings"); } catch { /* best-effort */ }
+  res.redirect("/admin/placements?msg=" + encodeURIComponent("Plaque price + wait time saved — they now show on the order page and /plaques."));
+});
+
 app.get("/pcard/:id.jpg", async (req, res) => {
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
   if (!user || !hasProfile(user)) return res.status(404).end();
@@ -3248,7 +3472,8 @@ app.get("/song/:id", (req, res) => {
     ${rankLines(ranks)}
     ${sharecard.headlineStanding(db, song.id) ? `<p style="margin-top:14px"><a class="btn btn-blue btn-block" href="/badge/${song.id}.jpg" download>🏆 Show your accomplishments & rank status (tall plaque)</a></p>
     <p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/fbadge/${song.id}.jpg" download>📘 Facebook plaque — full cover</a></p>
-    <p class="note">The tall plaque is made for Instagram Stories and TikTok. The Facebook plaque is sized for Facebook and shows your WHOLE cover head to toe, plus your counts and your measured specs. Post them anywhere — they show your accomplishments and your rank status.</p>` : ""}
+    <p class="note">The tall plaque is made for Instagram Stories and TikTok. The Facebook plaque is sized for Facebook and shows your WHOLE cover head to toe, plus your counts and your measured specs. Post them anywhere — they show your accomplishments and your rank status.</p>
+    ${awardButtons(song.id)}` : ""}
     <p class="note" style="margin-top:10px">Only the Top 20 plays on the Stage. Any day, this song can pop in.</p>
   </div>
   ${isAdmin(req) ? (() => { const as = announceState(song.id); return `<div class="panel" style="border-left:3px solid #ffd98a">
@@ -4962,7 +5187,8 @@ app.get("/dashboard", (req, res) => {
           </a>
           ${rankLines(ranks)}
           ${sharecard.headlineStanding(db, s.id) ? `<p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/badge/${s.id}.jpg" download>🏆 Show your accomplishments & rank status (tall plaque)</a></p>
-          <p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/fbadge/${s.id}.jpg" download>📘 Facebook plaque — full cover</a></p>` : ""}
+          <p style="margin-top:10px"><a class="btn btn-blue btn-block" href="/fbadge/${s.id}.jpg" download>📘 Facebook plaque — full cover</a></p>
+          ${awardButtons(s.id)}` : ""}
           <form method="post" action="/dashboard/remove" style="margin-top:10px">
             <input type="hidden" name="email" value="${esc(user.email)}">
             <input type="hidden" name="song_id" value="${s.id}">
@@ -6555,6 +6781,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   ${req.query.admsg ? `<p class="note" style="color:#ffd98a">${esc(req.query.admsg)}</p>` : ""}
   <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. You can enter a placement any time — it goes onto the chart IMMEDIATELY, the second you place it, and holds through each midnight recalculation until it ends or you remove it (removals also take effect right away). A song's evaluation scores are never changed — this sets chart position only.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
+  ${plaqueOrdersCard()}
   <div class="panel">
     <h2 style="margin-top:0">🎙️ Viewcast Studio</h2>
     <p class="sub">Film an episode — you on camera, or an artist in front of you — inside a studio set, and post it to the Viewcast page.</p>
