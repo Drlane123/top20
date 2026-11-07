@@ -7849,10 +7849,39 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
             // walks the fit from whole-picture toward full cover
             // under HIS hand, so his arms stay in view. At 0, pure
             // whole-picture fit.
-            fitS = fitContain + (fitCover - fitContain) * fxWide;
+            var fxWideNeed = (fitCover > fitContain) ? (((W / camW) - fitContain) / (fitCover - fitContain)) : 0;
+            var fxWideEff = Math.max(fxWide, Math.min(1, Math.max(0, fxWideNeed)));
+            fitS = fitContain;
+            // PICTURE-WIDTH RULE - WIDE SCREEN ONLY (owner, Nov 6
+            // night, 22:11; the mirror of the phone fix, under his
+            // SEPARATION RULE: this branch runs only when the wide
+            // screen holds a TALL camera picture - the tall branch
+            // above is not touched). His words: the phone view is
+            // sitting inside of the YouTube view, it is thin, it is
+            // not wide out - it should be sitting wide like the
+            // YouTube, same way you fixed the phone. On the wide
+            // screen his camera hands back a TALL picture; at the
+            // natural whole-picture fit it lands as a thin column
+            // (405px of 1280) with room showing on both sides.
+            // fxWideEff above walks the Widen amount up to full
+            // WIDTH on its own (his slider can still push past it
+            // toward cover): the tall picture stretches sideways
+            // until its sides reach the screen sides, at its
+            // NATURAL HEIGHT - nothing is cut off the top or the
+            // bottom, and the picture height never moves a pixel.
+            // For his usual 720x1280 stream that is exactly
+            // 1280x720: the picture fills the whole YouTube screen.
           }
         }
         var pfW0 = Math.round(camW * fitS), pfH0 = Math.round(camH * fitS);
+        // ANISOTROPIC WIDTH (wide screen only): the fit above is uniform;
+        // on the wide screen the tall picture then stretches SIDEWAYS to
+        // the full screen width while its height stays pfH0 - the mirror
+        // of the phone height rule, gated by (W > H) so the tall screen
+        // can never take this path. fxWideEff is defined only inside the
+        // wide mismatch branch; elsewhere the stretch rests at natural.
+        var wideStretch = 1;
+        if (W > H && typeof fxWideEff !== 'undefined' && pfW0 > 0) wideStretch = 1 + fxWideEff * ((W / pfW0) - 1);
         // Centered while the whole picture shows; once Widen walks
         // past the screen, anchor top-biased so his face keeps and
         // the bottom gives up the space.
@@ -7883,6 +7912,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
         // never slide off the screen or open a void at an edge.
         var zz = Math.pow(2, fxZoom * 2 - 1);
         var pfW = Math.round(pfW0 * zz), pfH = Math.round(pfH0 * zz);
+        if (wideStretch !== 1) { pfW = Math.round(pfW0 * zz * wideStretch); pfX = Math.round(pfX0 + (pfW0 * zz - pfW) / 2); }
         var pfX = Math.round(pfX0 + (pfW0 - pfW) / 2), pfY = Math.round(pfY0 + (pfH0 - pfH) / 2);
         pfX = pfW >= W ? Math.max(W - pfW, Math.min(0, pfX)) : Math.max(0, Math.min(W - pfW, pfX));
         pfY = pfH >= H ? Math.max(H - pfH, Math.min(0, pfY)) : Math.max(0, Math.min(H - pfH, pfY));
