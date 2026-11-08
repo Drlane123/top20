@@ -3282,14 +3282,30 @@ app.get("/drops", (req, res) => {
       ${styleCards}
     </div>
     <div class="panel">
-      <h2 style="margin-top:0">2 \u00b7 Say your name</h2>
+      <h2 style="margin-top:0">2 · Choose your ending</h2>
+      <p class="sub">Every style can end with Hot Top 20 on it — or not. Making a drop for another DJ or a show somewhere else? Take the brand off, or say the ending yourself. Still free either way — it comes with your profile.</p>
+      <div>
+        <button type="button" class="dropPick dropEnd on" data-v="brand">Hot Top 20 ending</button>
+        <button type="button" class="dropPick dropEnd" data-v="generic">DJ voice, no Hot Top 20</button>
+        <button type="button" class="dropPick dropEnd" data-v="own">My own words</button>
+        <button type="button" class="dropPick dropEnd" data-v="none">No ending</button>
+      </div>
+      <div id="dropEndRec" style="display:none;margin-top:8px">
+        <p class="sub" style="margin-bottom:6px">Record your ending — like “on Power 105 with DJ Blaze!” Say it like you mean it.</p>
+        <button class="btn btn-blue btn-block" id="dropEndBtn" type="button">● Record my ending</button>
+        <p class="sub" id="dropEndState" style="margin:10px 0 6px">Not recorded yet.</p>
+        <audio id="dropEndPrev" controls style="display:none;width:100%"></audio>
+      </div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">3 · Say your name</h2>
       <p class="sub" id="dropHint">${DROP_STYLES[0].hint}</p>
       <button class="btn btn-blue btn-block" id="dropRecBtn" type="button">\u25cf Record my name</button>
       <p class="sub" id="dropRecState" style="margin:10px 0 6px">Not recorded yet.</p>
       <audio id="dropNamePrev" controls style="display:none;width:100%"></audio>
     </div>
     <div class="panel">
-      <h2 style="margin-top:0">3 \u00b7 Pick your sound</h2>
+      <h2 style="margin-top:0">4 \u00b7 Pick your sound</h2>
       <p class="sub" style="margin-bottom:6px">Voice effect</p>
       <div>
         <button type="button" class="dropPick dropFx on" data-v="clean">Clean</button>
@@ -3306,7 +3322,7 @@ app.get("/drops", (req, res) => {
       </div>
     </div>
     <div class="panel">
-      <h2 style="margin-top:0">4 \u00b7 Get your drop</h2>
+      <h2 style="margin-top:0">5 \u00b7 Get your drop</h2>
       <button class="btn btn-blue btn-block" id="dropMakeBtn" type="button">🎙️ MAKE MY DROP \u2014 FREE</button>
       <p class="sub" id="dropMsg" style="margin:10px 0 6px"></p>
       <div id="dropResult" style="display:none">
@@ -3339,7 +3355,7 @@ app.get("/drops", (req, res) => {
       if (chip) { chip.click(); window.scrollTo(0, 0); }
     });
     var HINTS = { 1: "Say just your name, strong and clear \u2014 the studio adds everything around it.", 2: "Say just your name, smooth and easy.", 3: "Say your name like a DJ tag \u2014 bring the energy!", 4: "Say just your name, hyped up.", 5: "Say just your name, confident, like you mean it." };
-    var selStyle = 1, selFx = "clean", selBed = "none";
+    var selStyle = 1, selFx = "clean", selBed = "none", selEnding = "brand", endBlob = null;
     function pickWire(cls, attr, set) {
       var btns = document.querySelectorAll("." + cls);
       btns.forEach(function (b) { b.addEventListener("click", function () {
@@ -3349,6 +3365,37 @@ app.get("/drops", (req, res) => {
     }
     pickWire("dropStyle", "data-n", function (v) { selStyle = Number(v); document.getElementById("dropHint").textContent = HINTS[selStyle] || HINTS[1]; });
     document.querySelectorAll(".dropStyle")[0].classList.add("on");
+    var endRec = document.getElementById("dropEndRec");
+    pickWire("dropEnd", "data-v", function (v) { selEnding = v; endRec.style.display = v === "own" ? "block" : "none"; });
+    var endBtn = document.getElementById("dropEndBtn");
+    var endState = document.getElementById("dropEndState");
+    var endPrev = document.getElementById("dropEndPrev");
+    var endRec2 = null, endChunks = [], endStream = null, endTimer = null, endSecs = 0;
+    endBtn.addEventListener("click", function () {
+      if (endRec2 && endRec2.state === "recording") { endRec2.stop(); return; }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { endState.textContent = "This browser can’t record — open Top 20 in the app and try again."; return; }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        endStream = stream; endChunks = [];
+        endRec2 = new MediaRecorder(stream);
+        endRec2.ondataavailable = function (e) { if (e.data && e.data.size) endChunks.push(e.data); };
+        endRec2.onstop = function () {
+          clearInterval(endTimer);
+          if (endStream) endStream.getTracks().forEach(function (t) { t.stop(); });
+          endBlob = new Blob(endChunks, { type: endRec2.mimeType || "audio/webm" });
+          endPrev.src = URL.createObjectURL(endBlob); endPrev.style.display = "block";
+          endBtn.textContent = "↻ Record it again";
+          endState.textContent = "Got it — that’s your ending.";
+        };
+        endRec2.start(); endSecs = 0;
+        endBtn.textContent = "⏹ Stop";
+        endState.textContent = "Recording… say your ending!";
+        endTimer = setInterval(function () {
+          endSecs++;
+          endState.textContent = "Recording… " + endSecs + "s — say your ending!";
+          if (endSecs >= 15 && endRec2 && endRec2.state === "recording") endRec2.stop();
+        }, 1000);
+      }).catch(function () { endState.textContent = "The mic was blocked — allow the microphone and try again."; });
+    });
     pickWire("dropFx", "data-v", function (v) { selFx = v; });
     pickWire("dropBed", "data-v", function (v) { selBed = v; });
     var recBtn = document.getElementById("dropRecBtn");
@@ -3386,10 +3433,12 @@ app.get("/drops", (req, res) => {
     var player = document.getElementById("dropPlayer");
     var dl = document.getElementById("dropDl");
     makeBtn.addEventListener("click", function () {
-      if (!nameBlob) { msg.textContent = "Record your name first (step 2), then make your drop."; return; }
+      if (!nameBlob) { msg.textContent = "Record your name first (step 3), then make your drop."; return; }
+      if (selEnding === "own" && !endBlob) { msg.textContent = "Record your ending first (step 2), or pick a different ending."; return; }
       var fd = new FormData();
       fd.append("nameclip", nameBlob, "name.webm");
-      fd.append("style", String(selStyle)); fd.append("effect", selFx); fd.append("bed", selBed);
+      if (selEnding === "own" && endBlob) fd.append("endclip", endBlob, "ending.webm");
+      fd.append("style", String(selStyle)); fd.append("effect", selFx); fd.append("bed", selBed); fd.append("ending", selEnding);
       makeBtn.disabled = true; msg.textContent = "Making your drop\u2026";
       fetch("/drops/make", { method: "POST", body: fd }).then(function (r) { return r.json(); }).then(function (j) {
         makeBtn.disabled = false;
@@ -3411,54 +3460,89 @@ app.post("/drops/unlock", (req, res) => {
   return res.redirect("/drops");
 });
 const dropUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
-app.post("/drops/make", dropUpload.single("nameclip"), (req, res) => {
+app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { name: "endclip", maxCount: 1 }]), (req, res) => {
   const artist = dropArtist(req);
   if (!artist) return res.status(403).json({ error: "The Drop Studio is for artists with a Top 20 profile." });
   const style = [1, 2, 3, 4, 5].includes(Number(req.body.style)) ? Number(req.body.style) : 1;
   const effect = ["clean", "echo", "deep", "radio"].includes(req.body.effect) ? req.body.effect : "clean";
   const bed = ["none", "hiphop", "rnb", "house"].includes(req.body.bed) ? req.body.bed : "none";
-  if (!req.file || !req.file.buffer || req.file.buffer.length < 1000) return res.status(400).json({ error: "Record your name first, then make your drop." });
-  if (!DROP["frame-" + style + "a"] || !DROP["frame-" + style + "b"]) return res.status(500).json({ error: "That style is not ready yet." });
+  const nameFile = req.files && req.files.nameclip && req.files.nameclip[0];
+  if (!nameFile || !nameFile.buffer || nameFile.buffer.length < 1000) return res.status(400).json({ error: "Record your name first, then make your drop." });
+  const ending = ["brand", "generic", "own", "none"].includes(req.body.ending) ? req.body.ending : "brand";
+  const endFile = req.files && req.files.endclip && req.files.endclip[0];
+  if (ending === "own" && (!endFile || !endFile.buffer || endFile.buffer.length < 1000)) return res.status(400).json({ error: "Record your ending, or pick a different ending." });
+  if (!DROP["frame-" + style + "a"]) return res.status(500).json({ error: "That style is not ready yet." });
+  if (ending === "brand" && !DROP["frame-" + style + "b"]) return res.status(500).json({ error: "That style is not ready yet." });
+  if (ending === "generic" && !DROP["frame-" + style + "g"]) return res.status(500).json({ error: "That style is not ready yet." });
   const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "drop-"));
   try {
-    const introP = path.join(dir, "intro.mp3"), outroP = path.join(dir, "outro.mp3");
+    const introP = path.join(dir, "intro.mp3");
     fs.writeFileSync(introP, DROP["frame-" + style + "a"]);
-    fs.writeFileSync(outroP, DROP["frame-" + style + "b"]);
     const nameRaw = path.join(dir, "name-in");
-    fs.writeFileSync(nameRaw, req.file.buffer);
-    const conv = (inp, outp, af) => execFileSync("ffmpeg", ["-y", "-v", "error", "-i", inp].concat(af ? ["-af", af] : []).concat(["-ar", "44100", "-ac", "2", outp]));
-    const introW = path.join(dir, "intro.wav"), outroW = path.join(dir, "outro.wav"), nameW = path.join(dir, "name.wav");
-    conv(introP, introW); conv(outroP, outroW);
-    conv(nameRaw, nameW, "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1,areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1,areverse");
-    const durOf = (p) => Number(JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", p], { encoding: "utf8" })).format.duration || 0);
+    fs.writeFileSync(nameRaw, nameFile.buffer);
+    let outroP = null;
+    if (ending === "brand" || ending === "generic") {
+      outroP = path.join(dir, "outro.mp3");
+      fs.writeFileSync(outroP, DROP["frame-" + style + (ending === "brand" ? "b" : "g")]);
+    } else if (ending === "own") {
+      outroP = path.join(dir, "end-in");
+      fs.writeFileSync(outroP, endFile.buffer);
+    }
+    const conv = (inp, outp, af) => { try { return execFileSync("ffmpeg", ["-y", "-v", "error", "-i", inp].concat(af ? ["-af", af] : []).concat(["-ar", "44100", "-ac", "2", outp])); } catch (e2) { e2.step = "conv:" + outp.split("/").pop(); throw e2; } };
+    const introW = path.join(dir, "intro.wav"), nameW = path.join(dir, "name.wav");
+    let outroW = null;
+    const TRIMAF = "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1,areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1,areverse";
+    conv(introP, introW);
+    conv(nameRaw, nameW, TRIMAF);
+    if (outroP) {
+      outroW = path.join(dir, "outro.wav");
+      if (ending === "own") conv(outroP, outroW, TRIMAF); else conv(outroP, outroW);
+    }
+    const durOf = (p) => { try { return Number(JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", p], { encoding: "utf8" })).format.duration || 0); } catch (e2) { e2.step = "probe:" + p.split("/").pop(); throw e2; } };
     const nameDur = durOf(nameW);
     if (!(nameDur >= 0.3) || nameDur > 15) return res.status(400).json({ error: "That recording doesn\u2019t sound right \u2014 say just your name, nice and clear, and try again." });
+    let outroDur = 0;
+    if (outroW) {
+      outroDur = durOf(outroW);
+      if (ending === "own" && (!(outroDur >= 0.3) || outroDur > 15)) return res.status(400).json({ error: "That ending doesn\u2019t sound right \u2014 record it again, nice and clear." });
+    }
     const FX = {
       clean: "acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
       echo: "aecho=0.8:0.75:70|110:0.35|0.25,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
       deep: "asetrate=35280,aresample=44100,atempo=1.25,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
       radio: "highpass=f=350,lowpass=f=3200,acompressor=threshold=-12dB:ratio=6:attack=5:release=100",
     };
-    const total = (durOf(introW) + 0.13 + nameDur + 0.13 + durOf(outroW) + 0.7).toFixed(2);
+    const total = (durOf(introW) + 0.13 + nameDur + (outroW ? 0.13 + outroDur : 0) + 0.7).toFixed(2);
     const outP = path.join(dir, "drop.mp3");
-    const args = ["-y", "-v", "error", "-i", introW, "-i", nameW, "-i", outroW, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"];
-    let graph = "[3:a]atrim=0:0.13,asetpts=PTS-STARTPTS[gap];[0:a][gap][1:a][gap][2:a]concat=n=5:v=0:a=1[v0];[v0]" + FX[effect] + ",apad=pad_dur=0.7,atrim=0:" + total + "[voice]";
+    const run = (step, args2) => { try { return execFileSync("ffmpeg", args2); } catch (e2) { e2.step = step; throw e2; } };
+    const inputs = [introW, nameW];
+    if (outroW) inputs.push(outroW);
+    const lavfiIdx = inputs.length;
+    const args = ["-y", "-v", "error"];
+    for (const f of inputs) args.push("-i", f);
+    args.push("-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo");
+    let graph = "[" + lavfiIdx + ":a]asplit=" + (outroW ? "3[g0][g1][t0]" : "2[g0][t0]") + ";[g0]atrim=0:0.13,asetpts=PTS-STARTPTS[gapA];" + (outroW ? "[g1]atrim=0:0.13,asetpts=PTS-STARTPTS[gapB];" : "") + "[t0]atrim=0:0.7,asetpts=PTS-STARTPTS[tail];";
+    const segs = ["[0:a]", "[gapA]", "[1:a]"];
+    if (outroW) segs.push("[gapB]", "[2:a]");
+    segs.push("[tail]");
+    graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]" + FX[effect] + "[voice]";
     if (bed !== "none" && DROP["bed-" + bed]) {
       const bedP = path.join(dir, "bed.mp3");
       fs.writeFileSync(bedP, DROP["bed-" + bed]);
       args.push("-stream_loop", "-1", "-i", bedP);
+      const bedIdx = lavfiIdx + 1;
       const fadeStart = Math.max(0, Number(total) - 0.9).toFixed(2);
-      graph += ";[4:a]atrim=0:" + total + ",volume=0.30,afade=t=out:st=" + fadeStart + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
+      graph += ";[" + bedIdx + ":a]atrim=0:" + total + ",volume=0.30,afade=t=out:st=" + fadeStart + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
     } else {
       graph += ";[voice]anull[out]";
     }
     // Pass 1 renders the mix to WAV; pass 2 applies loudnorm on a plain
-    // file input (the live ffmpeg 5.1 rejects loudnorm chained after
-    // amix inside the complex graph — "matches no streams", Nov 8, 2026).
+    // file input (kept separate from the complex graph for the live
+    // ffmpeg 5.1, Nov 8, 2026).
     const mixP = path.join(dir, "mix.wav");
     args.push("-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_s16le", mixP);
-    execFileSync("ffmpeg", args);
-    execFileSync("ffmpeg", ["-y", "-v", "error", "-i", mixP, "-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-c:a", "libmp3lame", "-b:a", "192k", outP]);
+    run("mix", args);
+    run("loudnorm", ["-y", "-v", "error", "-i", mixP, "-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-c:a", "libmp3lame", "-b:a", "192k", outP]);
     const buf = fs.readFileSync(outP);
     const token = crypto.randomBytes(9).toString("hex");
     const now = Date.now();
@@ -3466,7 +3550,7 @@ app.post("/drops/make", dropUpload.single("nameclip"), (req, res) => {
     DROP_FILES.set(token, { buf, ts: now });
     return res.json({ url: "/drops/file/" + token + ".mp3" });
   } catch (e) {
-    return res.status(500).json({ error: "The drop couldn\u2019t be made \u2014 try recording again." });
+    return res.status(500).json({ error: "The drop couldn\u2019t be made \u2014 try recording again.", hint: String((e && e.step) || "?") + " | " + String((e && e.stderr) || (e && e.message) || "").slice(-240) });
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   }
