@@ -3615,11 +3615,13 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
       const run0 = (step, a) => { try { return execFileSync("ffmpeg", a); } catch (e2) { e2.step = step; throw e2; } };
       const args0 = ["-y", "-v", "error", "-i", ownW, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"];
       let graph0 = "[1:a]atrim=0:0.7,asetpts=PTS-STARTPTS[tail];[0:a][tail]concat=n=2:v=0:a=1[v0];";
+      let bedTotal0 = total0;
       if (effect === "stutter") {
         const sl0 = Math.min(0.32, od / 4);
-        const headEnd0 = (od - 3 * sl0).toFixed(3);
-        const slStart0 = (od - sl0).toFixed(3);
-        graph0 += "[v0]asplit=2[sm][st];[sm]atrim=0:" + headEnd0 + ",asetpts=PTS-STARTPTS[head];[st]atrim=start=" + slStart0 + ":end=" + od.toFixed(3) + ",asetpts=PTS-STARTPTS[s0];[s0]asplit=3[s1][s2][s3];[head][s1][s2][s3]concat=n=4:v=0:a=1[sv];[sv]acompressor=threshold=-18dB:ratio=3:attack=10:release=120[voice]";
+        const slSamples0 = Math.round(sl0 * 44100);
+        const startSamples0 = Math.round((od - sl0) * 44100);
+        bedTotal0 = (Number(total0) + 2 * sl0).toFixed(2);
+        graph0 += "[v0]aloop=loop=2:size=" + slSamples0 + ":start=" + startSamples0 + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120[voice]";
       } else {
         graph0 += "[v0]" + FX0[effect] + "[voice]";
       }
@@ -3627,8 +3629,8 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
         const bedP0 = path.join(dir0, "bed.mp3");
         fs.writeFileSync(bedP0, DROP["bed-" + bed]);
         args0.push("-stream_loop", "-1", "-i", bedP0);
-        const fade0 = Math.max(0, Number(total0) - 0.9).toFixed(2);
-        graph0 += ";[2:a]atrim=0:" + total0 + ",volume=0.60,afade=t=out:st=" + fade0 + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
+        const fade0 = Math.max(0, Number(bedTotal0) - 0.9).toFixed(2);
+        graph0 += ";[2:a]atrim=0:" + bedTotal0 + ",volume=0.60,afade=t=out:st=" + fade0 + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
       } else {
         graph0 += ";[voice]anull[out]";
       }
@@ -3709,12 +3711,14 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
     const segs = ["[0:a]", "[gapA]", "[1:a]"];
     if (outroW) segs.push("[gapB]", "[2:a]");
     segs.push("[tail]");
+    let bedTotal = total;
     if (effect === "stutter") {
       const voiceEnd = Number(total) - 0.7;
       const sl = Math.min(0.32, voiceEnd / 4);
-      const headEnd = (voiceEnd - 3 * sl).toFixed(3);
-      const slStart = (voiceEnd - sl).toFixed(3);
-      graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]asplit=2[sm][st];[sm]atrim=0:" + headEnd + ",asetpts=PTS-STARTPTS[head];[st]atrim=start=" + slStart + ":end=" + voiceEnd.toFixed(3) + ",asetpts=PTS-STARTPTS[s0];[s0]asplit=3[s1][s2][s3];[head][s1][s2][s3]concat=n=4:v=0:a=1[sv];[sv]acompressor=threshold=-18dB:ratio=3:attack=10:release=120[voice]";
+      const slSamples = Math.round(sl * 44100);
+      const startSamples = Math.round((voiceEnd - sl) * 44100);
+      bedTotal = (Number(total) + 2 * sl).toFixed(2);
+      graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]aloop=loop=2:size=" + slSamples + ":start=" + startSamples + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120[voice]";
     } else {
       graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]" + FX[effect] + "[voice]";
     }
@@ -3723,8 +3727,8 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
       fs.writeFileSync(bedP, DROP["bed-" + bed]);
       args.push("-stream_loop", "-1", "-i", bedP);
       const bedIdx = lavfiIdx + 1;
-      const fadeStart = Math.max(0, Number(total) - 0.9).toFixed(2);
-      graph += ";[" + bedIdx + ":a]atrim=0:" + total + ",volume=0.60,afade=t=out:st=" + fadeStart + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
+      const fadeStart = Math.max(0, Number(bedTotal) - 0.9).toFixed(2);
+      graph += ";[" + bedIdx + ":a]atrim=0:" + bedTotal + ",volume=0.60,afade=t=out:st=" + fadeStart + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
     } else {
       graph += ";[voice]anull[out]";
     }
