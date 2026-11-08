@@ -3351,8 +3351,8 @@ app.get("/drops", (req, res) => {
       <div id="dropStutPanel" style="display:none">
         <p class="sub" style="margin:12px 0 6px">Put the stutter on</p>
         <div id="dropStutWhere">
-          <button type="button" class="dropPick dropStutOn" data-v="name">My name</button>
-          <button type="button" class="dropPick dropStutOn on" data-v="end">The end of the drop</button>
+          <button type="button" class="dropPick dropStutOn on" data-v="name">My name</button>
+          <button type="button" class="dropPick dropStutOn" data-v="end">The end of the drop</button>
         </div>
         <p class="sub" style="margin:10px 0 6px">How much stutter — <span id="dropStutVal" style="color:#ffd98a;font-weight:800">4 repeats</span></p>
         <input type="range" id="dropStutAmt" min="2" max="6" step="1" value="4" style="width:100%">
@@ -3403,7 +3403,7 @@ app.get("/drops", (req, res) => {
       if (chip) { chip.click(); window.scrollTo(0, 0); }
     });
     var HINTS = { 1: "Say just your name, strong and clear \u2014 the studio adds everything around it.", 2: "Say just your name, smooth and easy.", 3: "Say your name like a DJ tag \u2014 bring the energy!", 4: "Say just your name, hyped up.", 5: "Say just your name, confident, like you mean it." };
-    var selStyle = 1, selFx = "clean", selBed = "none", selEnding = "brand", endBlob = null, selMode = "dj", ownBlob = null, selVol = 1, selStutOn = "end", selStutAmt = 4;
+    var selStyle = 1, selFx = "clean", selBed = "none", selEnding = "brand", endBlob = null, selMode = "dj", ownBlob = null, selVol = 1, selStutOn = "name", selStutAmt = 4;
     function pickWire(cls, attr, set) {
       var btns = document.querySelectorAll("." + cls);
       btns.forEach(function (b) { b.addEventListener("click", function () {
@@ -3620,6 +3620,42 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
   const vol = Math.min(1.5, Math.max(0.5, Number(req.body.vol) || 1));
   const stutterOn = req.body.stutterOn === "name" ? "name" : "end";
   const stutterAmt = Math.min(6, Math.max(2, parseInt(req.body.stutterAmt, 10) || 4));
+  // Pick where the stutter chops: the loudest slice-length window of
+  // the clip (from 10% in), snapped to a nearby zero crossing. Falls
+  // back to the old end-of-clip slice if the WAV can't be read.
+  const sliceStartFor = (wavPath, dur, sl) => {
+    try {
+      const buf = fs.readFileSync(wavPath);
+      let off = 12, dataOff = -1, dataLen = 0;
+      while (off + 8 <= buf.length) {
+        const id = buf.toString("ascii", off, off + 4);
+        const len = buf.readUInt32LE(off + 4);
+        if (id === "data") { dataOff = off + 8; dataLen = len; break; }
+        off += 8 + len + (len % 2);
+      }
+      if (dataOff < 0) return Math.max(0, dur - sl);
+      const n = Math.min(Math.floor(dataLen / 4), Math.floor(dur * 44100));
+      const win = Math.max(1, Math.floor(sl * 44100));
+      const lo = Math.floor(dur * 0.10 * 44100);
+      const hi = Math.max(lo, n - win);
+      let best = -1, bestStart = hi;
+      for (let s = lo; s <= hi; s += 220) {
+        let sum = 0, cnt = 0;
+        for (let i = s; i < s + win; i += 4) {
+          const v = (buf.readInt16LE(dataOff + i * 4) + buf.readInt16LE(dataOff + i * 4 + 2)) / 2;
+          sum += v * v; cnt++;
+        }
+        const e = cnt ? sum / cnt : 0;
+        if (e > best) { best = e; bestStart = s; }
+      }
+      for (let d = 0; d + 4 <= 441 * 4 && bestStart * 4 + d + 4 <= dataLen; d += 4) {
+        const a = buf.readInt16LE(dataOff + bestStart * 4 + d);
+        const b = buf.readInt16LE(dataOff + bestStart * 4 + d + 4);
+        if ((a <= 0 && b >= 0) || (a >= 0 && b <= 0)) { bestStart += d / 4; break; }
+      }
+      return bestStart / 44100;
+    } catch (e) { return Math.max(0, dur - sl); }
+  };
   if (req.body.mode === "own") {
     const ownFile = req.files && req.files.ownclip && req.files.ownclip[0];
     if (!ownFile || !ownFile.buffer || ownFile.buffer.length < 1000) return res.status(400).json({ error: "Record your drop first, then make it." });
@@ -3648,7 +3684,7 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
       if (effect === "stutter") {
         const sl0 = Math.min(0.32, od / 4);
         const slSamples0 = Math.round(sl0 * 44100);
-        const startSamples0 = Math.round((od - sl0) * 44100);
+        const startSamples0 = Math.round(sliceStartFor(ownW, od, sl0) * 44100);
         bedTotal0 = (Number(total0) + stutterAmt * sl0).toFixed(2);
         graph0 += "[v0]aloop=loop=" + stutterAmt + ":size=" + slSamples0 + ":start=" + startSamples0 + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120,volume=" + vol + "[voice]";
       } else {
@@ -3744,15 +3780,17 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
     if (effect === "stutter" && stutterOn === "name") {
       const slN = Math.min(0.32, nameDur / 4);
       const slSamplesN = Math.round(slN * 44100);
-      const startSamplesN = Math.round((nameDur - slN) * 44100);
+      const startSamplesN = Math.round(sliceStartFor(nameW, nameDur, slN) * 44100);
       bedTotal = (Number(total) + stutterAmt * slN).toFixed(2);
       const segsN = segs.map(function (s) { return s === "[1:a]" ? "[nm]" : s; });
       graph += "[1:a]aloop=loop=" + stutterAmt + ":size=" + slSamplesN + ":start=" + startSamplesN + "[nm];" + segsN.join("") + "concat=n=" + segsN.length + ":v=0:a=1[v0];[v0]acompressor=threshold=-18dB:ratio=3:attack=10:release=120,volume=" + vol + "[voice]";
     } else if (effect === "stutter") {
       const voiceEnd = Number(total) - 0.7;
-      const sl = Math.min(0.32, voiceEnd / 4);
+      const tgtW = outroW || nameW;
+      const tgtDur = outroW ? outroDur : nameDur;
+      const sl = Math.min(0.32, tgtDur / 4);
       const slSamples = Math.round(sl * 44100);
-      const startSamples = Math.round((voiceEnd - sl) * 44100);
+      const startSamples = Math.round(((voiceEnd - tgtDur) + sliceStartFor(tgtW, tgtDur, sl)) * 44100);
       bedTotal = (Number(total) + stutterAmt * sl).toFixed(2);
       graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]aloop=loop=" + stutterAmt + ":size=" + slSamples + ":start=" + startSamples + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120,volume=" + vol + "[voice]";
     } else {
