@@ -3290,6 +3290,15 @@ app.get("/drops", (req, res) => {
   </div>
 
   <div id="dropStudio" style="display:none">
+    <div class="panel" style="border:1px solid rgba(126,182,255,.55)">
+      <h2 style="margin-top:0">Two ways to make your drop</h2>
+      <p class="sub"><b style="color:#fff">Use our DJ voice</b> — pick a preset style, say your name, and the DJ voice does the rest. Or <b style="color:#fff">use your own voice</b> — record the whole drop yourself, say what you want (up to 20 seconds), and put our effects on it. Either way it is free — and you download it, because nothing is saved here.</p>
+      <div>
+        <button type="button" class="dropPick dropMode on" data-v="dj">🎙️ Use our DJ voice</button>
+        <button type="button" class="dropPick dropMode" data-v="own">🗣️ Use my own voice</button>
+      </div>
+    </div>
+    <div id="dropPresetWrap">
     <div class="panel">
       <h2 style="margin-top:0">1 \u00b7 Pick your style</h2>
       ${styleCards}
@@ -3316,6 +3325,14 @@ app.get("/drops", (req, res) => {
       <button class="btn btn-blue btn-block" id="dropRecBtn" type="button">\u25cf Record my name</button>
       <p class="sub" id="dropRecState" style="margin:10px 0 6px">Not recorded yet.</p>
       <audio id="dropNamePrev" controls style="display:none;width:100%"></audio>
+    </div>
+    </div>
+    <div class="panel" id="dropOwnPanel" style="display:none">
+      <h2 style="margin-top:0">Record your whole drop</h2>
+      <p class="sub">Say the whole drop in your own voice — your name, your DJ, your show, whatever you want — up to 20 seconds. Then pick your effect and your music below, same as always.</p>
+      <button class="btn btn-blue btn-block" id="dropOwnBtn" type="button">● Record my drop</button>
+      <p class="sub" id="dropOwnState" style="margin:10px 0 6px">Not recorded yet.</p>
+      <audio id="dropOwnPrev" controls style="display:none;width:100%"></audio>
     </div>
     <div class="panel">
       <h2 style="margin-top:0">4 \u00b7 Pick your sound</h2>
@@ -3369,7 +3386,7 @@ app.get("/drops", (req, res) => {
       if (chip) { chip.click(); window.scrollTo(0, 0); }
     });
     var HINTS = { 1: "Say just your name, strong and clear \u2014 the studio adds everything around it.", 2: "Say just your name, smooth and easy.", 3: "Say your name like a DJ tag \u2014 bring the energy!", 4: "Say just your name, hyped up.", 5: "Say just your name, confident, like you mean it." };
-    var selStyle = 1, selFx = "clean", selBed = "none", selEnding = "brand", endBlob = null;
+    var selStyle = 1, selFx = "clean", selBed = "none", selEnding = "brand", endBlob = null, selMode = "dj", ownBlob = null;
     function pickWire(cls, attr, set) {
       var btns = document.querySelectorAll("." + cls);
       btns.forEach(function (b) { b.addEventListener("click", function () {
@@ -3406,7 +3423,7 @@ app.get("/drops", (req, res) => {
         endTimer = setInterval(function () {
           endSecs++;
           endState.textContent = "Recording… " + endSecs + "s — say your ending!";
-          if (endSecs >= 15 && endRec2 && endRec2.state === "recording") endRec2.stop();
+          if (endSecs >= 20 && endRec2 && endRec2.state === "recording") endRec2.stop();
         }, 1000);
       }).catch(function () { endState.textContent = "The mic was blocked — allow the microphone and try again."; });
     });
@@ -3437,9 +3454,45 @@ app.get("/drops", (req, res) => {
         recTimer = setInterval(function () {
           recSecs++;
           recState.textContent = "Recording\u2026 " + recSecs + "s \u2014 say your name!";
-          if (recSecs >= 15 && mediaRec && mediaRec.state === "recording") mediaRec.stop();
+          if (recSecs >= 20 && mediaRec && mediaRec.state === "recording") mediaRec.stop();
         }, 1000);
       }).catch(function () { recState.textContent = "The mic was blocked \u2014 allow the microphone and try again."; });
+    });
+    var presetWrap = document.getElementById("dropPresetWrap");
+    var ownPanel = document.getElementById("dropOwnPanel");
+    pickWire("dropMode", "data-v", function (v) {
+      selMode = v;
+      presetWrap.style.display = v === "dj" ? "block" : "none";
+      ownPanel.style.display = v === "own" ? "block" : "none";
+    });
+    var ownBtn = document.getElementById("dropOwnBtn");
+    var ownState = document.getElementById("dropOwnState");
+    var ownPrev = document.getElementById("dropOwnPrev");
+    var ownRec = null, ownChunks = [], ownStream = null, ownTimer = null, ownSecs = 0;
+    ownBtn.addEventListener("click", function () {
+      if (ownRec && ownRec.state === "recording") { ownRec.stop(); return; }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { ownState.textContent = "This browser can’t record — open Top 20 in the app and try again."; return; }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        ownStream = stream; ownChunks = [];
+        ownRec = new MediaRecorder(stream);
+        ownRec.ondataavailable = function (e) { if (e.data && e.data.size) ownChunks.push(e.data); };
+        ownRec.onstop = function () {
+          clearInterval(ownTimer);
+          if (ownStream) ownStream.getTracks().forEach(function (t) { t.stop(); });
+          ownBlob = new Blob(ownChunks, { type: ownRec.mimeType || "audio/webm" });
+          ownPrev.src = URL.createObjectURL(ownBlob); ownPrev.style.display = "block";
+          ownBtn.textContent = "↻ Record it again";
+          ownState.textContent = "Got it — that’s your drop. Pick your effect below and make it.";
+        };
+        ownRec.start(); ownSecs = 0;
+        ownBtn.textContent = "⏹ Stop";
+        ownState.textContent = "Recording… say your whole drop!";
+        ownTimer = setInterval(function () {
+          ownSecs++;
+          ownState.textContent = "Recording… " + ownSecs + "s of 20 — say your whole drop!";
+          if (ownSecs >= 20 && ownRec && ownRec.state === "recording") ownRec.stop();
+        }, 1000);
+      }).catch(function () { ownState.textContent = "The mic was blocked — allow the microphone and try again."; });
     });
     var makeBtn = document.getElementById("dropMakeBtn");
     var msg = document.getElementById("dropMsg");
@@ -3447,11 +3500,18 @@ app.get("/drops", (req, res) => {
     var player = document.getElementById("dropPlayer");
     var dl = document.getElementById("dropDl");
     makeBtn.addEventListener("click", function () {
-      if (!nameBlob) { msg.textContent = "Record your name first (step 3), then make your drop."; return; }
-      if (selEnding === "own" && !endBlob) { msg.textContent = "Record your ending first (step 2), or pick a different ending."; return; }
       var fd = new FormData();
-      fd.append("nameclip", nameBlob, "name.webm");
-      if (selEnding === "own" && endBlob) fd.append("endclip", endBlob, "ending.webm");
+      if (selMode === "own") {
+        if (!ownBlob) { msg.textContent = "Record your drop first, then make it."; return; }
+        fd.append("ownclip", ownBlob, "own.webm");
+        fd.append("mode", "own");
+      } else {
+        if (!nameBlob) { msg.textContent = "Record your name first (step 3), then make your drop."; return; }
+        if (selEnding === "own" && !endBlob) { msg.textContent = "Record your ending first (step 2), or pick a different ending."; return; }
+        fd.append("nameclip", nameBlob, "name.webm");
+        if (selEnding === "own" && endBlob) fd.append("endclip", endBlob, "ending.webm");
+        fd.append("mode", "dj");
+      }
       fd.append("style", String(selStyle)); fd.append("effect", selFx); fd.append("bed", selBed); fd.append("ending", selEnding);
       makeBtn.disabled = true; msg.textContent = "Making your drop\u2026";
       fetch("/drops/make", { method: "POST", body: fd }).then(function (r) { return r.json(); }).then(function (j) {
@@ -3474,12 +3534,61 @@ app.post("/drops/unlock", (req, res) => {
   return res.redirect("/drops");
 });
 const dropUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
-app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { name: "endclip", maxCount: 1 }]), (req, res) => {
+app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { name: "endclip", maxCount: 1 }, { name: "ownclip", maxCount: 1 }]), (req, res) => {
   const artist = dropArtist(req);
   if (!artist) return res.status(403).json({ error: "The Drop Studio is for artists with a Top 20 profile." });
   const style = [1, 2, 3, 4, 5].includes(Number(req.body.style)) ? Number(req.body.style) : 1;
   const effect = ["clean", "echo", "deep", "radio"].includes(req.body.effect) ? req.body.effect : "clean";
   const bed = ["none", "hiphop", "rnb", "house"].includes(req.body.bed) ? req.body.bed : "none";
+  if (req.body.mode === "own") {
+    const ownFile = req.files && req.files.ownclip && req.files.ownclip[0];
+    if (!ownFile || !ownFile.buffer || ownFile.buffer.length < 1000) return res.status(400).json({ error: "Record your drop first, then make it." });
+    const dir0 = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "drop-"));
+    try {
+      const raw0 = path.join(dir0, "own-in");
+      fs.writeFileSync(raw0, ownFile.buffer);
+      const conv0 = (inp, outp, af) => { try { return execFileSync("ffmpeg", ["-y", "-v", "error", "-i", inp].concat(af ? ["-af", af] : []).concat(["-ar", "44100", "-ac", "2", outp])); } catch (e2) { e2.step = "conv:" + outp.split("/").pop(); throw e2; } };
+      const dur0 = (p) => { try { return Number(JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", p], { encoding: "utf8" })).format.duration || 0); } catch (e2) { e2.step = "probe:" + p.split("/").pop(); throw e2; } };
+      const ownW = path.join(dir0, "own.wav");
+      conv0(raw0, ownW, "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1,areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1,areverse");
+      const od = dur0(ownW);
+      if (!(od >= 0.3) || od > 20) return res.status(400).json({ error: "That recording doesn’t sound right — say your drop nice and clear, up to 20 seconds." });
+      const FX0 = {
+        clean: "acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
+        echo: "aecho=0.8:0.75:70|110:0.35|0.25,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
+        deep: "asetrate=35280,aresample=44100,atempo=1.25,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
+        radio: "highpass=f=350,lowpass=f=3200,acompressor=threshold=-12dB:ratio=6:attack=5:release=100",
+      };
+      const total0 = (od + 0.7).toFixed(2);
+      const run0 = (step, a) => { try { return execFileSync("ffmpeg", a); } catch (e2) { e2.step = step; throw e2; } };
+      const args0 = ["-y", "-v", "error", "-i", ownW, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"];
+      let graph0 = "[1:a]atrim=0:0.7,asetpts=PTS-STARTPTS[tail];[0:a][tail]concat=n=2:v=0:a=1[v0];[v0]" + FX0[effect] + "[voice]";
+      if (bed !== "none" && DROP["bed-" + bed]) {
+        const bedP0 = path.join(dir0, "bed.mp3");
+        fs.writeFileSync(bedP0, DROP["bed-" + bed]);
+        args0.push("-stream_loop", "-1", "-i", bedP0);
+        const fade0 = Math.max(0, Number(total0) - 0.9).toFixed(2);
+        graph0 += ";[2:a]atrim=0:" + total0 + ",volume=0.30,afade=t=out:st=" + fade0 + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
+      } else {
+        graph0 += ";[voice]anull[out]";
+      }
+      const mix0 = path.join(dir0, "mix.wav");
+      const out0 = path.join(dir0, "drop.mp3");
+      args0.push("-filter_complex", graph0, "-map", "[out]", "-c:a", "pcm_s16le", mix0);
+      run0("mix", args0);
+      run0("loudnorm", ["-y", "-v", "error", "-i", mix0, "-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-c:a", "libmp3lame", "-b:a", "192k", out0]);
+      const buf0 = fs.readFileSync(out0);
+      const token0 = crypto.randomBytes(9).toString("hex");
+      const now0 = Date.now();
+      for (const [k, v] of DROP_FILES) if (now0 - v.ts > 20 * 60 * 1000) DROP_FILES.delete(k);
+      DROP_FILES.set(token0, { buf: buf0, ts: now0 });
+      return res.json({ url: "/drops/file/" + token0 + ".mp3" });
+    } catch (e) {
+      return res.status(500).json({ error: "The drop couldn’t be made — try recording again.", hint: String((e && e.step) || "?") + " | " + String((e && e.stderr) || (e && e.message) || "").slice(-240) });
+    } finally {
+      try { fs.rmSync(dir0, { recursive: true, force: true }); } catch (e) {}
+    }
+  }
   const nameFile = req.files && req.files.nameclip && req.files.nameclip[0];
   if (!nameFile || !nameFile.buffer || nameFile.buffer.length < 1000) return res.status(400).json({ error: "Record your name first, then make your drop." });
   const ending = ["brand", "generic", "own", "none"].includes(req.body.ending) ? req.body.ending : "brand";
@@ -3514,11 +3623,11 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
     }
     const durOf = (p) => { try { return Number(JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", p], { encoding: "utf8" })).format.duration || 0); } catch (e2) { e2.step = "probe:" + p.split("/").pop(); throw e2; } };
     const nameDur = durOf(nameW);
-    if (!(nameDur >= 0.3) || nameDur > 15) return res.status(400).json({ error: "That recording doesn\u2019t sound right \u2014 say just your name, nice and clear, and try again." });
+    if (!(nameDur >= 0.3) || nameDur > 20) return res.status(400).json({ error: "That recording doesn\u2019t sound right \u2014 say just your name, nice and clear, and try again." });
     let outroDur = 0;
     if (outroW) {
       outroDur = durOf(outroW);
-      if (ending === "own" && (!(outroDur >= 0.3) || outroDur > 15)) return res.status(400).json({ error: "That ending doesn\u2019t sound right \u2014 record it again, nice and clear." });
+      if (ending === "own" && (!(outroDur >= 0.3) || outroDur > 20)) return res.status(400).json({ error: "That ending doesn\u2019t sound right \u2014 record it again, nice and clear." });
     }
     const FX = {
       clean: "acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
