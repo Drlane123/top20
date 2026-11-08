@@ -3348,6 +3348,15 @@ app.get("/drops", (req, res) => {
         <button type="button" class="dropPick dropFx" data-v="deep">Deep voice</button>
         <button type="button" class="dropPick dropFx" data-v="radio">Radio</button>
       </div>
+      <div id="dropStutPanel" style="display:none">
+        <p class="sub" style="margin:12px 0 6px">Put the stutter on</p>
+        <div id="dropStutWhere">
+          <button type="button" class="dropPick dropStutOn" data-v="name">My name</button>
+          <button type="button" class="dropPick dropStutOn on" data-v="end">The end of the drop</button>
+        </div>
+        <p class="sub" style="margin:10px 0 6px">How much stutter — <span id="dropStutVal" style="color:#ffd98a;font-weight:800">4 repeats</span></p>
+        <input type="range" id="dropStutAmt" min="2" max="6" step="1" value="4" style="width:100%">
+      </div>
       <p class="sub" style="margin:12px 0 6px">Your voice volume — <span id="dropVolVal" style="color:#ffd98a;font-weight:800">100%</span></p>
       <input type="range" id="dropVol" min="50" max="150" step="5" value="100" style="width:100%">
       <p class="sub" style="margin:2px 0 0">Slide your voice up if the music is covering it, down if your voice is too hot. The music stays where it is — your voice moves.</p>
@@ -3394,7 +3403,7 @@ app.get("/drops", (req, res) => {
       if (chip) { chip.click(); window.scrollTo(0, 0); }
     });
     var HINTS = { 1: "Say just your name, strong and clear \u2014 the studio adds everything around it.", 2: "Say just your name, smooth and easy.", 3: "Say your name like a DJ tag \u2014 bring the energy!", 4: "Say just your name, hyped up.", 5: "Say just your name, confident, like you mean it." };
-    var selStyle = 1, selFx = "clean", selBed = "none", selEnding = "brand", endBlob = null, selMode = "dj", ownBlob = null, selVol = 1;
+    var selStyle = 1, selFx = "clean", selBed = "none", selEnding = "brand", endBlob = null, selMode = "dj", ownBlob = null, selVol = 1, selStutOn = "end", selStutAmt = 4;
     function pickWire(cls, attr, set) {
       var btns = document.querySelectorAll("." + cls);
       btns.forEach(function (b) { b.addEventListener("click", function () {
@@ -3438,7 +3447,14 @@ app.get("/drops", (req, res) => {
         }, 1000);
       }).catch(function () { endState.textContent = "The mic was blocked — allow the microphone and try again."; });
     });
-    pickWire("dropFx", "data-v", function (v, wasOn) { if (wasOn) { stopAllAudio(); return; } selFx = v; maybeAutoMake(); });
+    pickWire("dropFx", "data-v", function (v, wasOn) { if (wasOn) { stopAllAudio(); return; } selFx = v; document.getElementById("dropStutPanel").style.display = v === "stutter" ? "block" : "none"; maybeAutoMake(); });
+    pickWire("dropStutOn", "data-v", function (v) { selStutOn = v; maybeAutoMake(); });
+    var stutSlider = document.getElementById("dropStutAmt");
+    stutSlider.addEventListener("input", function () {
+      selStutAmt = Number(stutSlider.value);
+      document.getElementById("dropStutVal").textContent = stutSlider.value + " repeats";
+    });
+    stutSlider.addEventListener("change", function () { maybeAutoMake(); });
     pickWire("dropBed", "data-v", function (v, wasOn) { if (wasOn) { stopAllAudio(); return; } selBed = v; maybeAutoMake(); });
     var volSlider = document.getElementById("dropVol");
     volSlider.addEventListener("input", function () {
@@ -3483,6 +3499,7 @@ app.get("/drops", (req, res) => {
       selMode = v;
       presetWrap.style.display = v === "dj" ? "block" : "none";
       ownPanel.style.display = v === "own" ? "block" : "none";
+      document.getElementById("dropStutWhere").style.display = v === "own" ? "none" : "block";
       maybeAutoMake();
     });
     var ownBtn = document.getElementById("dropOwnBtn");
@@ -3543,7 +3560,7 @@ app.get("/drops", (req, res) => {
         if (selEnding === "own" && endBlob) fd.append("endclip", endBlob, "ending.webm");
         fd.append("mode", "dj");
       }
-      fd.append("style", String(selStyle)); fd.append("effect", selFx); fd.append("bed", selBed); fd.append("ending", selEnding); fd.append("vol", String(selVol));
+      fd.append("style", String(selStyle)); fd.append("effect", selFx); fd.append("bed", selBed); fd.append("ending", selEnding); fd.append("vol", String(selVol)); fd.append("stutterOn", selStutOn); fd.append("stutterAmt", String(selStutAmt));
       var seq = ++makeSeq;
       makeBtn.disabled = true; msg.textContent = "Making your drop…";
       fetch("/drops/make", { method: "POST", body: fd }).then(function (r) { return r.json(); }).then(function (j) {
@@ -3601,6 +3618,8 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
   const effect = ["clean", "echo", "reverb", "stutter", "deep", "radio"].includes(req.body.effect) ? req.body.effect : "clean";
   const bed = ["none", "hiphop", "rnb", "house"].includes(req.body.bed) ? req.body.bed : "none";
   const vol = Math.min(1.5, Math.max(0.5, Number(req.body.vol) || 1));
+  const stutterOn = req.body.stutterOn === "name" ? "name" : "end";
+  const stutterAmt = Math.min(6, Math.max(2, parseInt(req.body.stutterAmt, 10) || 4));
   if (req.body.mode === "own") {
     const ownFile = req.files && req.files.ownclip && req.files.ownclip[0];
     if (!ownFile || !ownFile.buffer || ownFile.buffer.length < 1000) return res.status(400).json({ error: "Record your drop first, then make it." });
@@ -3630,8 +3649,8 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
         const sl0 = Math.min(0.32, od / 4);
         const slSamples0 = Math.round(sl0 * 44100);
         const startSamples0 = Math.round((od - sl0) * 44100);
-        bedTotal0 = (Number(total0) + 2 * sl0).toFixed(2);
-        graph0 += "[v0]aloop=loop=2:size=" + slSamples0 + ":start=" + startSamples0 + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120,volume=" + vol + "[voice]";
+        bedTotal0 = (Number(total0) + stutterAmt * sl0).toFixed(2);
+        graph0 += "[v0]aloop=loop=" + stutterAmt + ":size=" + slSamples0 + ":start=" + startSamples0 + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120,volume=" + vol + "[voice]";
       } else {
         graph0 += "[v0]" + FX0[effect] + ",volume=" + vol + "[voice]";
       }
@@ -3722,13 +3741,20 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
     if (outroW) segs.push("[gapB]", "[2:a]");
     segs.push("[tail]");
     let bedTotal = total;
-    if (effect === "stutter") {
+    if (effect === "stutter" && stutterOn === "name") {
+      const slN = Math.min(0.32, nameDur / 4);
+      const slSamplesN = Math.round(slN * 44100);
+      const startSamplesN = Math.round((nameDur - slN) * 44100);
+      bedTotal = (Number(total) + stutterAmt * slN).toFixed(2);
+      const segsN = segs.map(function (s) { return s === "[1:a]" ? "[nm]" : s; });
+      graph += "[1:a]aloop=loop=" + stutterAmt + ":size=" + slSamplesN + ":start=" + startSamplesN + "[nm];" + segsN.join("") + "concat=n=" + segsN.length + ":v=0:a=1[v0];[v0]acompressor=threshold=-18dB:ratio=3:attack=10:release=120,volume=" + vol + "[voice]";
+    } else if (effect === "stutter") {
       const voiceEnd = Number(total) - 0.7;
       const sl = Math.min(0.32, voiceEnd / 4);
       const slSamples = Math.round(sl * 44100);
       const startSamples = Math.round((voiceEnd - sl) * 44100);
-      bedTotal = (Number(total) + 2 * sl).toFixed(2);
-      graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]aloop=loop=2:size=" + slSamples + ":start=" + startSamples + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120,volume=" + vol + "[voice]";
+      bedTotal = (Number(total) + stutterAmt * sl).toFixed(2);
+      graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]aloop=loop=" + stutterAmt + ":size=" + slSamples + ":start=" + startSamples + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120,volume=" + vol + "[voice]";
     } else {
       graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]" + FX[effect] + ",volume=" + vol + "[voice]";
     }
@@ -7375,12 +7401,12 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   <div class="panel">
     <h2 style="margin-top:0">🎙️ Viewcast Studio</h2>
     <p class="sub">Film an episode — you on camera, or an artist in front of you — inside a studio set, and post it to the Viewcast page.</p>
-    <p class="sub" style="margin:12px 0 0"><a href="/admin/viewcast" style="color:var(--accent);font-weight:700;text-decoration:none">Open the Viewcast studio →</a></p>
+    <p class="sub" style="margin:12px 0 0"><a href="/admin/viewcast" class="btn btn-blue" style="font-size:18px;padding:13px 22px">Open the Viewcast studio →</a></p>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">🎙️ DJ Drop Studio</h2>
     <p class="sub">The artists' free drop maker — preset DJ-voice drops and own-voice drops, with our effects. As staff you are let straight in with no profile, so you can test it end to end.</p>
-    <p class="sub" style="margin:12px 0 0"><a href="/drops" style="color:var(--accent);font-weight:700;text-decoration:none">Open the DJ Drop Studio →</a></p>
+    <p class="sub" style="margin:12px 0 0"><a href="/drops" class="btn btn-blue" style="font-size:18px;padding:13px 22px">Open the DJ Drop Studio →</a></p>
   </div>
   <div class="panel" style="border:2px solid #d4af37">
     <h2 style="margin-top:0">🌍 OVERALL — EVERYWHERE</h2>
@@ -7584,12 +7610,12 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
       <input type="password" name="dj_password2" required style="width:240px;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label><br>
       <button type="submit" style="padding:10px 20px;border-radius:10px;border:0;background:var(--accent);color:#fff;font-weight:800;cursor:pointer">Set the DJ password</button>
     </form>
-    <p class="sub" style="margin:12px 0 0"><a href="/dj" style="color:var(--accent);font-weight:700;text-decoration:none">Open the DJ panel →</a></p>
+    <p class="sub" style="margin:12px 0 0"><a href="/dj" class="btn btn-blue" style="font-size:18px;padding:13px 22px">Open the DJ panel →</a></p>
   </div>
   <div class="panel">
     <h2 style="margin-top:0">🎧🤝 DJ &amp; A&amp;R profiles — your executive controls</h2>
     <p class="sub">DJs and A&amp;Rs each have their <b style="color:#fff">own profile creator</b> and their <b style="color:#fff">own 8-digit code</b> — one number for the DJs, one for the A&amp;Rs. They log in, build a profile (picture optional), and it stays <b style="color:#fff">hidden until they flip it public</b>: public DJs show on the DJs page as panel members; public A&amp;Rs show on the A&amp;R page. You hold the executive rights here: <b style="color:#fff">change either code</b> (that logs that whole group out) or <b style="color:#fff">delete any profile</b> to kick somebody out.</p>
-    <p class="sub" style="margin:10px 0 0"><a href="/dj-profile" style="color:var(--accent);font-weight:700;text-decoration:none">Open the DJ profile creator →</a> · <a href="/ar-profile" style="color:var(--accent);font-weight:700;text-decoration:none">Open the A&amp;R profile creator →</a> <span class="note">(you're the owner — these doors open straight for you, no code needed)</span></p>
+    <p class="sub" style="margin:10px 0 0"><a href="/dj-profile" class="btn btn-blue" style="font-size:18px;padding:13px 22px">Open the DJ profile creator →</a> · <a href="/ar-profile" class="btn btn-blue" style="font-size:18px;padding:13px 22px">Open the A&amp;R profile creator →</a> <span class="note">(you're the owner — these doors open straight for you, no code needed)</span></p>
     <form method="post" action="/admin/panel-code" style="margin-top:12px">
       <input type="hidden" name="role" value="dj">
       <label class="sub">DJ profile code — new 8-digit number<br>
