@@ -3462,7 +3462,7 @@ app.post("/drops/make", dropUpload.single("nameclip"), (req, res) => {
     return res.json({ url: "/drops/file/" + token + ".mp3" });
   } catch (e) {
     console.error("drop make failed:", e);
-    return res.status(500).json({ error: "The drop couldn\u2019t be made \u2014 try recording again. [" + String((e && e.message) || e).slice(0, 220) + "]" });
+    return res.status(500).json({ error: "The drop couldn\u2019t be made \u2014 try recording again. [" + String((e && e.stderr) || (e && e.message) || e).slice(-300) + "]" });
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   }
