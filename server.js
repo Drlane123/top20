@@ -121,6 +121,40 @@ const ANN = (() => {
   for (const k of Object.keys(raw)) { try { bufs[k] = Buffer.from(raw[k], "base64"); } catch (e) {} }
   return bufs;
 })();
+
+// DJ DROP STUDIO pieces (owner, Nov 8, 2026): preset drop frames in the
+// site DJ voice (Take B) + synthesized music beds, base64-embedded like
+// the announcement clips (app/drop-data.js). Keys: frame-<style 1-5><a
+// = intro, b = outro>, bed-hiphop|bed-rnb|bed-house.
+const DROP = (() => {
+  const raw = (() => { try { return require("./drop-data"); } catch (e) { return {}; } })();
+  const bufs = {};
+  for (const k of Object.keys(raw)) { try { bufs[k] = Buffer.from(raw[k], "base64"); } catch (e) {} }
+  return bufs;
+})();
+// Finished drops wait here briefly for their artist to play/download.
+const DROP_FILES = new Map(); // token -> { buf, ts }
+function dropSig(userId) {
+  return crypto.createHmac("sha256", adminToken()).update("drop:" + userId).digest("hex");
+}
+// Who may use the Drop Studio: the owner, or an artist whose loaded-up
+// profile was unlocked by email on /drops (cookie t20_drop = id-sig).
+function dropArtist(req) {
+  if (isAdmin(req)) return { admin: true };
+  let raw = "";
+  for (const part of String(req.headers.cookie || "").split(";")) {
+    const [k, ...v] = part.trim().split("=");
+    if (k === "t20_drop") raw = v.join("=");
+  }
+  const parts = String(raw || "").split("-");
+  if (parts.length !== 2) return null;
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(Number(parts[0]));
+  if (!user || !hasProfile(user)) return null;
+  const want = Buffer.from(dropSig(user.id));
+  const got = Buffer.from(parts[1]);
+  if (want.length !== got.length || !crypto.timingSafeEqual(want, got)) return null;
+  return user;
+}
 app.get("/ann/:file", (req, res) => {
   const key = String(req.params.file || "").replace(/\.mp3$/i, "").replace(/[^a-z0-9-]/gi, "");
   const b = ANN[key];
@@ -1927,6 +1961,7 @@ app.get("/", (req, res) => {
     </div></div>
   </div></div>
   ${plaqueStrip}
+  ${dropStrip}
   ${djPicksHtml}
   ${spotlightHtml}
   <div class="homegrid">
@@ -3128,6 +3163,16 @@ app.post("/order-plaque/:id", (req, res) => {
   res.send(layout("Order received", "", body));
 });
 
+
+// DJ DROP STUDIO — home strip (owner, Nov 8, 2026): sits right under
+// the plaque panel. The app + profile gates live on the page itself.
+const dropStrip = `
+  <div class="panel" style="border:1px solid rgba(120,200,255,.55);background:linear-gradient(180deg,rgba(70,150,255,.12),rgba(70,150,255,.03))">
+    <h2 style="margin-top:0;color:#bfe0ff">🎙️ DJ Drop Studio</h2>
+    <p class="sub">Artists \u2014 make your own <b style="color:#fff">DJ drop</b>, <b style="color:#fff">absolutely FREE</b>. Pick a style, say your name, and download a finished drop with the Hot Top 20 voice around it. Works inside the free Top 20 app \u2014 all you need is your artist profile loaded up.</p>
+    <a class="btn btn-blue" href="/drops">Open the DJ Drop Studio \u2192</a>
+  </div>`;
+
 // TOP 10 AWARD PLAQUES — part 2 (owner, Nov 7, 2026): the home-page
 // strip, the award buttons on the song page and the dashboard, the
 // owner's orders card on Chart placements, and the price/wait save.
@@ -3186,6 +3231,249 @@ app.post("/admin/plaque-settings", requireAdmin, (req, res) => {
   res.redirect("/admin/placements?msg=" + encodeURIComponent("Plaque price + wait time saved — they now show on the order page and /plaques."));
 });
 
+
+// DJ DROP STUDIO (owner, Nov 8, 2026): preset DJ drops for artists with
+// a loaded-up profile, inside the downloaded app. The voice frames were
+// recorded once in the site DJ voice; the artist records just their own
+// name; the studio stitches frame + name + frame with an effect and an
+// optional music bed and hands back a finished MP3. Free, self-running.
+const DROP_STYLES = [
+  { n: 1, label: "The Classic", say: "You\u2019re listening to ___ \u2014 right here on Hot Top 20. Non-stop!", hint: "Say just your name, strong and clear \u2014 the studio adds everything around it." },
+  { n: 2, label: "Keep It Locked", say: "This is ___ \u2014 keep it locked, right here on Hot Top 20!", hint: "Say just your name, smooth and easy." },
+  { n: 3, label: "In The Mix", say: "You\u2019re in the mix with ___ \u2014 on Hot Top 20, baby!", hint: "Say your name like a DJ tag \u2014 bring the energy!" },
+  { n: 4, label: "Turn It Up", say: "Turn it up! It\u2019s ___ \u2014 live, on Hot Top 20!", hint: "Say just your name, hyped up." },
+  { n: 5, label: "You Already Know", say: "You already know what it is. It\u2019s ___ \u2014 and you\u2019re locked in to Hot Top 20!", hint: "Say just your name, confident, like you mean it." },
+];
+app.get("/drops", (req, res) => {
+  const artist = dropArtist(req);
+  const profileOk = !!artist;
+  const isAdm = !!(artist && artist.admin);
+  const errHtml = req.query.err ? `<p class="note" style="color:#ffb3b3">No loaded-up profile matches that email yet. Check the email on your profile \u2014 or create your profile first, it\u2019s free.</p>` : "";
+  const styleCards = DROP_STYLES.map((s) => `
+    <button type="button" class="dropStyle dropPick" data-n="${s.n}" style="display:block;width:100%;text-align:left;border-radius:14px;padding:14px 16px;margin:0 0 10px">
+      <b>Style ${s.n} \u00b7 ${s.label}</b><br>
+      <span style="font-weight:400;opacity:.85">\u201c${s.say}\u201d</span>
+    </button>`).join("");
+  const body = `
+  <h1>🎙️ DJ Drop Studio</h1>
+  <p class="sub">Make your own DJ drop \u2014 <b style="color:#fff">absolutely FREE</b>. Pick a style, say your name, and the studio builds your drop with the Hot Top 20 voice around it, your choice of effect, and music under it. Download it and play it anywhere.</p>
+
+  <div id="dropGateProfile" class="panel" style="display:none">
+    <h2 style="margin-top:0">Artists with a profile only</h2>
+    <p class="sub">The Drop Studio is a free tool for Top 20 artists who have their profile loaded up. Type the email on your profile to open it.</p>
+    ${errHtml}
+    <form method="post" action="/drops/unlock">
+      <label>Profile email<input name="email" type="email" required placeholder="you@example.com"></label>
+      <button class="btn btn-blue btn-block" type="submit">Open the Drop Studio</button>
+    </form>
+    <p class="sub" style="margin-bottom:0">No profile yet? <a href="/profile" style="color:var(--accent);font-weight:700">Create yours \u2014 it\u2019s absolutely free \u2192</a></p>
+  </div>
+
+  <div id="dropGateApp" class="panel" style="display:none">
+    <h2 style="margin-top:0">One more step \u2014 get the free app</h2>
+    <p class="sub">The Drop Studio works inside the <b style="color:#fff">Top 20 app</b> on your phone. Download the app \u2014 <b style="color:#fff">it\u2019s absolutely FREE</b> \u2014 then open Top 20 from your home screen and come back to this page.</p>
+    <button class="btn btn-blue btn-block" id="dropInstallBtn" type="button">\u2b07 Download the free app</button>
+    <p class="sub" style="margin-bottom:0">On iPhone: tap <b style="color:#fff">Share</b>, then <b style="color:#fff">Add to Home Screen</b>. On Android the button above starts it \u2014 or use your browser menu: <b style="color:#fff">Install app</b>.</p>
+  </div>
+
+  <div id="dropStudio" style="display:none">
+    <div class="panel">
+      <h2 style="margin-top:0">1 \u00b7 Pick your style</h2>
+      ${styleCards}
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">2 \u00b7 Say your name</h2>
+      <p class="sub" id="dropHint">${DROP_STYLES[0].hint}</p>
+      <button class="btn btn-blue btn-block" id="dropRecBtn" type="button">\u25cf Record my name</button>
+      <p class="sub" id="dropRecState" style="margin:10px 0 6px">Not recorded yet.</p>
+      <audio id="dropNamePrev" controls style="display:none;width:100%"></audio>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">3 \u00b7 Pick your sound</h2>
+      <p class="sub" style="margin-bottom:6px">Voice effect</p>
+      <div>
+        <button type="button" class="dropPick dropFx on" data-v="clean">Clean</button>
+        <button type="button" class="dropPick dropFx" data-v="echo">Echo</button>
+        <button type="button" class="dropPick dropFx" data-v="deep">Deep voice</button>
+        <button type="button" class="dropPick dropFx" data-v="radio">Radio</button>
+      </div>
+      <p class="sub" style="margin:12px 0 6px">Music under it</p>
+      <div>
+        <button type="button" class="dropPick dropBed on" data-v="none">No music</button>
+        <button type="button" class="dropPick dropBed" data-v="hiphop">Hip-Hop</button>
+        <button type="button" class="dropPick dropBed" data-v="rnb">R&amp;B</button>
+        <button type="button" class="dropPick dropBed" data-v="house">House</button>
+      </div>
+    </div>
+    <div class="panel">
+      <h2 style="margin-top:0">4 \u00b7 Get your drop</h2>
+      <button class="btn btn-blue btn-block" id="dropMakeBtn" type="button">🎙️ MAKE MY DROP \u2014 FREE</button>
+      <p class="sub" id="dropMsg" style="margin:10px 0 6px"></p>
+      <div id="dropResult" style="display:none">
+        <audio id="dropPlayer" controls style="width:100%"></audio>
+        <a id="dropDl" class="btn btn-block" href="#" download style="background:#ffd257;color:#131a2a;font-weight:800;text-align:center;margin-top:10px">\u2b07 Download my drop</a>
+        <p class="sub" style="margin-bottom:0">It\u2019s yours \u2014 play it in your mixes, your intros, anywhere.</p>
+      </div>
+    </div>
+  </div>
+  <style>
+    .dropPick{border:1px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);color:#fff;border-radius:999px;padding:9px 14px;margin:0 6px 8px 0;cursor:pointer;font-weight:700}
+    .dropPick.on{background:#ffd257;color:#131a2a;border-color:#ffd257}
+    button.dropStyle{border-radius:14px}
+    button.dropStyle.on{background:rgba(255,210,87,.10);color:#fff;border-color:#ffd257}
+  </style>
+  <script>
+  (function () {
+    var PROFILE_OK = ${profileOk ? "true" : "false"};
+    var IS_ADMIN = ${isAdm ? "true" : "false"};
+    var standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+    var gateProfile = document.getElementById("dropGateProfile");
+    var gateApp = document.getElementById("dropGateApp");
+    var studio = document.getElementById("dropStudio");
+    if (!PROFILE_OK) { gateProfile.style.display = "block"; }
+    else if (!standalone && !IS_ADMIN) { gateApp.style.display = "block"; }
+    else { studio.style.display = "block"; }
+    var installBtn = document.getElementById("dropInstallBtn");
+    if (installBtn) installBtn.addEventListener("click", function () {
+      var chip = document.getElementById("appChip");
+      if (chip) { chip.click(); window.scrollTo(0, 0); }
+    });
+    var HINTS = { 1: "Say just your name, strong and clear \u2014 the studio adds everything around it.", 2: "Say just your name, smooth and easy.", 3: "Say your name like a DJ tag \u2014 bring the energy!", 4: "Say just your name, hyped up.", 5: "Say just your name, confident, like you mean it." };
+    var selStyle = 1, selFx = "clean", selBed = "none";
+    function pickWire(cls, attr, set) {
+      var btns = document.querySelectorAll("." + cls);
+      btns.forEach(function (b) { b.addEventListener("click", function () {
+        btns.forEach(function (x) { x.classList.remove("on"); });
+        b.classList.add("on"); set(b.getAttribute(attr));
+      }); });
+    }
+    pickWire("dropStyle", "data-n", function (v) { selStyle = Number(v); document.getElementById("dropHint").textContent = HINTS[selStyle] || HINTS[1]; });
+    document.querySelectorAll(".dropStyle")[0].classList.add("on");
+    pickWire("dropFx", "data-v", function (v) { selFx = v; });
+    pickWire("dropBed", "data-v", function (v) { selBed = v; });
+    var recBtn = document.getElementById("dropRecBtn");
+    var recState = document.getElementById("dropRecState");
+    var prev = document.getElementById("dropNamePrev");
+    var mediaRec = null, recChunks = [], nameBlob = null, recStream = null, recTimer = null, recSecs = 0;
+    recBtn.addEventListener("click", function () {
+      if (mediaRec && mediaRec.state === "recording") { mediaRec.stop(); return; }
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { recState.textContent = "This browser can\u2019t record \u2014 open Top 20 in the app and try again."; return; }
+      navigator.mediaDevices.getUserMedia({ audio: true }).then(function (stream) {
+        recStream = stream; recChunks = [];
+        mediaRec = new MediaRecorder(stream);
+        mediaRec.ondataavailable = function (e) { if (e.data && e.data.size) recChunks.push(e.data); };
+        mediaRec.onstop = function () {
+          clearInterval(recTimer);
+          if (recStream) recStream.getTracks().forEach(function (t) { t.stop(); });
+          nameBlob = new Blob(recChunks, { type: mediaRec.mimeType || "audio/webm" });
+          prev.src = URL.createObjectURL(nameBlob); prev.style.display = "block";
+          recBtn.textContent = "\u21bb Record it again";
+          recState.textContent = "Got it \u2014 listen back, then make your drop below.";
+        };
+        mediaRec.start(); recSecs = 0;
+        recBtn.textContent = "\u23f9 Stop";
+        recState.textContent = "Recording\u2026 say your name!";
+        recTimer = setInterval(function () {
+          recSecs++;
+          recState.textContent = "Recording\u2026 " + recSecs + "s \u2014 say your name!";
+          if (recSecs >= 15 && mediaRec && mediaRec.state === "recording") mediaRec.stop();
+        }, 1000);
+      }).catch(function () { recState.textContent = "The mic was blocked \u2014 allow the microphone and try again."; });
+    });
+    var makeBtn = document.getElementById("dropMakeBtn");
+    var msg = document.getElementById("dropMsg");
+    var result = document.getElementById("dropResult");
+    var player = document.getElementById("dropPlayer");
+    var dl = document.getElementById("dropDl");
+    makeBtn.addEventListener("click", function () {
+      if (!nameBlob) { msg.textContent = "Record your name first (step 2), then make your drop."; return; }
+      var fd = new FormData();
+      fd.append("nameclip", nameBlob, "name.webm");
+      fd.append("style", String(selStyle)); fd.append("effect", selFx); fd.append("bed", selBed);
+      makeBtn.disabled = true; msg.textContent = "Making your drop\u2026";
+      fetch("/drops/make", { method: "POST", body: fd }).then(function (r) { return r.json(); }).then(function (j) {
+        makeBtn.disabled = false;
+        if (!j || !j.url) { msg.textContent = (j && j.error) || "Something went wrong \u2014 try again."; return; }
+        msg.textContent = "Your drop is ready!";
+        result.style.display = "block";
+        player.src = j.url; dl.href = j.url + "?dl=1";
+      }).catch(function () { makeBtn.disabled = false; msg.textContent = "Something went wrong \u2014 try again."; });
+    });
+  })();
+  </script>`;
+  res.send(layout("DJ Drop Studio", "", body));
+});
+app.post("/drops/unlock", (req, res) => {
+  const email = String((req.body || {}).email || "").trim().toLowerCase();
+  const user = email ? db.prepare("SELECT * FROM users WHERE LOWER(email) = ?").get(email) : null;
+  if (!user || !hasProfile(user)) return res.redirect("/drops?err=1");
+  res.cookie("t20_drop", user.id + "-" + dropSig(user.id), { httpOnly: true, sameSite: "lax", path: "/", maxAge: 30 * 24 * 3600 * 1000 });
+  return res.redirect("/drops");
+});
+const dropUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 12 * 1024 * 1024 } });
+app.post("/drops/make", dropUpload.single("nameclip"), (req, res) => {
+  const artist = dropArtist(req);
+  if (!artist) return res.status(403).json({ error: "The Drop Studio is for artists with a Top 20 profile." });
+  const style = [1, 2, 3, 4, 5].includes(Number(req.body.style)) ? Number(req.body.style) : 1;
+  const effect = ["clean", "echo", "deep", "radio"].includes(req.body.effect) ? req.body.effect : "clean";
+  const bed = ["none", "hiphop", "rnb", "house"].includes(req.body.bed) ? req.body.bed : "none";
+  if (!req.file || !req.file.buffer || req.file.buffer.length < 1000) return res.status(400).json({ error: "Record your name first, then make your drop." });
+  if (!DROP["frame-" + style + "a"] || !DROP["frame-" + style + "b"]) return res.status(500).json({ error: "That style is not ready yet." });
+  const dir = fs.mkdtempSync(path.join(process.env.TMPDIR || "/tmp", "drop-"));
+  try {
+    const introP = path.join(dir, "intro.mp3"), outroP = path.join(dir, "outro.mp3");
+    fs.writeFileSync(introP, DROP["frame-" + style + "a"]);
+    fs.writeFileSync(outroP, DROP["frame-" + style + "b"]);
+    const nameRaw = path.join(dir, "name-in");
+    fs.writeFileSync(nameRaw, req.file.buffer);
+    const conv = (inp, outp, af) => execFileSync("ffmpeg", ["-y", "-v", "error", "-i", inp].concat(af ? ["-af", af] : []).concat(["-ar", "44100", "-ac", "2", outp]));
+    const introW = path.join(dir, "intro.wav"), outroW = path.join(dir, "outro.wav"), nameW = path.join(dir, "name.wav");
+    conv(introP, introW); conv(outroP, outroW);
+    conv(nameRaw, nameW, "silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1,areverse,silenceremove=start_periods=1:start_threshold=-45dB:start_silence=0.1,areverse");
+    const durOf = (p) => Number(JSON.parse(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "json", p], { encoding: "utf8" })).format.duration || 0);
+    const nameDur = durOf(nameW);
+    if (!(nameDur >= 0.3) || nameDur > 15) return res.status(400).json({ error: "That recording doesn\u2019t sound right \u2014 say just your name, nice and clear, and try again." });
+    const FX = {
+      clean: "acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
+      echo: "aecho=0.8:0.75:70|110:0.35|0.25,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
+      deep: "asetrate=35280,aresample=44100,atempo=1.25,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
+      radio: "highpass=f=350,lowpass=f=3200,acompressor=threshold=-12dB:ratio=6:attack=5:release=100",
+    };
+    const total = (durOf(introW) + 0.13 + nameDur + 0.13 + durOf(outroW) + 0.7).toFixed(2);
+    const outP = path.join(dir, "drop.mp3");
+    const args = ["-y", "-v", "error", "-i", introW, "-i", nameW, "-i", outroW, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"];
+    let graph = "[3:a]atrim=0:0.13,asetpts=PTS-STARTPTS[gap];[0:a][gap][1:a][gap][2:a]concat=n=5:v=0:a=1[v0];[v0]" + FX[effect] + ",apad=pad_dur=0.7,atrim=0:" + total + "[voice]";
+    if (bed !== "none" && DROP["bed-" + bed]) {
+      const bedP = path.join(dir, "bed.mp3");
+      fs.writeFileSync(bedP, DROP["bed-" + bed]);
+      args.push("-stream_loop", "-1", "-i", bedP);
+      const fadeStart = Math.max(0, Number(total) - 0.9).toFixed(2);
+      graph += ";[4:a]atrim=0:" + total + ",volume=0.30,afade=t=out:st=" + fadeStart + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[out]";
+    } else {
+      graph += ";[voice]loudnorm=I=-14:TP=-1.5:LRA=11[out]";
+    }
+    args.push("-filter_complex", graph, "-map", "[out]", "-c:a", "libmp3lame", "-b:a", "192k", outP);
+    execFileSync("ffmpeg", args);
+    const buf = fs.readFileSync(outP);
+    const token = crypto.randomBytes(9).toString("hex");
+    const now = Date.now();
+    for (const [k, v] of DROP_FILES) if (now - v.ts > 20 * 60 * 1000) DROP_FILES.delete(k);
+    DROP_FILES.set(token, { buf, ts: now });
+    return res.json({ url: "/drops/file/" + token + ".mp3" });
+  } catch (e) {
+    return res.status(500).json({ error: "The drop couldn\u2019t be made \u2014 try recording again." });
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
+  }
+});
+app.get("/drops/file/:token", (req, res) => {
+  const token = String(req.params.token || "").replace(/\.mp3$/i, "");
+  const hit = DROP_FILES.get(token);
+  if (!hit) return res.status(404).end();
+  res.setHeader("Content-Type", "audio/mpeg");
+  if (req.query.dl) res.setHeader("Content-Disposition", "attachment; filename=\"hot-top-20-dj-drop.mp3\"");
+  return res.send(hit.buf);
+});
 app.get("/pcard/:id.jpg", async (req, res) => {
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.params.id);
   if (!user || !hasProfile(user)) return res.status(404).end();
