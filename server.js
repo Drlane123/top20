@@ -3343,6 +3343,8 @@ app.get("/drops", (req, res) => {
       <div>
         <button type="button" class="dropPick dropFx on" data-v="clean">Clean</button>
         <button type="button" class="dropPick dropFx" data-v="echo">Echo</button>
+        <button type="button" class="dropPick dropFx" data-v="reverb">Reverb</button>
+        <button type="button" class="dropPick dropFx" data-v="stutter">Stutter</button>
         <button type="button" class="dropPick dropFx" data-v="deep">Deep voice</button>
         <button type="button" class="dropPick dropFx" data-v="radio">Radio</button>
       </div>
@@ -3578,7 +3580,7 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
   const artist = dropArtist(req);
   if (!artist) return res.status(403).json({ error: "The Drop Studio is for artists with a Top 20 profile." });
   const style = [1, 2, 3, 4, 5].includes(Number(req.body.style)) ? Number(req.body.style) : 1;
-  const effect = ["clean", "echo", "deep", "radio"].includes(req.body.effect) ? req.body.effect : "clean";
+  const effect = ["clean", "echo", "reverb", "stutter", "deep", "radio"].includes(req.body.effect) ? req.body.effect : "clean";
   const bed = ["none", "hiphop", "rnb", "house"].includes(req.body.bed) ? req.body.bed : "none";
   if (req.body.mode === "own") {
     const ownFile = req.files && req.files.ownclip && req.files.ownclip[0];
@@ -3595,6 +3597,7 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
       if (!(od >= 0.3) || od > 20) return res.status(400).json({ error: "That recording doesn’t sound right — say your drop nice and clear, up to 20 seconds." });
       const FX0 = {
         clean: "acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
+        reverb: "aecho=0.85:0.5:29|47|71|103|149|211:0.46|0.4|0.34|0.28|0.22|0.16,lowpass=f=7000,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
         echo: "aecho=0.8:0.75:70|110:0.35|0.25,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
         deep: "asetrate=35280,aresample=44100,atempo=1.25,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
         radio: "highpass=f=350,lowpass=f=3200,acompressor=threshold=-12dB:ratio=6:attack=5:release=100",
@@ -3602,7 +3605,15 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
       const total0 = (od + 0.7).toFixed(2);
       const run0 = (step, a) => { try { return execFileSync("ffmpeg", a); } catch (e2) { e2.step = step; throw e2; } };
       const args0 = ["-y", "-v", "error", "-i", ownW, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"];
-      let graph0 = "[1:a]atrim=0:0.7,asetpts=PTS-STARTPTS[tail];[0:a][tail]concat=n=2:v=0:a=1[v0];[v0]" + FX0[effect] + "[voice]";
+      let graph0 = "[1:a]atrim=0:0.7,asetpts=PTS-STARTPTS[tail];[0:a][tail]concat=n=2:v=0:a=1[v0];";
+      if (effect === "stutter") {
+        const sl0 = Math.min(0.32, od / 4);
+        const headEnd0 = (od - 3 * sl0).toFixed(3);
+        const slStart0 = (od - sl0).toFixed(3);
+        graph0 += "[v0]asplit=2[sm][st];[sm]atrim=0:" + headEnd0 + ",asetpts=PTS-STARTPTS[head];[st]atrim=start=" + slStart0 + ":end=" + od.toFixed(3) + ",asetpts=PTS-STARTPTS[s0];[s0]asplit=3[s1][s2][s3];[head][s1][s2][s3]concat=n=4:v=0:a=1[sv];[sv]acompressor=threshold=-18dB:ratio=3:attack=10:release=120[voice]";
+      } else {
+        graph0 += "[v0]" + FX0[effect] + "[voice]";
+      }
       if (bed !== "none" && DROP["bed-" + bed]) {
         const bedP0 = path.join(dir0, "bed.mp3");
         fs.writeFileSync(bedP0, DROP["bed-" + bed]);
@@ -3671,6 +3682,7 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
     }
     const FX = {
       clean: "acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
+      reverb: "aecho=0.85:0.5:29|47|71|103|149|211:0.46|0.4|0.34|0.28|0.22|0.16,lowpass=f=7000,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
       echo: "aecho=0.8:0.75:70|110:0.35|0.25,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
       deep: "asetrate=35280,aresample=44100,atempo=1.25,acompressor=threshold=-18dB:ratio=3:attack=10:release=120",
       radio: "highpass=f=350,lowpass=f=3200,acompressor=threshold=-12dB:ratio=6:attack=5:release=100",
@@ -3688,7 +3700,15 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
     const segs = ["[0:a]", "[gapA]", "[1:a]"];
     if (outroW) segs.push("[gapB]", "[2:a]");
     segs.push("[tail]");
-    graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]" + FX[effect] + "[voice]";
+    if (effect === "stutter") {
+      const voiceEnd = Number(total) - 0.7;
+      const sl = Math.min(0.32, voiceEnd / 4);
+      const headEnd = (voiceEnd - 3 * sl).toFixed(3);
+      const slStart = (voiceEnd - sl).toFixed(3);
+      graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]asplit=2[sm][st];[sm]atrim=0:" + headEnd + ",asetpts=PTS-STARTPTS[head];[st]atrim=start=" + slStart + ":end=" + voiceEnd.toFixed(3) + ",asetpts=PTS-STARTPTS[s0];[s0]asplit=3[s1][s2][s3];[head][s1][s2][s3]concat=n=4:v=0:a=1[sv];[sv]acompressor=threshold=-18dB:ratio=3:attack=10:release=120[voice]";
+    } else {
+      graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]" + FX[effect] + "[voice]";
+    }
     if (bed !== "none" && DROP["bed-" + bed]) {
       const bedP = path.join(dir, "bed.mp3");
       fs.writeFileSync(bedP, DROP["bed-" + bed]);
