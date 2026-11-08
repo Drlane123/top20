@@ -3258,6 +3258,19 @@ app.get("/drops", (req, res) => {
   <h1>🎙️ DJ Drop Studio</h1>
   <p class="sub">Make your own DJ drop \u2014 <b style="color:#fff">absolutely FREE</b>. Pick a style, say your name, and the studio builds your drop with the Hot Top 20 voice around it, your choice of effect, and music under it. Download it and play it anywhere.</p>
 
+  <div class="panel" style="border:1px solid rgba(255,210,87,.5)">
+    <h2 style="margin-top:0;color:#ffd98a">▶ Hear what a drop sounds like</h2>
+    <p class="sub">Four real drops out of this studio — press play and hear yours before you make it.</p>
+    <p class="sub" style="margin-bottom:4px"><b style="color:#fff">“Amara Cole”</b> — Style 1 · Hot Top 20 ending · Echo · Hip-Hop music</p>
+    <audio controls preload="none" src="/drops/example/1.mp3" style="width:100%"></audio>
+    <p class="sub" style="margin:12px 0 4px"><b style="color:#fff">“Mike Millzz”</b> — Style 3 · Hot Top 20 ending · Clean voice · House music</p>
+    <audio controls preload="none" src="/drops/example/2.mp3" style="width:100%"></audio>
+    <p class="sub" style="margin:12px 0 4px"><b style="color:#fff">“DJ Blaze”</b> — Style 4 · No-brand ending · Deep voice · R&amp;B music</p>
+    <audio controls preload="none" src="/drops/example/3.mp3" style="width:100%"></audio>
+    <p class="sub" style="margin:12px 0 4px"><b style="color:#fff">“Queen Nyla”</b> — Style 2 · Her own words ending · Radio voice · No music</p>
+    <audio controls preload="none" src="/drops/example/4.mp3" style="width:100%"></audio>
+  </div>
+
   <div id="dropGateProfile" class="panel" style="display:none">
     <h2 style="margin-top:0">Artists with a profile only</h2>
     <p class="sub">The Drop Studio is a free tool for Top 20 artists who have their profile loaded up. Type the email on your profile to open it.</p>
@@ -3554,6 +3567,13 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   }
+});
+app.get("/drops/example/:n", (req, res) => {
+  const b = DROP["example-" + String(req.params.n || "").replace(/\.mp3$/i, "")];
+  if (!b) return res.status(404).end();
+  res.setHeader("Content-Type", "audio/mpeg");
+  res.setHeader("Cache-Control", "public, max-age=86400");
+  return res.send(b);
 });
 app.get("/drops/file/:token", (req, res) => {
   const token = String(req.params.token || "").replace(/\.mp3$/i, "");
