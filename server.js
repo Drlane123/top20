@@ -3341,6 +3341,7 @@ app.get("/drops", (req, res) => {
       <div id="dropResult" style="display:none">
         <audio id="dropPlayer" controls style="width:100%"></audio>
         <a id="dropDl" class="btn btn-block" href="#" download style="background:#ffd257;color:#131a2a;font-weight:800;text-align:center;margin-top:10px">\u2b07 Download my drop</a>
+        <p class="sub" style="margin-top:10px">\u26a0\ufe0f Nothing is saved on Top 20 \u2014 download your drop now, because if you leave this page it\u2019s gone. Making another one is free, every time.</p>
         <p class="sub" style="margin-bottom:0">It\u2019s yours \u2014 play it in your mixes, your intros, anywhere.</p>
       </div>
     </div>
