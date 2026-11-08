@@ -3049,16 +3049,39 @@ app.get("/award/:id.jpg", async (req, res) => {
   }
 });
 
-// The three settled plaque designs, served straight from the baked
-// masters (Amara Cole samples) for the home panel and /plaques page.
-app.get("/plaque-sample/:tier.jpg", (req, res) => {
-  let frames = {};
-  try { frames = require("./plaque-data"); } catch { /* masters missing */ }
-  const b64 = frames[String(req.params.tier || "")];
-  if (!b64) return res.status(404).end();
-  res.setHeader("Content-Type", "image/jpeg");
-  res.setHeader("Cache-Control", "public, max-age=86400");
-  res.end(Buffer.from(b64, "base64"));
+// The three plaque samples (Amara Cole) for the home panel and
+// /plaques page — rendered through renderPlaque itself (Dale, Nov 8
+// 2026) so the samples carry the same clean sans name as real plaques,
+// with no notes baked into the letters like the old masters had.
+app.get("/plaque-sample/:tier.jpg", async (req, res) => {
+  const tier = String(req.params.tier || "");
+  const SAMPLES = {
+    gold: { rank: 8, date: "2026-11-07" },
+    platinum: { rank: 3, date: "2026-11-07" },
+    numberone: { rank: 1, date: "2026-11-07" },
+  };
+  const s = SAMPLES[tier];
+  if (!s) return res.status(404).end();
+  const song = db.prepare(`
+    SELECT s.id, s.title, s.cover_path, u.name AS artist FROM songs s
+    JOIN users u ON u.id = s.artist_id WHERE s.id = 1`).get();
+  if (!song) return res.status(404).end();
+  const coverAbs = [path.join(__dirname, "public", song.cover_path), path.join(__dirname, song.cover_path)]
+    .find((p) => fs.existsSync(p));
+  if (!coverAbs) return res.status(404).end();
+  try {
+    const buf = await sharecard.renderPlaque({
+      songId: "sample-" + tier, title: song.title, artist: song.artist, coverAbs,
+      award: { rank: s.rank, tier, date: s.date },
+      craftScore: tier === "numberone" ? 90 : null,
+      days: tier === "numberone" ? 18 : 0,
+    });
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    res.end(buf);
+  } catch {
+    res.status(500).end();
+  }
 });
 
 app.get("/plaques", (req, res) => {
@@ -3069,17 +3092,17 @@ app.get("/plaques", (req, res) => {
   <p class="sub">When a record goes <b style="color:#fff">Top 10 on the National Overall chart</b>, it earns a real award plaque — the way the industry has always marked a hit. A slim black frame with <b style="color:#fff">HOT TOP 20</b> across the top, your <b style="color:#fff">cover art in the center of the record</b>, headphones wrapped around it, and <b style="color:#fff">your name in platinum</b> under it. Every plaque is <b style="color:#fff">free to download</b> — and you can <b style="color:#fff">order the real framed plaque</b> for your wall.</p>
   <div class="panel" style="border:1px solid rgba(255,196,77,.55)">
     <h2 style="margin-top:0;color:#ffd98a">🥇 Gold — spots #6 through #10</h2>
-    <img src="/plaque-sample/gold.jpg" alt="Gold award plaque" style="width:100%;max-width:340px;display:block;margin:0 auto 10px;border-radius:10px">
+    <img src="/plaque-sample/gold.jpg?v=2" alt="Gold award plaque" style="width:100%;max-width:340px;display:block;margin:0 auto 10px;border-radius:10px">
     <p class="sub">The gold record with your cover in its center, the silver mic beside it, your name in platinum with the little notes in gold.</p>
   </div>
   <div class="panel" style="border:1px solid rgba(230,236,245,.55)">
     <h2 style="margin-top:0;color:#f4f8ff">💿 Platinum — spots #1 through #5</h2>
-    <img src="/plaque-sample/platinum.jpg" alt="Platinum award plaque" style="width:100%;max-width:340px;display:block;margin:0 auto 10px;border-radius:10px">
+    <img src="/plaque-sample/platinum.jpg?v=2" alt="Platinum award plaque" style="width:100%;max-width:340px;display:block;margin:0 auto 10px;border-radius:10px">
     <p class="sub">The platinum record, platinum trim — the whole plaque shines silver, with your cover in the center and your name in platinum.</p>
   </div>
   <div class="panel" style="border:1px solid rgba(255,196,77,.8);background:linear-gradient(180deg,rgba(255,170,40,.10),rgba(255,170,40,.03))">
     <h2 style="margin-top:0;color:#ffd98a">👑 Number One — the deluxe plaque</h2>
-    <img src="/plaque-sample/numberone.jpg" alt="Number One deluxe plaque" style="width:100%;max-width:340px;display:block;margin:0 auto 10px;border-radius:10px">
+    <img src="/plaque-sample/numberone.jpg?v=2" alt="Number One deluxe plaque" style="width:100%;max-width:340px;display:block;margin:0 auto 10px;border-radius:10px">
     <p class="sub">The #1 plaque mixes <b style="color:#fff">gold and platinum</b> — platinum record, gold No. 1 — and carries more: your credentials printed in gold on the plaque itself: your <b style="color:#fff">Craft Score</b>, your <b style="color:#fff">days charted</b>, and the <b style="color:#fff">month you hit #1</b>.</p>
   </div>
   <div class="panel">
@@ -3181,9 +3204,9 @@ const plaqueStrip = `
     <h2 style="margin-top:0;color:#ffd98a">🏆 Top 10 Award Plaques</h2>
     <p class="sub">Land a <b style="color:#fff">Top 10 spot on the National Overall chart</b> and the plaque is yours — <b style="color:#fff">download it free</b> from your song's page, or <b style="color:#fff">order the real framed plaque</b> for your wall. Gold for #6–#10, platinum for #1–#5, and the No. 1 deluxe mixes gold and platinum.</p>
     <div style="display:flex;gap:10px;flex-wrap:wrap">
-      <figure style="flex:1 1 150px;margin:0;text-align:center"><img src="/plaque-sample/gold.jpg" alt="Gold plaque — spots 6 through 10" style="width:100%;border-radius:10px;border:1px solid rgba(255,196,77,.5)"><figcaption class="sub" style="margin-top:6px">🥇 <b style="color:#ffd98a">GOLD</b> · #6–#10</figcaption></figure>
-      <figure style="flex:1 1 150px;margin:0;text-align:center"><img src="/plaque-sample/platinum.jpg" alt="Platinum plaque — spots 1 through 5" style="width:100%;border-radius:10px;border:1px solid rgba(230,236,245,.5)"><figcaption class="sub" style="margin-top:6px">💿 <b style="color:#f4f8ff">PLATINUM</b> · #1–#5</figcaption></figure>
-      <figure style="flex:1 1 150px;margin:0;text-align:center"><img src="/plaque-sample/numberone.jpg" alt="Number One deluxe plaque" style="width:100%;border-radius:10px;border:1px solid rgba(255,196,77,.8)"><figcaption class="sub" style="margin-top:6px">👑 <b style="color:#ffd98a">NUMBER ONE</b> · deluxe</figcaption></figure>
+      <figure style="flex:1 1 150px;margin:0;text-align:center"><img src="/plaque-sample/gold.jpg?v=2" alt="Gold plaque — spots 6 through 10" style="width:100%;border-radius:10px;border:1px solid rgba(255,196,77,.5)"><figcaption class="sub" style="margin-top:6px">🥇 <b style="color:#ffd98a">GOLD</b> · #6–#10</figcaption></figure>
+      <figure style="flex:1 1 150px;margin:0;text-align:center"><img src="/plaque-sample/platinum.jpg?v=2" alt="Platinum plaque — spots 1 through 5" style="width:100%;border-radius:10px;border:1px solid rgba(230,236,245,.5)"><figcaption class="sub" style="margin-top:6px">💿 <b style="color:#f4f8ff">PLATINUM</b> · #1–#5</figcaption></figure>
+      <figure style="flex:1 1 150px;margin:0;text-align:center"><img src="/plaque-sample/numberone.jpg?v=2" alt="Number One deluxe plaque" style="width:100%;border-radius:10px;border:1px solid rgba(255,196,77,.8)"><figcaption class="sub" style="margin-top:6px">👑 <b style="color:#ffd98a">NUMBER ONE</b> · deluxe</figcaption></figure>
     </div>
     <p style="margin-top:12px;text-align:center"><a class="btn btn-blue" href="/plaques">See the plaques — how to get yours</a></p>
   </div>`;

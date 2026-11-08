@@ -329,7 +329,7 @@ function plaqueDateText(iso) {
   if (p.length !== 3) return "";
   return `${PLAQUE_MONTHS[Number(p[1]) - 1] || ""} ${Number(p[2])}, ${p[0]}`;
 }
-const FONT_SERIF = "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf";
+const FONT_SERIF = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"; // Dale, Nov 8 2026: name font = clean sans (option B), plain with no notes in the letters
 function renderPlaque({ songId, title, artist, coverAbs, award, craftScore, days }) {
   const tier = award.tier;
   const key = ["award2", songId, tier, award.rank, award.date, title, artist, craftScore, days].join("|");
@@ -359,7 +359,7 @@ function renderPlaque({ songId, title, artist, coverAbs, award, craftScore, days
   // Font sizes fitted to the master's own lettering (measured on the
   // settled renders): the name runs as wide as the master's, the title
   // and lines shrink to stay inside their bands on long names.
-  const nameSize = Math.min(150, Math.floor(920 / (0.62 * Math.max(4, artistText.length))));
+  const nameSize = Math.min(150, Math.floor(920 / (0.66 * Math.max(4, artistText.length))));
   const titleSize = Math.min(48, Math.floor(640 / (0.58 * Math.max(6, titleText.length))));
   const titleW = Math.ceil(0.58 * titleSize * titleText.length);
   const numSize = award.rank >= 10 ? 84 : 105;
