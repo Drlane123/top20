@@ -3395,8 +3395,9 @@ app.get("/drops", (req, res) => {
     function pickWire(cls, attr, set) {
       var btns = document.querySelectorAll("." + cls);
       btns.forEach(function (b) { b.addEventListener("click", function () {
+        var wasOn = b.classList.contains("on");
         btns.forEach(function (x) { x.classList.remove("on"); });
-        b.classList.add("on"); set(b.getAttribute(attr));
+        b.classList.add("on"); set(b.getAttribute(attr), wasOn);
       }); });
     }
     pickWire("dropStyle", "data-n", function (v) { selStyle = Number(v); document.getElementById("dropHint").textContent = HINTS[selStyle] || HINTS[1]; maybeAutoMake(); });
@@ -3434,8 +3435,8 @@ app.get("/drops", (req, res) => {
         }, 1000);
       }).catch(function () { endState.textContent = "The mic was blocked — allow the microphone and try again."; });
     });
-    pickWire("dropFx", "data-v", function (v) { selFx = v; maybeAutoMake(); });
-    pickWire("dropBed", "data-v", function (v) { selBed = v; maybeAutoMake(); });
+    pickWire("dropFx", "data-v", function (v, wasOn) { if (wasOn) { stopAllAudio(); return; } selFx = v; maybeAutoMake(); });
+    pickWire("dropBed", "data-v", function (v, wasOn) { if (wasOn) { stopAllAudio(); return; } selBed = v; maybeAutoMake(); });
     var recBtn = document.getElementById("dropRecBtn");
     var recState = document.getElementById("dropRecState");
     var prev = document.getElementById("dropNamePrev");
@@ -3511,6 +3512,14 @@ app.get("/drops", (req, res) => {
     var result = document.getElementById("dropResult");
     var player = document.getElementById("dropPlayer");
     var dl = document.getElementById("dropDl");
+    function stopAllAudio() {
+      document.querySelectorAll("audio").forEach(function (a) { try { a.pause(); } catch (e) {} });
+    }
+    document.querySelectorAll("audio").forEach(function (a) {
+      a.addEventListener("play", function () {
+        document.querySelectorAll("audio").forEach(function (x) { if (x !== a) { try { x.pause(); } catch (e) {} } });
+      });
+    });
     var makeSeq = 0;
     function doMake(auto) {
       var fd = new FormData();
@@ -3619,7 +3628,7 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
         fs.writeFileSync(bedP0, DROP["bed-" + bed]);
         args0.push("-stream_loop", "-1", "-i", bedP0);
         const fade0 = Math.max(0, Number(total0) - 0.9).toFixed(2);
-        graph0 += ";[2:a]atrim=0:" + total0 + ",volume=0.30,afade=t=out:st=" + fade0 + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
+        graph0 += ";[2:a]atrim=0:" + total0 + ",volume=0.60,afade=t=out:st=" + fade0 + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
       } else {
         graph0 += ";[voice]anull[out]";
       }
@@ -3715,7 +3724,7 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
       args.push("-stream_loop", "-1", "-i", bedP);
       const bedIdx = lavfiIdx + 1;
       const fadeStart = Math.max(0, Number(total) - 0.9).toFixed(2);
-      graph += ";[" + bedIdx + ":a]atrim=0:" + total + ",volume=0.30,afade=t=out:st=" + fadeStart + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
+      graph += ";[" + bedIdx + ":a]atrim=0:" + total + ",volume=0.60,afade=t=out:st=" + fadeStart + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
     } else {
       graph += ";[voice]anull[out]";
     }
