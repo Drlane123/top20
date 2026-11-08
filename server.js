@@ -3317,6 +3317,7 @@ app.get("/drops", (req, res) => {
         <button class="btn btn-blue btn-block" id="dropEndBtn" type="button">● Record my ending</button>
         <p class="sub" id="dropEndState" style="margin:10px 0 6px">Not recorded yet.</p>
         <audio id="dropEndPrev" controls style="display:none;width:100%"></audio>
+        <button type="button" id="dropEndDel" class="btn btn-block" style="display:none;background:#3a1620;color:#ff9db0;font-weight:700;margin-top:8px">🗑 Delete this ending</button>
       </div>
     </div>
     <div class="panel">
@@ -3325,6 +3326,7 @@ app.get("/drops", (req, res) => {
       <button class="btn btn-blue btn-block" id="dropRecBtn" type="button">\u25cf Record my name</button>
       <p class="sub" id="dropRecState" style="margin:10px 0 6px">Not recorded yet.</p>
       <audio id="dropNamePrev" controls style="display:none;width:100%"></audio>
+      <button type="button" id="dropNameDel" class="btn btn-block" style="display:none;background:#3a1620;color:#ff9db0;font-weight:700;margin-top:8px">🗑 Delete this recording</button>
     </div>
     </div>
     <div class="panel" id="dropOwnPanel" style="display:none">
@@ -3333,6 +3335,7 @@ app.get("/drops", (req, res) => {
       <button class="btn btn-blue btn-block" id="dropOwnBtn" type="button">● Record my drop</button>
       <p class="sub" id="dropOwnState" style="margin:10px 0 6px">Not recorded yet.</p>
       <audio id="dropOwnPrev" controls style="display:none;width:100%"></audio>
+      <button type="button" id="dropOwnDel" class="btn btn-block" style="display:none;background:#3a1620;color:#ff9db0;font-weight:700;margin-top:8px">🗑 Delete this recording</button>
     </div>
     <div class="panel">
       <h2 style="margin-top:0">4 \u00b7 Pick your sound</h2>
@@ -3394,10 +3397,10 @@ app.get("/drops", (req, res) => {
         b.classList.add("on"); set(b.getAttribute(attr));
       }); });
     }
-    pickWire("dropStyle", "data-n", function (v) { selStyle = Number(v); document.getElementById("dropHint").textContent = HINTS[selStyle] || HINTS[1]; });
+    pickWire("dropStyle", "data-n", function (v) { selStyle = Number(v); document.getElementById("dropHint").textContent = HINTS[selStyle] || HINTS[1]; maybeAutoMake(); });
     document.querySelectorAll(".dropStyle")[0].classList.add("on");
     var endRec = document.getElementById("dropEndRec");
-    pickWire("dropEnd", "data-v", function (v) { selEnding = v; endRec.style.display = v === "own" ? "block" : "none"; });
+    pickWire("dropEnd", "data-v", function (v) { selEnding = v; endRec.style.display = v === "own" ? "block" : "none"; maybeAutoMake(); });
     var endBtn = document.getElementById("dropEndBtn");
     var endState = document.getElementById("dropEndState");
     var endPrev = document.getElementById("dropEndPrev");
@@ -3416,6 +3419,8 @@ app.get("/drops", (req, res) => {
           endPrev.src = URL.createObjectURL(endBlob); endPrev.style.display = "block";
           endBtn.textContent = "↻ Record it again";
           endState.textContent = "Got it — that’s your ending.";
+          document.getElementById("dropEndDel").style.display = "block";
+          maybeAutoMake();
         };
         endRec2.start(); endSecs = 0;
         endBtn.textContent = "⏹ Stop";
@@ -3427,8 +3432,8 @@ app.get("/drops", (req, res) => {
         }, 1000);
       }).catch(function () { endState.textContent = "The mic was blocked — allow the microphone and try again."; });
     });
-    pickWire("dropFx", "data-v", function (v) { selFx = v; });
-    pickWire("dropBed", "data-v", function (v) { selBed = v; });
+    pickWire("dropFx", "data-v", function (v) { selFx = v; maybeAutoMake(); });
+    pickWire("dropBed", "data-v", function (v) { selBed = v; maybeAutoMake(); });
     var recBtn = document.getElementById("dropRecBtn");
     var recState = document.getElementById("dropRecState");
     var prev = document.getElementById("dropNamePrev");
@@ -3446,7 +3451,9 @@ app.get("/drops", (req, res) => {
           nameBlob = new Blob(recChunks, { type: mediaRec.mimeType || "audio/webm" });
           prev.src = URL.createObjectURL(nameBlob); prev.style.display = "block";
           recBtn.textContent = "\u21bb Record it again";
-          recState.textContent = "Got it \u2014 listen back, then make your drop below.";
+          recState.textContent = "Got it \u2014 your drop is building below with your picks on it. Tap an effect or the music and you\u2019ll hear it change.";
+          document.getElementById("dropNameDel").style.display = "block";
+          maybeAutoMake();
         };
         mediaRec.start(); recSecs = 0;
         recBtn.textContent = "\u23f9 Stop";
@@ -3464,6 +3471,7 @@ app.get("/drops", (req, res) => {
       selMode = v;
       presetWrap.style.display = v === "dj" ? "block" : "none";
       ownPanel.style.display = v === "own" ? "block" : "none";
+      maybeAutoMake();
     });
     var ownBtn = document.getElementById("dropOwnBtn");
     var ownState = document.getElementById("dropOwnState");
@@ -3482,7 +3490,9 @@ app.get("/drops", (req, res) => {
           ownBlob = new Blob(ownChunks, { type: ownRec.mimeType || "audio/webm" });
           ownPrev.src = URL.createObjectURL(ownBlob); ownPrev.style.display = "block";
           ownBtn.textContent = "↻ Record it again";
-          ownState.textContent = "Got it — that’s your drop. Pick your effect below and make it.";
+          ownState.textContent = "Got it — that’s your drop, building below with your picks on it. Tap an effect or the music and you’ll hear it change.";
+          document.getElementById("dropOwnDel").style.display = "block";
+          maybeAutoMake();
         };
         ownRec.start(); ownSecs = 0;
         ownBtn.textContent = "⏹ Stop";
@@ -3499,28 +3509,58 @@ app.get("/drops", (req, res) => {
     var result = document.getElementById("dropResult");
     var player = document.getElementById("dropPlayer");
     var dl = document.getElementById("dropDl");
-    makeBtn.addEventListener("click", function () {
+    var makeSeq = 0;
+    function doMake(auto) {
       var fd = new FormData();
       if (selMode === "own") {
-        if (!ownBlob) { msg.textContent = "Record your drop first, then make it."; return; }
+        if (!ownBlob) { if (!auto) msg.textContent = "Record your drop first, then make it."; return; }
         fd.append("ownclip", ownBlob, "own.webm");
         fd.append("mode", "own");
       } else {
-        if (!nameBlob) { msg.textContent = "Record your name first (step 3), then make your drop."; return; }
-        if (selEnding === "own" && !endBlob) { msg.textContent = "Record your ending first (step 2), or pick a different ending."; return; }
+        if (!nameBlob) { if (!auto) msg.textContent = "Record your name first (step 3), then make your drop."; return; }
+        if (selEnding === "own" && !endBlob) { if (!auto) msg.textContent = "Record your ending first (step 2), or pick a different ending."; return; }
         fd.append("nameclip", nameBlob, "name.webm");
         if (selEnding === "own" && endBlob) fd.append("endclip", endBlob, "ending.webm");
         fd.append("mode", "dj");
       }
       fd.append("style", String(selStyle)); fd.append("effect", selFx); fd.append("bed", selBed); fd.append("ending", selEnding);
-      makeBtn.disabled = true; msg.textContent = "Making your drop\u2026";
+      var seq = ++makeSeq;
+      makeBtn.disabled = true; msg.textContent = "Making your drop…";
       fetch("/drops/make", { method: "POST", body: fd }).then(function (r) { return r.json(); }).then(function (j) {
+        if (seq !== makeSeq) return;
         makeBtn.disabled = false;
-        if (!j || !j.url) { msg.textContent = (j && j.error) || "Something went wrong \u2014 try again."; return; }
-        msg.textContent = "Your drop is ready!";
+        if (!j || !j.url) { msg.textContent = (j && j.error) || "Something went wrong — try again."; return; }
+        msg.textContent = "That’s your drop with your picks on it — tap another effect or music and hear it change.";
         result.style.display = "block";
         player.src = j.url; dl.href = j.url + "?dl=1";
-      }).catch(function () { makeBtn.disabled = false; msg.textContent = "Something went wrong \u2014 try again."; });
+        if (auto) { var p = player.play(); if (p && p.catch) p.catch(function () {}); }
+      }).catch(function () { if (seq !== makeSeq) return; makeBtn.disabled = false; msg.textContent = "Something went wrong — try again."; });
+    }
+    function maybeAutoMake() {
+      if (selMode === "own") { if (ownBlob) doMake(true); }
+      else if (nameBlob && !(selEnding === "own" && !endBlob)) doMake(true);
+    }
+    makeBtn.addEventListener("click", function () { doMake(false); });
+    document.getElementById("dropNameDel").addEventListener("click", function () {
+      nameBlob = null;
+      prev.style.display = "none"; prev.removeAttribute("src");
+      document.getElementById("dropNameDel").style.display = "none";
+      recBtn.textContent = "● Record my name";
+      recState.textContent = "Deleted — it’s gone. Record again whenever you’re ready.";
+    });
+    document.getElementById("dropEndDel").addEventListener("click", function () {
+      endBlob = null;
+      endPrev.style.display = "none"; endPrev.removeAttribute("src");
+      document.getElementById("dropEndDel").style.display = "none";
+      endBtn.textContent = "● Record my ending";
+      endState.textContent = "Deleted — it’s gone. Record again whenever you’re ready.";
+    });
+    document.getElementById("dropOwnDel").addEventListener("click", function () {
+      ownBlob = null;
+      ownPrev.style.display = "none"; ownPrev.removeAttribute("src");
+      document.getElementById("dropOwnDel").style.display = "none";
+      ownBtn.textContent = "● Record my drop";
+      ownState.textContent = "Deleted — it’s gone. Record again whenever you’re ready.";
     });
   })();
   </script>`;
