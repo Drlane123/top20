@@ -3448,12 +3448,17 @@ app.post("/drops/make", dropUpload.single("nameclip"), (req, res) => {
       fs.writeFileSync(bedP, DROP["bed-" + bed]);
       args.push("-stream_loop", "-1", "-i", bedP);
       const fadeStart = Math.max(0, Number(total) - 0.9).toFixed(2);
-      graph += ";[4:a]atrim=0:" + total + ",volume=0.30,afade=t=out:st=" + fadeStart + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[out]";
+      graph += ";[4:a]atrim=0:" + total + ",volume=0.30,afade=t=out:st=" + fadeStart + ":d=0.9[bedm];[voice][bedm]amix=inputs=2:duration=first[out]";
     } else {
-      graph += ";[voice]loudnorm=I=-14:TP=-1.5:LRA=11[out]";
+      graph += ";[voice]anull[out]";
     }
-    args.push("-filter_complex", graph, "-map", "[out]", "-c:a", "libmp3lame", "-b:a", "192k", outP);
+    // Pass 1 renders the mix to WAV; pass 2 applies loudnorm on a plain
+    // file input (the live ffmpeg 5.1 rejects loudnorm chained after
+    // amix inside the complex graph — "matches no streams", Nov 8, 2026).
+    const mixP = path.join(dir, "mix.wav");
+    args.push("-filter_complex", graph, "-map", "[out]", "-c:a", "pcm_s16le", mixP);
     execFileSync("ffmpeg", args);
+    execFileSync("ffmpeg", ["-y", "-v", "error", "-i", mixP, "-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-c:a", "libmp3lame", "-b:a", "192k", outP]);
     const buf = fs.readFileSync(outP);
     const token = crypto.randomBytes(9).toString("hex");
     const now = Date.now();
@@ -3461,8 +3466,7 @@ app.post("/drops/make", dropUpload.single("nameclip"), (req, res) => {
     DROP_FILES.set(token, { buf, ts: now });
     return res.json({ url: "/drops/file/" + token + ".mp3" });
   } catch (e) {
-    console.error("drop make failed:", e);
-    return res.status(500).json({ error: "The drop couldn\u2019t be made \u2014 try recording again. [" + String((e && e.stderr) || (e && e.message) || e).slice(-300) + "]" });
+    return res.status(500).json({ error: "The drop couldn\u2019t be made \u2014 try recording again." });
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch (e) {}
   }
