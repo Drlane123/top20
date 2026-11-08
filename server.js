@@ -3348,6 +3348,9 @@ app.get("/drops", (req, res) => {
         <button type="button" class="dropPick dropFx" data-v="deep">Deep voice</button>
         <button type="button" class="dropPick dropFx" data-v="radio">Radio</button>
       </div>
+      <p class="sub" style="margin:12px 0 6px">Your voice volume — <span id="dropVolVal" style="color:#ffd98a;font-weight:800">100%</span></p>
+      <input type="range" id="dropVol" min="50" max="150" step="5" value="100" style="width:100%">
+      <p class="sub" style="margin:2px 0 0">Slide your voice up if the music is covering it, down if your voice is too hot. The music stays where it is — your voice moves.</p>
       <p class="sub" style="margin:12px 0 6px">Music under it</p>
       <div>
         <button type="button" class="dropPick dropBed on" data-v="none">No music</button>
@@ -3391,7 +3394,7 @@ app.get("/drops", (req, res) => {
       if (chip) { chip.click(); window.scrollTo(0, 0); }
     });
     var HINTS = { 1: "Say just your name, strong and clear \u2014 the studio adds everything around it.", 2: "Say just your name, smooth and easy.", 3: "Say your name like a DJ tag \u2014 bring the energy!", 4: "Say just your name, hyped up.", 5: "Say just your name, confident, like you mean it." };
-    var selStyle = 1, selFx = "clean", selBed = "none", selEnding = "brand", endBlob = null, selMode = "dj", ownBlob = null;
+    var selStyle = 1, selFx = "clean", selBed = "none", selEnding = "brand", endBlob = null, selMode = "dj", ownBlob = null, selVol = 1;
     function pickWire(cls, attr, set) {
       var btns = document.querySelectorAll("." + cls);
       btns.forEach(function (b) { b.addEventListener("click", function () {
@@ -3437,6 +3440,12 @@ app.get("/drops", (req, res) => {
     });
     pickWire("dropFx", "data-v", function (v, wasOn) { if (wasOn) { stopAllAudio(); return; } selFx = v; maybeAutoMake(); });
     pickWire("dropBed", "data-v", function (v, wasOn) { if (wasOn) { stopAllAudio(); return; } selBed = v; maybeAutoMake(); });
+    var volSlider = document.getElementById("dropVol");
+    volSlider.addEventListener("input", function () {
+      selVol = Number(volSlider.value) / 100;
+      document.getElementById("dropVolVal").textContent = volSlider.value + "%";
+    });
+    volSlider.addEventListener("change", function () { maybeAutoMake(); });
     var recBtn = document.getElementById("dropRecBtn");
     var recState = document.getElementById("dropRecState");
     var prev = document.getElementById("dropNamePrev");
@@ -3534,7 +3543,7 @@ app.get("/drops", (req, res) => {
         if (selEnding === "own" && endBlob) fd.append("endclip", endBlob, "ending.webm");
         fd.append("mode", "dj");
       }
-      fd.append("style", String(selStyle)); fd.append("effect", selFx); fd.append("bed", selBed); fd.append("ending", selEnding);
+      fd.append("style", String(selStyle)); fd.append("effect", selFx); fd.append("bed", selBed); fd.append("ending", selEnding); fd.append("vol", String(selVol));
       var seq = ++makeSeq;
       makeBtn.disabled = true; msg.textContent = "Making your drop…";
       fetch("/drops/make", { method: "POST", body: fd }).then(function (r) { return r.json(); }).then(function (j) {
@@ -3591,6 +3600,7 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
   const style = [1, 2, 3, 4, 5].includes(Number(req.body.style)) ? Number(req.body.style) : 1;
   const effect = ["clean", "echo", "reverb", "stutter", "deep", "radio"].includes(req.body.effect) ? req.body.effect : "clean";
   const bed = ["none", "hiphop", "rnb", "house"].includes(req.body.bed) ? req.body.bed : "none";
+  const vol = Math.min(1.5, Math.max(0.5, Number(req.body.vol) || 1));
   if (req.body.mode === "own") {
     const ownFile = req.files && req.files.ownclip && req.files.ownclip[0];
     if (!ownFile || !ownFile.buffer || ownFile.buffer.length < 1000) return res.status(400).json({ error: "Record your drop first, then make it." });
@@ -3621,9 +3631,9 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
         const slSamples0 = Math.round(sl0 * 44100);
         const startSamples0 = Math.round((od - sl0) * 44100);
         bedTotal0 = (Number(total0) + 2 * sl0).toFixed(2);
-        graph0 += "[v0]aloop=loop=2:size=" + slSamples0 + ":start=" + startSamples0 + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120[voice]";
+        graph0 += "[v0]aloop=loop=2:size=" + slSamples0 + ":start=" + startSamples0 + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120,volume=" + vol + "[voice]";
       } else {
-        graph0 += "[v0]" + FX0[effect] + "[voice]";
+        graph0 += "[v0]" + FX0[effect] + ",volume=" + vol + "[voice]";
       }
       if (bed !== "none" && DROP["bed-" + bed]) {
         const bedP0 = path.join(dir0, "bed.mp3");
@@ -3718,9 +3728,9 @@ app.post("/drops/make", dropUpload.fields([{ name: "nameclip", maxCount: 1 }, { 
       const slSamples = Math.round(sl * 44100);
       const startSamples = Math.round((voiceEnd - sl) * 44100);
       bedTotal = (Number(total) + 2 * sl).toFixed(2);
-      graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]aloop=loop=2:size=" + slSamples + ":start=" + startSamples + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120[voice]";
+      graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]aloop=loop=2:size=" + slSamples + ":start=" + startSamples + ",acompressor=threshold=-18dB:ratio=3:attack=10:release=120,volume=" + vol + "[voice]";
     } else {
-      graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]" + FX[effect] + "[voice]";
+      graph += segs.join("") + "concat=n=" + segs.length + ":v=0:a=1[v0];[v0]" + FX[effect] + ",volume=" + vol + "[voice]";
     }
     if (bed !== "none" && DROP["bed-" + bed]) {
       const bedP = path.join(dir, "bed.mp3");
