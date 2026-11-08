@@ -359,7 +359,7 @@ function renderPlaque({ songId, title, artist, coverAbs, award, craftScore, days
   // Font sizes fitted to the master's own lettering (measured on the
   // settled renders): the name runs as wide as the master's, the title
   // and lines shrink to stay inside their bands on long names.
-  const nameSize = Math.min(150, Math.floor(920 / (0.66 * Math.max(4, artistText.length))));
+  const nameSize = Math.min(150, Math.floor(870 / (0.668 * Math.max(4, artistText.length)))); // isolated drawtext calibration: caps ink width = size x chars x 0.668. Target ~870px of ink so the name sits inside the plate's side lines (x 97 / 1043) with the same margins as the design's own name (889px). Dale, Nov 8 2026: the name must sit inside the lines, nothing pasted over the top.
   const titleSize = Math.min(48, Math.floor(640 / (0.58 * Math.max(6, titleText.length))));
   const titleW = Math.ceil(0.58 * titleSize * titleText.length);
   const numSize = award.rank >= 10 ? 84 : 105;
@@ -367,7 +367,7 @@ function renderPlaque({ songId, title, artist, coverAbs, award, craftScore, days
   const erase = [
     `drawbox=x=118:y=168:w=104:h=108:color=${INK}:t=fill`,
     `drawbox=x=245:y=178:w=560:h=48:color=${INK}:t=fill`,
-    `drawbox=x=90:y=892:w=962:h=140:color=${INK}:t=fill`,
+    `drawbox=x=104:y=892:w=934:h=160:color=${INK}:t=fill`,
     `drawbox=x=${Math.floor((1142 - titleW) / 2) - 15}:y=1022:w=${titleW + 30}:h=64:color=${INK}:t=fill`,
   ];
   const dt = (file, font, size, color, x, y) =>
@@ -376,8 +376,8 @@ function renderPlaque({ songId, title, artist, coverAbs, award, craftScore, days
     dt(fNum, FONT, numSize, numShadow, "171-text_w/2+2", 177),
     dt(fNum, FONT, numSize, numFace, "171-text_w/2", 174),
     dt(fAward, FONT, awardSize, awardCol, 252, 186),
-    dt(fArtist, FONT_SERIF, nameSize, PLATD, "(w-text_w)/2+3", 912),
-    dt(fArtist, FONT_SERIF, nameSize, PLAT, "(w-text_w)/2", 908),
+    dt(fArtist, FONT_SERIF, nameSize, PLATD, "(w-text_w)/2+3", 906),
+    dt(fArtist, FONT_SERIF, nameSize, PLAT, "(w-text_w)/2", 902),
     dt(fTitle, FONT, titleSize, "0xE8EEF7", "(w-text_w)/2", 1032),
   ];
   if (tier === "numberone") {
