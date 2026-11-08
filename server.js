@@ -7294,6 +7294,11 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     <p class="sub">Film an episode — you on camera, or an artist in front of you — inside a studio set, and post it to the Viewcast page.</p>
     <p class="sub" style="margin:12px 0 0"><a href="/admin/viewcast" style="color:var(--accent);font-weight:700;text-decoration:none">Open the Viewcast studio →</a></p>
   </div>
+  <div class="panel">
+    <h2 style="margin-top:0">🎙️ DJ Drop Studio</h2>
+    <p class="sub">The artists' free drop maker — preset DJ-voice drops and own-voice drops, with our effects. As staff you are let straight in with no profile, so you can test it end to end.</p>
+    <p class="sub" style="margin:12px 0 0"><a href="/drops" style="color:var(--accent);font-weight:700;text-decoration:none">Open the DJ Drop Studio →</a></p>
+  </div>
   <div class="panel" style="border:2px solid #d4af37">
     <h2 style="margin-top:0">🌍 OVERALL — EVERYWHERE</h2>
     <p class="sub">One push puts the song at your number in <b style="color:#fff">Local Overall, Regional Overall AND National Overall</b> at the same time — right away, no waiting. Push it again at a different number and it moves there.</p>
