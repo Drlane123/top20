@@ -1998,7 +1998,7 @@ app.get("/", (req, res) => {
   const LABELS = ${JSON.stringify(channels.map((c) => c.label))};
   const ADS_BY_CH = ${JSON.stringify((() => { try { const all = db.prepare("SELECT kind, file_path, link_url, seconds, genre FROM ads WHERE active = 1 AND status = 'live' ORDER BY id").all().map((a) => ({ kind: a.kind, src: a.file_path, link: a.link_url || "", seconds: a.seconds, genre: a.genre || "All" })); return [OVERALL, ...GENRES].map((g) => (g === OVERALL ? all : all.filter((a) => a.genre === "All" || a.genre === g))); } catch (e) { return []; } })())};
   const ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-  const ANN_V = 13; // announcement voice generation (Take B radio voice; v13 re-ships title-51 + line-51 for New Nobility "Be Cool" (Nov 4, prior v12 never landed live); v12 re-ships title-51 + line-51 for New Nobility "Be Cool" (Nov 4, prior v11 never landed live); v11 adds title-51 + line-51 for New Nobility "Be Cool" (Nov 4); v10 re-ships title-50 + line-50 for Lady Rackz "Breathe" (Nov 3, prior v9 push never landed); v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
+  const ANN_V = 17; // v17 re-ships title-52 + line-52 for Earnest Williams "Boots On" (Nov 9, v16 push never landed title-52 live — still 404); v16 re-ships title-52 + line-52 for Earnest Williams "Boots On" (Nov 9, v15 push never landed live — title-52 still 404); v15 re-ships title-52 + line-52 for Earnest Williams "Boots On" (Nov 9, v14 commit landed line-52 only — title-52 + server.js never reached the repo); v14 adds title-52 + line-52 for Earnest Williams "Boots On" (Nov 9); announcement voice generation (Take B radio voice; v13 re-ships title-51 + line-51 for New Nobility "Be Cool" (Nov 4, prior v12 never landed live); v12 re-ships title-51 + line-51 for New Nobility "Be Cool" (Nov 4, prior v11 never landed live); v11 adds title-51 + line-51 for New Nobility "Be Cool" (Nov 4); v10 re-ships title-50 + line-50 for Lady Rackz "Breathe" (Nov 3, prior v9 push never landed); v9 adds title-50 + line-50 for Lady Rackz "Breathe" (Nov 3); v8 adds title-49 + line-49 for SNG (owner, Nov 3); v7 re-records line-48 as "T Marvin"
   let ch = 0, idx = 0, lastCounted = "";
   let previewOn = false; // a Top Risers preview is playing outside the rotation
   const audio = document.getElementById('stageAudio');
@@ -2578,7 +2578,7 @@ app.get("/charts", (req, res) => {
   (function(){
     var Q = ${JSON.stringify(chartQ).replace(/</g, "\\u003c")};
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 13;
+    var ANN_V = 17;
     var byId = {}; Q.forEach(function(s, i){ byId[s.id] = i; });
     var audio = document.getElementById('cAudio');
     var btn = document.getElementById('cPlayBtn');
@@ -3988,7 +3988,7 @@ app.get("/song/:id", (req, res) => {
     var a = document.querySelector('audio.profile-audio');
     if (!a) return;
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 13;
+    var ANN_V = 17;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     a._songSrc = a.getAttribute('src');
@@ -5680,7 +5680,7 @@ app.get("/artist/:id", (req, res) => {
     // what a visiting artist hears when an artist posts their profile.
     // The Stage's DJ VOICE switch is the same switch here.
     var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-    var ANN_V = 13;
+    var ANN_V = 17;
     var annChain = 0;
     function djOnP() { try { return localStorage.getItem('djVoice') !== '0'; } catch (e) { return true; } }
     function countPlay(a) { if (a._counted) return; a._counted = true; fetch('/api/play/' + a.getAttribute('data-song'), { method: 'POST' }).catch(function () {}); }
@@ -9092,7 +9092,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
   // Brighten filters ride the normal host pipeline (hostC +
   // drawHostInto), so they work on every template, these included.
   var ANN_KEYS = ${JSON.stringify(Object.keys(ANN))};
-  var ANN_V = 13; // FIFTH copy of the DJ-voice cache-bust — bump it with the other four
+  var ANN_V = 17; // FIFTH copy of the DJ-voice cache-bust — bump it with the other four
   var vcTemplate = 'set';
   var vcLogo = new Image(); vcLogo.src = '/logo.png';
   var vcChart = [], vcCovers = {}, vcChartDate = '';
