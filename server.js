@@ -1604,6 +1604,272 @@ function stagePlaylist(genreKey, date) {
   });
 }
 
+// ================= DJ BOOTH — TODAY'S HOT SPOTS (owner feature,
+// Nov 13, 2026) =================
+// A DJ booth on the home page featuring TODAY'S HOT SPOTS: two songs
+// at a time, dealt by BUZZ from the engagement signals the site
+// already tracks (weighted plays/likes/shares/saves + the artist buzz
+// score — the same ingredients the chart engine reads, used read-only
+// here). A Hot Spot song does NOT have to be charting, and a Hot Spot
+// NEVER touches a score, a rank, or the chart — it is a showcase, like
+// the Spotlight of the Week. The owner can place any live song into
+// Hot Spot 1 or 2 from his desk (immediate, like chart placements) or
+// clear the slot back to the buzz deal. Slate size, slot length, play
+// length and page position are owner settings (admin_config
+// 'hotspot_settings'). The DJ call is on-screen for now: the site's DJ
+// voice clips are pre-recorded per song and no "hot spot" call exists
+// in the voice yet — chaining one is a follow-up, never faked.
+const HOTSPOT_DEFAULTS = { spotsPerDay: 8, slotHours: 6, playSeconds: 45, position: "top" };
+function hotspotSettings() {
+  let s = {};
+  try {
+    const row = db.prepare("SELECT value FROM admin_config WHERE key = 'hotspot_settings'").get();
+    if (row && row.value) s = JSON.parse(row.value) || {};
+  } catch (e) { s = {}; }
+  const out = { ...HOTSPOT_DEFAULTS };
+  const spd = parseInt(s.spotsPerDay, 10);
+  if (spd >= 2 && spd <= 24) out.spotsPerDay = spd;
+  const sh = parseFloat(s.slotHours);
+  if (sh >= 1 && sh <= 24) out.slotHours = sh;
+  const ps = parseInt(s.playSeconds, 10);
+  if (!Number.isNaN(ps) && ps >= 0 && ps <= 3600) out.playSeconds = ps;
+  if (["top", "below", "lower"].includes(s.position)) out.position = s.position;
+  return out;
+}
+function hotspotSaveSettings(s) {
+  db.prepare("INSERT INTO admin_config (key, value) VALUES ('hotspot_settings', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(JSON.stringify(s));
+}
+function hotspotPlacedId(slot) {
+  try {
+    const row = db.prepare("SELECT value FROM admin_config WHERE key = ?").get("hotspot_slot" + slot);
+    if (!row || !row.value) return 0;
+    const rec = JSON.parse(row.value);
+    return rec && rec.song_id ? Number(rec.song_id) : 0;
+  } catch (e) { return 0; }
+}
+function hotspotBuzzRows() {
+  const { ENGAGEMENT_WEIGHTS } = require("./config");
+  const caseSql = Object.entries(ENGAGEMENT_WEIGHTS).map(([t, w]) => "WHEN '" + t + "' THEN " + w).join(" ");
+  const rows = db.prepare(`
+    SELECT s.id, s.title, s.genre, s.cover_path, s.audio_path, u.name AS artist, u.buzz_score,
+      COALESCE((SELECT SUM(count * CASE type ${caseSql} ELSE 0 END) FROM engagements WHERE song_id = s.id), 0) AS heat,
+      COALESCE((SELECT count FROM engagements WHERE song_id = s.id AND type = 'play'), 0) AS plays,
+      COALESCE((SELECT count FROM engagements WHERE song_id = s.id AND type = 'like'), 0) AS likes,
+      COALESCE((SELECT count FROM engagements WHERE song_id = s.id AND type = 'share'), 0) AS shares
+    FROM songs s JOIN users u ON u.id = s.artist_id
+    WHERE s.status = 'live'`).all();
+  for (const r of rows) r.heat = (r.heat || 0) + (r.buzz_score || 0);
+  rows.sort((a, b) => (b.heat - a.heat) || (a.id - b.id));
+  return rows;
+}
+function hotspotCard(r, placed) {
+  return { id: r.id, title: r.title, artist: r.artist, genre: r.genre, cover: r.cover_path, audio: r.audio_path,
+    plays: r.plays || 0, likes: r.likes || 0, shares: r.shares || 0, placed: !!placed };
+}
+// The pair on the decks right now: the day's buzz slate (top
+// spotsPerDay by heat), two at a time, rotating every slotHours;
+// an owner placement wins its slot while it stands.
+function todaysHotSpots() {
+  const settings = hotspotSettings();
+  const rows = hotspotBuzzRows();
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const slate = rows.slice(0, Math.min(settings.spotsPerDay, rows.length));
+  const pairCount = Math.max(1, Math.ceil(slate.length / 2));
+  const slotMs = settings.slotHours * 3600 * 1000;
+  const pairIndex = Math.floor(Date.now() / slotMs) % pairCount;
+  const dealt = [slate[pairIndex * 2] || null, slate[pairIndex * 2 + 1] || null];
+  const pair = dealt.map((r, i) => {
+    const pid = hotspotPlacedId(i + 1);
+    if (pid && byId.has(pid)) return hotspotCard(byId.get(pid), true);
+    return r ? hotspotCard(r, false) : null;
+  });
+  return { settings, pair, slateCount: slate.length, pairIndex, pairCount };
+}
+function hotspotBoothHtml(hs) {
+  const cards = hs.pair.filter(Boolean);
+  if (!cards.length) return "";
+  const st = hs.settings;
+  const deck = (c, i) => `
+      <div class="hs-deck" id="hsDeck${i}">
+        <div class="hs-disc"><img src="${esc(c.cover)}" alt=""></div>
+        <div class="hs-arm"></div>
+        <div class="hs-decklab">HOT SPOT ${i + 1}</div>
+      </div>`;
+  const card = (c, i) => `
+    <div class="hs-card">
+      <div class="hs-badge">🔥 TODAY’S HOT SPOT ${i === 0 ? "ONE" : "TWO"}</div>
+      <a class="row" href="/song/${c.id}">
+        <img class="thumb" src="${esc(c.cover)}" alt="">
+        <span class="meta"><span class="t">${esc(c.title)}</span><br><span class="a">${esc(c.artist)}</span></span>
+        <span class="nums"><b>${esc(c.genre)}</b></span>
+      </a>
+      <p class="hs-buzz">Getting a buzz — ▶ ${fmtNum(c.plays)} plays · ♥ ${fmtNum(c.likes)} · ⤴ ${fmtNum(c.shares)}${c.placed ? " · ⭐ Owner’s pick" : ""}</p>
+      <button type="button" class="hs-share" data-hs-share="${c.id}" data-hs-title="${esc(c.title)}" data-hs-artist="${esc(c.artist)}">⤴ Share</button>
+    </div>`;
+  const first = cards[0];
+  return `
+  <div class="panel hs-booth" id="hsBooth">
+    <style>
+    .hs-booth{border:1px solid rgba(255,120,60,.55);background:linear-gradient(180deg,rgba(255,90,40,.10),rgba(20,10,16,.25));overflow:hidden}
+    .hs-onair{display:inline-block;color:#ff5d47;font-weight:900;letter-spacing:2px;font-size:11px;animation:hsBlink 1.2s steps(1) infinite}
+    @keyframes hsBlink{0%,55%{opacity:1}56%,100%{opacity:.25}}
+    .hs-stage{display:flex;align-items:flex-start;justify-content:center;gap:10px;margin:12px 0 4px}
+    .hs-deck{position:relative;width:118px;text-align:center}
+    .hs-disc{width:104px;height:104px;margin:0 auto;border-radius:50%;background:radial-gradient(circle,#111 0 26%,#1c1c22 27% 55%,#0a0a0e 56% 78%,#22222a 79% 100%);border:2px solid rgba(255,217,138,.5);display:flex;align-items:center;justify-content:center;animation:hsSpin 1.6s linear infinite;animation-play-state:paused;box-shadow:0 6px 18px rgba(0,0,0,.55)}
+    .hs-deck.on .hs-disc{animation-play-state:running}
+    .hs-disc img{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid #ffd98a}
+    @keyframes hsSpin{to{transform:rotate(360deg)}}
+    .hs-arm{position:absolute;top:2px;right:8px;width:34px;height:5px;border-radius:3px;background:linear-gradient(90deg,#cfd6e4,#7c8698);transform:rotate(24deg);transform-origin:right center}
+    .hs-decklab{margin-top:6px;font-size:11px;font-weight:900;letter-spacing:1.5px;color:#ffd98a}
+    .hs-mix{align-self:center;font-size:26px;filter:drop-shadow(0 0 8px rgba(255,190,60,.6))}
+    .hs-call{text-align:center;font-weight:800;color:#ffe9b0;font-size:15.5px;margin:8px 4px 2px}
+    .hs-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    @media (max-width:560px){.hs-cards{grid-template-columns:1fr}}
+    .hs-card{border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px;background:rgba(0,0,0,.25)}
+    .hs-badge{font-size:11px;font-weight:900;letter-spacing:1.2px;color:#ff9a5c;margin-bottom:6px}
+    .hs-buzz{color:#bcd;font-size:12.5px;margin:8px 0}
+    .hs-share{background:rgba(255,190,60,.12);border:1px solid rgba(255,190,60,.45);color:#ffd98a;border-radius:999px;padding:7px 13px;font-size:12px;font-weight:800;cursor:pointer}
+    .hs-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
+    .hs-play{background:linear-gradient(180deg,#ff9a5c,#e2543e);color:#fff;border:1px solid #a32e1c;border-radius:999px;padding:12px 20px;font-weight:900;letter-spacing:1px;cursor:pointer}
+    .hs-stat{color:#bcd;font-size:12.5px}
+    </style>
+    <div class="hs-onair">● ON AIR</div>
+    <h2 style="margin:2px 0 0">🎧 THE DJ BOOTH</h2>
+    <p class="sub" style="margin:2px 0 0">featuring <b style="color:#ffd98a">TODAY’S HOT SPOTS</b> — the songs getting a buzz, whether they’re charting or not. Two at a time on the decks, a fresh pair every ${st.slotHours} hour${st.slotHours === 1 ? "" : "s"}.</p>
+    <div class="hs-stage">
+      ${cards.map((c, i) => deck(c, i)).join('<div class="hs-mix" aria-hidden="true">🎙️</div>')}
+    </div>
+    <div class="hs-call" id="hsCall">🎙️ “TODAY’S HOT SPOT ONE — ${esc(first.artist)}, ${esc(first.title)}”</div>
+    <div class="hs-cards">${cards.map((c, i) => card(c, i)).join("")}</div>
+    <div class="hs-controls">
+      <button type="button" class="hs-play" id="hsPlayBtn">▶ PLAY THE BOOTH</button>
+      <span class="hs-stat" id="hsStat">The pair, back to back — nothing else cuts in.${st.playSeconds > 0 ? " " + st.playSeconds + " seconds a song, then the DJ fades to the next one." : " Full songs, start to finish."}</span>
+    </div>
+    <audio id="hsAudio" preload="none"></audio>
+    <script>
+    (function () {
+      var pair = ${JSON.stringify(cards.map((c) => ({ id: c.id, title: c.title, artist: c.artist, audio: c.audio }))).replace(/</g, "\\u003c")};
+      var playSecs = ${st.playSeconds};
+      var audio = document.getElementById('hsAudio');
+      var btn = document.getElementById('hsPlayBtn');
+      var callEl = document.getElementById('hsCall');
+      var statEl = document.getElementById('hsStat');
+      if (!audio || !btn || !pair.length) return;
+      var decks = [document.getElementById('hsDeck0'), document.getElementById('hsDeck1')];
+      var idx = 0, playing = false, cutTimer = null, fadeInt = null;
+      function callFor(i) {
+        var w = i === 0 ? 'ONE' : 'TWO';
+        return '🎙️ “TODAY’S HOT SPOT ' + w + ' — ' + pair[i].artist + ', ' + pair[i].title + '”';
+      }
+      function fadeTo(target, ms, done) {
+        if (fadeInt) { clearInterval(fadeInt); fadeInt = null; }
+        var from = 0; try { from = audio.volume; } catch (e) {}
+        var steps = Math.max(1, Math.round(ms / 50)), n = 0;
+        fadeInt = setInterval(function () {
+          n++;
+          try { audio.volume = Math.max(0, Math.min(1, from + (target - from) * (n / steps))); } catch (e) {}
+          if (n >= steps) { clearInterval(fadeInt); fadeInt = null; if (done) done(); }
+        }, 50);
+      }
+      function start(i) {
+        idx = i;
+        if (window.__stopStage) { try { window.__stopStage(); } catch (e) {} }
+        if (window.__muteHero) { try { window.__muteHero(); } catch (e) {} }
+        callEl.textContent = callFor(i);
+        statEl.textContent = 'In the booth now: Hot Spot ' + (i + 1) + ' — ' + pair[i].title + ' by ' + pair[i].artist;
+        for (var d = 0; d < decks.length; d++) { if (decks[d]) decks[d].classList.toggle('on', d === i); }
+        try { audio.pause(); } catch (e) {}
+        audio.src = pair[i].audio;
+        try { audio.volume = 0; } catch (e) {}
+        var p = audio.play(); if (p && p.catch) p.catch(function () {});
+        fadeTo(1, 900);
+        try { fetch('/api/play/' + pair[i].id, { method: 'POST' }); } catch (e) {}
+        if (cutTimer) clearTimeout(cutTimer);
+        if (playSecs > 0) cutTimer = setTimeout(function () {
+          fadeTo(0, 1200, function () { if (playing) start((idx + 1) % pair.length); });
+        }, playSecs * 1000);
+      }
+      function stopBooth() {
+        playing = false;
+        if (cutTimer) clearTimeout(cutTimer);
+        fadeTo(0, 350, function () { try { audio.pause(); } catch (e) {} });
+        for (var d = 0; d < decks.length; d++) { if (decks[d]) decks[d].classList.remove('on'); }
+        btn.textContent = '▶ PLAY THE BOOTH';
+        statEl.textContent = 'The booth is quiet. Tap play and the Hot Spots ride again.';
+      }
+      btn.addEventListener('click', function () {
+        if (playing) { stopBooth(); return; }
+        playing = true;
+        btn.textContent = '⏹ STOP THE BOOTH';
+        start(idx);
+      });
+      audio.addEventListener('ended', function () { if (playing) start((idx + 1) % pair.length); });
+      var sbtns = document.querySelectorAll('[data-hs-share]');
+      for (var s = 0; s < sbtns.length; s++) sbtns[s].addEventListener('click', function () {
+        var id = this.getAttribute('data-hs-share');
+        var t = this.getAttribute('data-hs-title'), a = this.getAttribute('data-hs-artist');
+        var url = window.location.origin + '/song/' + id;
+        var text = '🔥 TODAY’S HOT SPOT — “' + t + '” by ' + a + ' in the DJ Booth on HOT TOP 20';
+        try { fetch('/song/' + id + '/engage', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'type=share' }); } catch (e) {}
+        var self = this;
+        if (navigator.share) { navigator.share({ title: document.title, text: text, url: url }).catch(function () {}); }
+        else if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(text + ' ' + url).then(function () {
+            var old = self.textContent;
+            self.textContent = '✓ Link copied';
+            setTimeout(function () { self.textContent = old; }, 2200);
+          }, function () {});
+        }
+      });
+    })();
+    </script>
+  </div>`;
+}
+function hotspotAdminHtml(songs) {
+  const hs = todaysHotSpots();
+  const st = hs.settings;
+  const selStyle = "width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff";
+  const slotForm = (slot) => {
+    const pid = hotspotPlacedId(slot);
+    const dealt = hs.pair[slot - 1];
+    return `
+    <form method="post" action="/admin/hotspots/place" style="margin:12px 0">
+      <input type="hidden" name="slot" value="${slot}">
+      <label class="sub">HOT SPOT ${slot} — on the deck now: <b style="color:#fff">${dealt ? esc(dealt.title) + " — " + esc(dealt.artist) : "—"}</b>${dealt ? (dealt.placed ? " (your pick)" : " (buzz deal)") : ""}<br>
+      <select name="song_id" style="${selStyle}">
+        <option value="">— Buzz deal (no placement) —</option>
+        ${songs.map((s) => `<option value="${s.id}"${s.id === pid ? " selected" : ""}>${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
+      </select></label>
+      <button class="btn btn-blue" type="submit">Set Hot Spot ${slot}</button>
+    </form>`;
+  };
+  return `
+  <div class="panel" style="border:2px solid #ff7847">
+    <h2 style="margin-top:0">🔥 DJ BOOTH — TODAY’S HOT SPOTS</h2>
+    <p class="sub">The DJ booth on the home page, featuring TODAY’S HOT SPOTS — two songs at a time, dealt by <b style="color:#fff">buzz</b> (plays, likes, shares and the artist buzz score). A Hot Spot does <b style="color:#fff">not</b> have to be charting, and it never touches a score or a rank — it’s a showcase. Place a song yourself and it takes that deck immediately; clear it and the buzz deal runs that deck again. Pairs rotate on their own every slot.</p>
+    ${slotForm(1)}
+    ${slotForm(2)}
+    <form method="post" action="/admin/hotspots/settings" style="margin-top:16px">
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
+        <label class="sub">Hot Spots per day (slate)<br>
+          <input type="number" name="spots_per_day" min="2" max="24" value="${st.spotsPerDay}" style="${selStyle}"></label>
+        <label class="sub">Hours per pair (slot)<br>
+          <input type="number" name="slot_hours" min="1" max="24" step="any" value="${st.slotHours}" style="${selStyle}"></label>
+        <label class="sub">Seconds played per song (0 = whole song)<br>
+          <input type="number" name="play_seconds" min="0" max="3600" value="${st.playSeconds}" style="${selStyle}"></label>
+        <label class="sub">Booth position on the home page<br>
+          <select name="position" style="${selStyle}">
+            <option value="top"${st.position === "top" ? " selected" : ""}>Top — above the Stage</option>
+            <option value="below"${st.position === "below" ? " selected" : ""}>Below the Stage</option>
+            <option value="lower"${st.position === "lower" ? " selected" : ""}>Lower — under the chart block</option>
+          </select></label>
+      </div>
+      <button class="btn btn-blue" type="submit">Save booth settings</button>
+    </form>
+    <p class="note" style="margin-top:10px">The DJ call is on-screen for now — the DJ voice has no “hot spot” call recorded yet, so nothing is faked.</p>
+  </div>`;
+}
+
 app.get("/", (req, res) => {
   const date = latestChartDate(db);
   const channels = [
@@ -1674,6 +1940,12 @@ app.get("/", (req, res) => {
       }
     }
   } catch (e) { spotlightHtml = ""; }
+  // DJ BOOTH — TODAY'S HOT SPOTS: the showcase pair, placed by the
+  // owner's position setting (top / below the Stage / lower). It never
+  // touches the chart — it only reads engagement for the buzz deal.
+  const hsNow = todaysHotSpots();
+  const boothHtml = hotspotBoothHtml(hsNow);
+  const boothAt = (pos) => (hsNow.settings.position === pos ? boothHtml : "");
   const homeFirst = homeEntries.slice(0, 5);
   const homeRest = homeEntries.slice(5);
   const homeChartHtml = homeEntries.length ? `
@@ -1860,6 +2132,7 @@ app.get("/", (req, res) => {
   })();
   </script>
   <div style="margin:12px 0 2px;padding:10px 14px;border:1px solid rgba(255,190,60,.55);border-radius:12px;background:linear-gradient(180deg,rgba(255,170,40,.14),rgba(255,170,40,.05));color:#ffd98a;font-size:13.5px;line-height:1.45;text-align:center">🎧 <b style="color:#fff">STAGE SHOWCASE</b> — these covers are on display for show right now. <b style="color:#fff">The Top 20 starts airing within 45 days of launch.</b> Artists — get your song uploaded and judged now, and be ready when the real rotation begins.</div>
+  ${boothAt("top")}
   <div class="tabs" id="channelTabs">${tabs}</div>
   ${first ? `
   <div class="stagegrid">
@@ -1960,6 +2233,7 @@ app.get("/", (req, res) => {
       <div class="ringnow" id="ringNowB"></div>
     </div></div>
   </div></div>
+  ${boothAt("below")}
   ${plaqueStrip}
   ${dropStrip}
   ${djPicksHtml}
@@ -1970,6 +2244,7 @@ app.get("/", (req, res) => {
   ${homeRisersHtml}
   ${homeDjHtml}
   </div>
+  ${boothAt("lower")}
   ${howStrip}
   <div class="panel ctabar">
     <div class="cta-txt"><b>Your music and your profile will speak for themselves.</b><span>Make your free artist profile, upload a song, and let the 15 judges do the rest.</span></div>
@@ -7192,6 +7467,40 @@ app.post("/admin/spotlight", requireAdmin, (req, res) => {
   return back("Spotlight set — it's live on the home page now. Name the next one whenever the 16th Law moves you.");
 });
 
+// DJ BOOTH — HOT SPOT desk controls (owner, Nov 13, 2026): place or
+// clear a Hot Spot deck, and tune the booth's settings. Showcase only —
+// nothing here touches a score, a rank, or the chart. Immediate, like
+// chart placements: the booth on the home page runs it the same visit.
+app.post("/admin/hotspots/place", requireAdmin, (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const slot = Number(req.body.slot);
+  if (slot !== 1 && slot !== 2) return back("That Hot Spot slot doesn't exist.");
+  const key = "hotspot_slot" + slot;
+  const songId = Number(req.body.song_id);
+  if (!songId) {
+    db.prepare("DELETE FROM admin_config WHERE key = ?").run(key);
+    return back("Hot Spot " + slot + " cleared — the buzz deal runs that deck again.");
+  }
+  const song = db.prepare("SELECT id FROM songs WHERE id = ? AND status = 'live'").get(songId);
+  if (!song) return back("That song isn't live — a Hot Spot needs a song that's uploaded and live.");
+  db.prepare("INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+    .run(key, JSON.stringify({ song_id: songId, set_on: todayStr() }));
+  return back("Hot Spot " + slot + " set — it's in the DJ booth on the home page right now.");
+});
+app.post("/admin/hotspots/settings", requireAdmin, (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const cur = hotspotSettings();
+  const spd = parseInt(req.body.spots_per_day, 10);
+  if (spd >= 2 && spd <= 24) cur.spotsPerDay = spd;
+  const sh = parseFloat(req.body.slot_hours);
+  if (sh >= 1 && sh <= 24) cur.slotHours = sh;
+  const ps = parseInt(req.body.play_seconds, 10);
+  if (!Number.isNaN(ps) && ps >= 0 && ps <= 3600) cur.playSeconds = ps;
+  if (["top", "below", "lower"].includes(req.body.position)) cur.position = req.body.position;
+  hotspotSaveSettings(cur);
+  return back("DJ Booth settings saved — the booth on the home page runs them now.");
+});
+
 // ENGINEER'S SCORE CORRECTION (owner, Nov 2, 2026) — the owner's ear over
 // the machine for the one case the analyzer can't hear: a record whose
 // style doesn't fit the template a point is measured against (the first
@@ -7459,6 +7768,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. You can enter a placement any time — it goes onto the chart IMMEDIATELY, the second you place it, and holds through each midnight recalculation until it ends or you remove it (removals also take effect right away). A song's evaluation scores are never changed — this sets chart position only.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
   ${plaqueOrdersCard()}
+  ${hotspotAdminHtml(songs)}
   <div class="panel">
     <h2 style="margin-top:0">🎙️ Viewcast Studio</h2>
     <p class="sub">Film an episode — you on camera, or an artist in front of you — inside a studio set, and post it to the Viewcast page.</p>
