@@ -1616,9 +1616,11 @@ function stagePlaylist(genreKey, date) {
 // Hot Spot 1 or 2 from his desk (immediate, like chart placements) or
 // clear the slot back to the buzz deal. Slate size, slot length, play
 // length and page position are owner settings (admin_config
-// 'hotspot_settings'). The DJ call is on-screen for now: the site's DJ
-// voice clips are pre-recorded per song and no "hot spot" call exists
-// in the voice yet — chaining one is a follow-up, never faked.
+// 'hotspot_settings'). Slice 2 (Nov 13, 2026): the DJ call is now
+// HEARD — generic Hot Spot calls in the same Take B voice (hs-sting,
+// hs-one, hs-two, hs-spot, baked into announce-data-2) chain ahead of
+// the song's own title-<id> clip, then the song joins at its clock
+// offset; the on-screen call line stays as the visual twin.
 const HOTSPOT_DEFAULTS = { spotsPerDay: 8, slotHours: 6, playSeconds: 45, position: "top" };
 function hotspotSettings() {
   let s = {};
@@ -1806,7 +1808,7 @@ function hotspotBoothHtml(hs) {
     <audio id="hsAudio" preload="none"></audio>
     <script>
     (function () {
-      var cfg = ${JSON.stringify({ songs: playOrder.map((c) => ({ id: c.id, title: c.title, artist: c.artist, audio: c.audio })), playSecs: st.playSeconds, cycleStart: cycleStart, cycleLenMs: cycleLenMs }).replace(/</g, "\\u003c")};
+      var cfg = ${JSON.stringify({ songs: playOrder.map((c) => ({ id: c.id, title: c.title, artist: c.artist, audio: c.audio, ht: !!ANN["title-" + c.id] })), playSecs: st.playSeconds, cycleStart: cycleStart, cycleLenMs: cycleLenMs, v: 18 }).replace(/</g, "\\u003c")};
       var audio = document.getElementById('hsAudio');
       var openBtn = document.getElementById('hsOpenBtn');
       var full = document.getElementById('hsFull');
@@ -1814,7 +1816,7 @@ function hotspotBoothHtml(hs) {
       var statEl = document.getElementById('hsStat');
       if (!audio || !openBtn || !full || !cfg.songs.length) return;
       var decks = [document.getElementById('hsDeck0'), document.getElementById('hsDeck1')];
-      var isOpen = false, cur = -1, timers = [], fadeInt = null;
+      var isOpen = false, cur = -1, timers = [], fadeInt = null, mode = 'idle', chain = null, chainGen = 0;
       function clearTimers() { for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]); timers = []; }
       function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
       function fadeTo(target, ms, done) {
@@ -1833,6 +1835,41 @@ function hotspotBoothHtml(hs) {
         if (i === 1) return '🎙️ “TODAY’S HOT SPOT TWO — ' + s.artist + ', ' + s.title + '”';
         return '🎙️ “HOT SPOT — ' + s.artist + ', ' + s.title + '”';
       }
+      // Slice 2 — the DJ's voice: the call chain that plays ahead of
+      // each song. Featured decks get the scratch sting + their own
+      // call; the rest of the slate gets the short call. The song's
+      // recorded title clip rides last when one exists; a song with
+      // no title clip is called by the generic call alone, and if the
+      // generic clips fail the song still plays with no call.
+      function callKeysFor(idx) {
+        var s = cfg.songs[idx], keys = [];
+        if (idx === 0 || idx === 1) { keys.push('hs-sting'); keys.push(idx === 0 ? 'hs-one' : 'hs-two'); }
+        else keys.push('hs-spot');
+        if (s.ht) keys.push('title-' + s.id);
+        return keys;
+      }
+      function playChain(idx, done) {
+        chainGen++;
+        chain = { gen: chainGen, keys: callKeysFor(idx), i: 0, done: done };
+        chainStep();
+      }
+      function chainStep() {
+        if (!chain || !isOpen) { chain = null; return; }
+        var gen = chain.gen;
+        if (gen !== chainGen) { chain = null; return; }
+        if (chain.i >= chain.keys.length) { var d = chain.done; chain = null; if (mode === 'chain') mode = 'idle'; d(); return; }
+        var key = chain.keys[chain.i]; chain.i++;
+        var served = chain.i;
+        mode = 'chain';
+        try { audio.volume = 1; } catch (e) {}
+        audio.src = '/ann/' + key + '.mp3?v=' + cfg.v;
+        var p = audio.play(); if (p && p.catch) p.catch(function () { if (chain && chain.gen === gen && chain.i === served) chainStep(); });
+      }
+      function stopChain() {
+        chainGen++;
+        chain = null;
+        if (mode === 'chain') mode = 'idle';
+      }
       function livePos() {
         var per = cfg.playSecs * 1000;
         var el = (Date.now() - cfg.cycleStart) % cfg.cycleLenMs;
@@ -1840,22 +1877,45 @@ function hotspotBoothHtml(hs) {
         var idx = Math.floor(el / per);
         return { idx: idx, offset: (el - idx * per) / 1000, remainMs: per - (el - idx * per) };
       }
-      function playCurrent() {
+      // The booth turns to whatever song the clock says is on air:
+      // the DJ calls it first (chain), then the song joins at the
+      // offset the clock has reached by the time the call ends.
+      function beginAtLive() {
         if (!isOpen) return;
-        var p;
-        if (cfg.playSecs > 0 && cfg.cycleLenMs > 0) { p = livePos(); }
-        else { p = { idx: (cur + 1) % cfg.songs.length, offset: 0, remainMs: 0 }; }
-        cur = p.idx;
+        var idx;
+        if (cfg.playSecs > 0 && cfg.cycleLenMs > 0) idx = livePos().idx;
+        else idx = (cur + 1) % cfg.songs.length;
+        startChainFor(idx);
+      }
+      function startChainFor(idx) {
+        if (!isOpen) return;
+        stopChain();
+        clearTimers();
+        if (fadeInt) { clearInterval(fadeInt); fadeInt = null; }
+        try { audio.pause(); } catch (e) {}
+        cur = idx;
         var s = cfg.songs[cur];
         if (window.__stopStage) { try { window.__stopStage(); } catch (e) {} }
         if (window.__muteHero) { try { window.__muteHero(); } catch (e) {} }
         callEl.textContent = callFor(cur);
         statEl.textContent = 'In the booth now: ' + s.title + ' by ' + s.artist + ' — live on the booth radio.';
         for (var d = 0; d < decks.length; d++) { if (decks[d]) decks[d].classList.toggle('on', d === cur); }
+        playChain(cur, function () { startSong(); });
+      }
+      function startSong() {
+        if (!isOpen) return;
+        var offset = 0, remainMs = 0;
+        if (cfg.playSecs > 0 && cfg.cycleLenMs > 0) {
+          var p = livePos();
+          if (p.idx !== cur) { startChainFor(p.idx); return; }
+          offset = p.offset; remainMs = p.remainMs;
+        }
+        var s = cfg.songs[cur];
         clearTimers();
         try { audio.pause(); } catch (e) {}
+        mode = 'song';
         audio.src = s.audio;
-        var seekTo = p.offset;
+        var seekTo = offset;
         var onMeta = function () {
           audio.removeEventListener('loadedmetadata', onMeta);
           if (seekTo > 0.5) { try { audio.currentTime = seekTo; } catch (e) {} }
@@ -1865,9 +1925,9 @@ function hotspotBoothHtml(hs) {
         var pr = audio.play(); if (pr && pr.catch) pr.catch(function () {});
         fadeTo(1, 900);
         try { fetch('/api/play/' + s.id, { method: 'POST' }); } catch (e) {}
-        if (cfg.playSecs > 0 && p.remainMs > 0) {
-          if (p.remainMs > 1600) later(function () { fadeTo(0, 1200); }, p.remainMs - 1200);
-          later(function () { playCurrent(); }, p.remainMs);
+        if (cfg.playSecs > 0 && remainMs > 0) {
+          if (remainMs > 1600) later(function () { fadeTo(0, 1200); }, remainMs - 1200);
+          later(function () { beginAtLive(); }, remainMs);
         }
       }
       function openBooth() {
@@ -1875,11 +1935,12 @@ function hotspotBoothHtml(hs) {
         full.hidden = false;
         openBtn.textContent = '✖ CLOSE THE BOOTH';
         cur = -1;
-        playCurrent();
+        beginAtLive();
       }
       function closeBooth() {
         isOpen = false;
         openBtn.textContent = '🎧 OPEN THE BOOTH';
+        stopChain();
         clearTimers();
         fadeTo(0, 350, function () { try { audio.pause(); } catch (e) {} });
         for (var d = 0; d < decks.length; d++) { if (decks[d]) decks[d].classList.remove('on'); }
@@ -1887,10 +1948,14 @@ function hotspotBoothHtml(hs) {
       }
       openBtn.addEventListener('click', function () { if (isOpen) closeBooth(); else openBooth(); });
       audio.addEventListener('ended', function () {
-        if (isOpen && !(cfg.playSecs > 0)) playCurrent();
+        if (!isOpen) return;
+        if (mode === 'chain') { chainStep(); return; }
+        if (!(cfg.playSecs > 0)) beginAtLive();
       });
       audio.addEventListener('error', function () {
-        if (isOpen && !(cfg.playSecs > 0)) playCurrent();
+        if (!isOpen) return;
+        if (mode === 'chain') { chainStep(); return; }
+        if (!(cfg.playSecs > 0)) beginAtLive();
       });
       var sbtns = document.querySelectorAll('[data-hs-share]');
       for (var s2 = 0; s2 < sbtns.length; s2++) sbtns[s2].addEventListener('click', function () {
