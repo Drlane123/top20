@@ -1683,12 +1683,40 @@ function todaysHotSpots() {
     if (pid && byId.has(pid)) return hotspotCard(byId.get(pid), true);
     return r ? hotspotCard(r, false) : null;
   });
-  return { settings, pair, slateCount: slate.length, pairIndex, pairCount };
+  return { settings, pair, slateCount: slate.length, pairIndex, pairCount,
+    slateCards: slate.map((r) => hotspotCard(r, false)) };
 }
 function hotspotBoothHtml(hs) {
-  const cards = hs.pair.filter(Boolean);
-  if (!cards.length) return "";
+  const pairCards = hs.pair.filter(Boolean);
+  if (!pairCards.length) return "";
   const st = hs.settings;
+  // Booth radio play order: the featured pair first (owner placements
+  // already applied), then the rest of today's buzz slate in buzz
+  // order, each song once.
+  const inPair = new Set(pairCards.map((c) => c.id));
+  const playOrder = pairCards.concat((hs.slateCards || []).filter((c) => !inPair.has(c.id)));
+  // The booth is a radio, not a player: its position is a pure
+  // function of the clock. One playback cycle is the whole play order
+  // at playSeconds a song, and cycleStart is the start of the current
+  // cycle on the global timeline — so whoever opens the booth lands
+  // on the song (and the second inside it) that is on air right now,
+  // and closing/reopening rejoins live, never from the top.
+  let cycleStart = 0, cycleLenMs = 0;
+  if (st.playSeconds > 0 && playOrder.length) {
+    cycleLenMs = playOrder.length * st.playSeconds * 1000;
+    cycleStart = Math.floor(Date.now() / cycleLenMs) * cycleLenMs;
+  }
+  const catchLine = `<p class="hs-catch">🔥 Want to get in the Hot Spot? <a href="/profile">Create a profile</a> and load your song.</p>`;
+  const vu = (cls) => `<div class="hs-vu ${cls}" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>`;
+  const tabDeck = (c, i) => `
+      <div class="hs-tdeck">
+        <div class="hs-twrap">
+          <div class="hs-tdisc"><img src="${esc(c.cover)}" alt=""></div>
+          <div class="hs-tarm"></div>
+          <div class="hs-tonlab">HOT SPOT ${i === 0 ? "ONE" : "TWO"}</div>
+        </div>
+        <div class="hs-tsong">${esc(c.artist)} — ${esc(c.title)}</div>
+      </div>`;
   const deck = (c, i) => `
       <div class="hs-deck" id="hsDeck${i}">
         <div class="hs-disc"><img src="${esc(c.cover)}" alt=""></div>
@@ -1706,13 +1734,35 @@ function hotspotBoothHtml(hs) {
       <p class="hs-buzz">Getting a buzz — ▶ ${fmtNum(c.plays)} plays · ♥ ${fmtNum(c.likes)} · ⤴ ${fmtNum(c.shares)}${c.placed ? " · ⭐ Owner’s pick" : ""}</p>
       <button type="button" class="hs-share" data-hs-share="${c.id}" data-hs-title="${esc(c.title)}" data-hs-artist="${esc(c.artist)}">⤴ Share</button>
     </div>`;
-  const first = cards[0];
   return `
   <div class="panel hs-booth" id="hsBooth">
     <style>
     .hs-booth{border:1px solid rgba(255,120,60,.55);background:linear-gradient(180deg,rgba(255,90,40,.10),rgba(20,10,16,.25));overflow:hidden}
     .hs-onair{display:inline-block;color:#ff5d47;font-weight:900;letter-spacing:2px;font-size:11px;animation:hsBlink 1.2s steps(1) infinite}
     @keyframes hsBlink{0%,55%{opacity:1}56%,100%{opacity:.25}}
+    .hs-tabhead{font-weight:900;letter-spacing:1px;font-size:15px;color:#fff}
+    .hs-tabrow{display:flex;align-items:center;justify-content:center;gap:16px;margin-top:10px;flex-wrap:wrap}
+    .hs-tdeck{width:132px;text-align:center}
+    .hs-twrap{position:relative;width:112px;margin:0 auto}
+    .hs-tdisc{width:104px;height:104px;margin:0 auto;border-radius:50%;background:radial-gradient(circle,#111 0 26%,#1c1c22 27% 55%,#0a0a0e 56% 78%,#22222a 79% 100%);border:2px solid rgba(255,217,138,.5);display:flex;align-items:center;justify-content:center;animation:hsSpin 1.6s linear infinite;box-shadow:0 6px 18px rgba(0,0,0,.55)}
+    .hs-tdisc img{width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid #ffd98a}
+    .hs-tarm{position:absolute;top:2px;right:4px;width:34px;height:5px;border-radius:3px;background:linear-gradient(90deg,#cfd6e4,#7c8698);transform:rotate(24deg);transform-origin:right center;z-index:2}
+    .hs-tonlab{position:absolute;left:50%;transform:translateX(-50%);bottom:9px;background:rgba(0,0,0,.78);color:#ffd98a;font-size:10.5px;font-weight:900;letter-spacing:1.2px;padding:3px 9px;border-radius:999px;border:1px solid rgba(255,217,138,.65);white-space:nowrap;z-index:2}
+    .hs-tsong{margin-top:7px;font-size:11.5px;color:#dfe8ff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .hs-mid{display:flex;flex-direction:column;align-items:center;gap:9px;min-width:158px}
+    .hs-vu{display:flex;align-items:flex-end;gap:3px;height:26px;justify-content:center}
+    .hs-vu span{display:block;width:5px;height:100%;border-radius:2px;background:linear-gradient(180deg,#ff5d47,#ffd98a 55%,#39ff6a);transform-origin:bottom;animation:hsVu .55s ease-in-out infinite alternate}
+    .hs-vu span:nth-child(1){animation-duration:.48s}
+    .hs-vu span:nth-child(2){animation-duration:.67s;animation-delay:.08s}
+    .hs-vu span:nth-child(3){animation-duration:.41s;animation-delay:.15s}
+    .hs-vu span:nth-child(4){animation-duration:.74s;animation-delay:.04s}
+    .hs-vu span:nth-child(5){animation-duration:.53s;animation-delay:.19s}
+    .hs-vu span:nth-child(6){animation-duration:.62s;animation-delay:.11s}
+    .hs-vu span:nth-child(7){animation-duration:.45s;animation-delay:.02s}
+    @keyframes hsVu{from{transform:scaleY(.3)}to{transform:scaleY(1)}}
+    .hs-open{background:linear-gradient(180deg,#ff9a5c,#e2543e);color:#fff;border:1px solid #a32e1c;border-radius:999px;padding:12px 20px;font-weight:900;letter-spacing:1px;cursor:pointer}
+    .hs-catch{text-align:center;color:#ffe9b0;font-weight:700;font-size:13.5px;margin:10px 4px 2px}
+    .hs-catch a{color:#ffd98a;text-decoration:underline}
     .hs-stage{display:flex;align-items:flex-start;justify-content:center;gap:10px;margin:12px 0 4px}
     .hs-deck{position:relative;width:118px;text-align:center}
     .hs-disc{width:104px;height:104px;margin:0 auto;border-radius:50%;background:radial-gradient(circle,#111 0 26%,#1c1c22 27% 55%,#0a0a0e 56% 78%,#22222a 79% 100%);border:2px solid rgba(255,217,138,.5);display:flex;align-items:center;justify-content:center;animation:hsSpin 1.6s linear infinite;animation-play-state:paused;box-shadow:0 6px 18px rgba(0,0,0,.55)}
@@ -1721,7 +1771,6 @@ function hotspotBoothHtml(hs) {
     @keyframes hsSpin{to{transform:rotate(360deg)}}
     .hs-arm{position:absolute;top:2px;right:8px;width:34px;height:5px;border-radius:3px;background:linear-gradient(90deg,#cfd6e4,#7c8698);transform:rotate(24deg);transform-origin:right center}
     .hs-decklab{margin-top:6px;font-size:11px;font-weight:900;letter-spacing:1.5px;color:#ffd98a}
-    .hs-mix{align-self:center;font-size:26px;filter:drop-shadow(0 0 8px rgba(255,190,60,.6))}
     .hs-call{text-align:center;font-weight:800;color:#ffe9b0;font-size:15.5px;margin:8px 4px 2px}
     .hs-cards{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
     @media (max-width:560px){.hs-cards{grid-template-columns:1fr}}
@@ -1729,38 +1778,45 @@ function hotspotBoothHtml(hs) {
     .hs-badge{font-size:11px;font-weight:900;letter-spacing:1.2px;color:#ff9a5c;margin-bottom:6px}
     .hs-buzz{color:#bcd;font-size:12.5px;margin:8px 0}
     .hs-share{background:rgba(255,190,60,.12);border:1px solid rgba(255,190,60,.45);color:#ffd98a;border-radius:999px;padding:7px 13px;font-size:12px;font-weight:800;cursor:pointer}
-    .hs-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:12px}
-    .hs-play{background:linear-gradient(180deg,#ff9a5c,#e2543e);color:#fff;border:1px solid #a32e1c;border-radius:999px;padding:12px 20px;font-weight:900;letter-spacing:1px;cursor:pointer}
-    .hs-stat{color:#bcd;font-size:12.5px}
+    .hs-stat{color:#bcd;font-size:12.5px;text-align:center;margin-top:10px}
     </style>
-    <div class="hs-onair">● ON AIR</div>
-    <h2 style="margin:2px 0 0">🎧 THE DJ BOOTH</h2>
-    <p class="sub" style="margin:2px 0 0">featuring <b style="color:#ffd98a">TODAY’S HOT SPOTS</b> — the songs getting a buzz, whether they’re charting or not. Two at a time on the decks, a fresh pair every ${st.slotHours} hour${st.slotHours === 1 ? "" : "s"}.</p>
-    <div class="hs-stage">
-      ${cards.map((c, i) => deck(c, i)).join('<div class="hs-mix" aria-hidden="true">🎙️</div>')}
+    <div class="hs-tab" id="hsTab">
+      <span class="hs-onair">● ON AIR</span>
+      <span class="hs-tabhead">🎧 THE DJ BOOTH — featuring TODAY’S HOT SPOTS</span>
+      <div class="hs-tabrow">
+        ${tabDeck(pairCards[0], 0)}
+        <div class="hs-mid">
+          ${vu("")}
+          <button type="button" class="hs-open" id="hsOpenBtn">🎧 OPEN THE BOOTH</button>
+        </div>
+        ${pairCards[1] ? tabDeck(pairCards[1], 1) : ""}
+      </div>
+      ${catchLine}
     </div>
-    <div class="hs-call" id="hsCall">🎙️ “TODAY’S HOT SPOT ONE — ${esc(first.artist)}, ${esc(first.title)}”</div>
-    <div class="hs-cards">${cards.map((c, i) => card(c, i)).join("")}</div>
-    <div class="hs-controls">
-      <button type="button" class="hs-play" id="hsPlayBtn">▶ PLAY THE BOOTH</button>
-      <span class="hs-stat" id="hsStat">The pair, back to back — nothing else cuts in.${st.playSeconds > 0 ? " " + st.playSeconds + " seconds a song, then the DJ fades to the next one." : " Full songs, start to finish."}</span>
+    <div class="hs-full" id="hsFull" hidden>
+      <p class="sub" style="margin:12px 0 0">The booth is <b style="color:#ffd98a">always on</b> — the songs getting a buzz, whether they’re charting or not. Two at a time on the decks, a fresh pair every ${st.slotHours} hour${st.slotHours === 1 ? "" : "s"}, and the whole slate rolling behind them. Open it and you hear it <b style="color:#fff">live, right where it’s at</b> — nothing else cuts in.</p>
+      <div class="hs-stage">
+        ${pairCards.map((c, i) => deck(c, i)).join(vu("hs-vu-mid"))}
+      </div>
+      <div class="hs-call" id="hsCall"></div>
+      <div class="hs-cards">${pairCards.map((c, i) => card(c, i)).join("")}</div>
+      <p class="hs-stat" id="hsStat">The booth is on the air.</p>
+      ${catchLine}
     </div>
     <audio id="hsAudio" preload="none"></audio>
     <script>
     (function () {
-      var pair = ${JSON.stringify(cards.map((c) => ({ id: c.id, title: c.title, artist: c.artist, audio: c.audio }))).replace(/</g, "\\u003c")};
-      var playSecs = ${st.playSeconds};
+      var cfg = ${JSON.stringify({ songs: playOrder.map((c) => ({ id: c.id, title: c.title, artist: c.artist, audio: c.audio })), playSecs: st.playSeconds, cycleStart: cycleStart, cycleLenMs: cycleLenMs }).replace(/</g, "\\u003c")};
       var audio = document.getElementById('hsAudio');
-      var btn = document.getElementById('hsPlayBtn');
+      var openBtn = document.getElementById('hsOpenBtn');
+      var full = document.getElementById('hsFull');
       var callEl = document.getElementById('hsCall');
       var statEl = document.getElementById('hsStat');
-      if (!audio || !btn || !pair.length) return;
+      if (!audio || !openBtn || !full || !cfg.songs.length) return;
       var decks = [document.getElementById('hsDeck0'), document.getElementById('hsDeck1')];
-      var idx = 0, playing = false, cutTimer = null, fadeInt = null;
-      function callFor(i) {
-        var w = i === 0 ? 'ONE' : 'TWO';
-        return '🎙️ “TODAY’S HOT SPOT ' + w + ' — ' + pair[i].artist + ', ' + pair[i].title + '”';
-      }
+      var isOpen = false, cur = -1, timers = [], fadeInt = null;
+      function clearTimers() { for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]); timers = []; }
+      function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
       function fadeTo(target, ms, done) {
         if (fadeInt) { clearInterval(fadeInt); fadeInt = null; }
         var from = 0; try { from = audio.volume; } catch (e) {}
@@ -1771,41 +1827,73 @@ function hotspotBoothHtml(hs) {
           if (n >= steps) { clearInterval(fadeInt); fadeInt = null; if (done) done(); }
         }, 50);
       }
-      function start(i) {
-        idx = i;
+      function callFor(i) {
+        var s = cfg.songs[i];
+        if (i === 0) return '🎙️ “TODAY’S HOT SPOT ONE — ' + s.artist + ', ' + s.title + '”';
+        if (i === 1) return '🎙️ “TODAY’S HOT SPOT TWO — ' + s.artist + ', ' + s.title + '”';
+        return '🎙️ “HOT SPOT — ' + s.artist + ', ' + s.title + '”';
+      }
+      function livePos() {
+        var per = cfg.playSecs * 1000;
+        var el = (Date.now() - cfg.cycleStart) % cfg.cycleLenMs;
+        if (el < 0) el += cfg.cycleLenMs;
+        var idx = Math.floor(el / per);
+        return { idx: idx, offset: (el - idx * per) / 1000, remainMs: per - (el - idx * per) };
+      }
+      function playCurrent() {
+        if (!isOpen) return;
+        var p;
+        if (cfg.playSecs > 0 && cfg.cycleLenMs > 0) { p = livePos(); }
+        else { p = { idx: (cur + 1) % cfg.songs.length, offset: 0, remainMs: 0 }; }
+        cur = p.idx;
+        var s = cfg.songs[cur];
         if (window.__stopStage) { try { window.__stopStage(); } catch (e) {} }
         if (window.__muteHero) { try { window.__muteHero(); } catch (e) {} }
-        callEl.textContent = callFor(i);
-        statEl.textContent = 'In the booth now: Hot Spot ' + (i + 1) + ' — ' + pair[i].title + ' by ' + pair[i].artist;
-        for (var d = 0; d < decks.length; d++) { if (decks[d]) decks[d].classList.toggle('on', d === i); }
+        callEl.textContent = callFor(cur);
+        statEl.textContent = 'In the booth now: ' + s.title + ' by ' + s.artist + ' — live on the booth radio.';
+        for (var d = 0; d < decks.length; d++) { if (decks[d]) decks[d].classList.toggle('on', d === cur); }
+        clearTimers();
         try { audio.pause(); } catch (e) {}
-        audio.src = pair[i].audio;
+        audio.src = s.audio;
+        var seekTo = p.offset;
+        var onMeta = function () {
+          audio.removeEventListener('loadedmetadata', onMeta);
+          if (seekTo > 0.5) { try { audio.currentTime = seekTo; } catch (e) {} }
+        };
+        audio.addEventListener('loadedmetadata', onMeta);
         try { audio.volume = 0; } catch (e) {}
-        var p = audio.play(); if (p && p.catch) p.catch(function () {});
+        var pr = audio.play(); if (pr && pr.catch) pr.catch(function () {});
         fadeTo(1, 900);
-        try { fetch('/api/play/' + pair[i].id, { method: 'POST' }); } catch (e) {}
-        if (cutTimer) clearTimeout(cutTimer);
-        if (playSecs > 0) cutTimer = setTimeout(function () {
-          fadeTo(0, 1200, function () { if (playing) start((idx + 1) % pair.length); });
-        }, playSecs * 1000);
+        try { fetch('/api/play/' + s.id, { method: 'POST' }); } catch (e) {}
+        if (cfg.playSecs > 0 && p.remainMs > 0) {
+          if (p.remainMs > 1600) later(function () { fadeTo(0, 1200); }, p.remainMs - 1200);
+          later(function () { playCurrent(); }, p.remainMs);
+        }
       }
-      function stopBooth() {
-        playing = false;
-        if (cutTimer) clearTimeout(cutTimer);
+      function openBooth() {
+        isOpen = true;
+        full.hidden = false;
+        openBtn.textContent = '✖ CLOSE THE BOOTH';
+        cur = -1;
+        playCurrent();
+      }
+      function closeBooth() {
+        isOpen = false;
+        openBtn.textContent = '🎧 OPEN THE BOOTH';
+        clearTimers();
         fadeTo(0, 350, function () { try { audio.pause(); } catch (e) {} });
         for (var d = 0; d < decks.length; d++) { if (decks[d]) decks[d].classList.remove('on'); }
-        btn.textContent = '▶ PLAY THE BOOTH';
-        statEl.textContent = 'The booth is quiet. Tap play and the Hot Spots ride again.';
+        full.hidden = true;
       }
-      btn.addEventListener('click', function () {
-        if (playing) { stopBooth(); return; }
-        playing = true;
-        btn.textContent = '⏹ STOP THE BOOTH';
-        start(idx);
+      openBtn.addEventListener('click', function () { if (isOpen) closeBooth(); else openBooth(); });
+      audio.addEventListener('ended', function () {
+        if (isOpen && !(cfg.playSecs > 0)) playCurrent();
       });
-      audio.addEventListener('ended', function () { if (playing) start((idx + 1) % pair.length); });
+      audio.addEventListener('error', function () {
+        if (isOpen && !(cfg.playSecs > 0)) playCurrent();
+      });
       var sbtns = document.querySelectorAll('[data-hs-share]');
-      for (var s = 0; s < sbtns.length; s++) sbtns[s].addEventListener('click', function () {
+      for (var s2 = 0; s2 < sbtns.length; s2++) sbtns[s2].addEventListener('click', function () {
         var id = this.getAttribute('data-hs-share');
         var t = this.getAttribute('data-hs-title'), a = this.getAttribute('data-hs-artist');
         var url = window.location.origin + '/song/' + id;
