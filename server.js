@@ -14,7 +14,7 @@ const { analyzeAudio, quickSpecs } = require("./analyze");
 const storage = require("./storage");
 const VIEWCAST_SETS = require("./viewcast-data");
 const sharecard = require("./sharecard");
-const { recalc, latestChartDate, previousChartDate, ensureCurrent, todayStr, supportBonus, supportBySong } = require("./charts");
+const { recalc, latestChartDate, previousChartDate, ensureCurrent, todayStr, supportBonus, supportBySong, setNotifyHook } = require("./charts");
 
 const PORT = process.env.PORT || 8077;
 // Build identity for the stale-page self-heal: Render sets
@@ -1573,8 +1573,73 @@ app.post("/profile/video", videoUploadMw, (req, res) => {
 function emailBody(n, artistName, songTitle, dateStr) {
   return `Hi ${artistName} — your song "${songTitle}" entered the ${cap(n.level)} ${n.genre} Top 20 at #${n.rank} on ${dateStr}. ` +
     `Only the Top 20 plays on the Stage, so your song is now in rotation, 24/7, while it holds its spot. ` +
-    `Come back to TOP 20 any time to watch your rank — and remember, any day a song can pop into the Top 20.`;
+    `Come back to TOP 20 any time to watch your rank — and remember, any day a song can pop into the Top 20.` +
+    `\n\n⭐ Share your accomplishment — you made HOT TOP 20! A spot like this only lasts so long, so post it today and let everybody know.` +
+    (n.song_id ? `\nYour song page: https://hottop20.com/song/${n.song_id}` : ``) +
+    `\n\n— HOT TOP 20`;
 }
+
+/* ------------------------- AUTO-EMAIL (owner, Nov 16, 2026) -------------------------
+   The app emails artists by itself the moment their song earns a spot:
+   a Top 20 chart entry, a DJ Pick, or a DJ Booth Hot Spot. Sending runs
+   through Resend when RESEND_API_KEY is set on the server; with no key
+   the system logs the email it WOULD have sent and the admin draft list
+   stays the record — nothing ever fails because mail is off. */
+const MAIL_FROM = process.env.MAIL_FROM || "HOT TOP 20 <noreply@hottop20.com>";
+async function sendEmail(to, subject, text) {
+  if (!to || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) { console.log("[mail] skip (no usable address) subject=" + subject); return { sent: false, reason: "no-address" }; }
+  const key = process.env.RESEND_API_KEY;
+  if (!key) { console.log("[mail] NOT SENT (mail not switched on) to=" + to + " subject=" + subject); return { sent: false, reason: "unconfigured" }; }
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({ from: MAIL_FROM, to: [to], subject, text }),
+    });
+    if (!r.ok) { console.log("[mail] FAILED http " + r.status + " to=" + to + " subject=" + subject); return { sent: false, reason: "http-" + r.status }; }
+    console.log("[mail] sent to=" + to + " subject=" + subject);
+    return { sent: true };
+  } catch (e) { console.log("[mail] ERROR " + (e && e.message) + " to=" + to); return { sent: false, reason: "error" }; }
+}
+function artistContact(userId) {
+  try { return db.prepare("SELECT name, email FROM users WHERE id = ?").get(userId) || {}; } catch (e) { return {}; }
+}
+function mailStampGet(key) { try { const r = db.prepare("SELECT value FROM admin_config WHERE key = ?").get(key); return r ? r.value : ""; } catch (e) { return ""; } }
+function mailStampSet(key, value) { try { db.prepare("INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(key, String(value)); } catch (e) {} }
+
+function djPickEmailText(artistName, songTitle, songId) {
+  return {
+    subject: "🎧 You're a DJ Pick on HOT TOP 20",
+    text: "Hi " + artistName + " — the HOT TOP 20 DJ panel picked your song \"" + songTitle + "\" as one of this week's DJ Picks!\n\n" +
+      "Your song carries the 🎧 DJ Pick badge in the National Overall Top 20 — the DJs heard it, and they chose it.\n\n" +
+      "⭐ Share your accomplishment — a moment like this only lasts so long, so post it today and let everybody know.\n\n" +
+      "Your song page: https://hottop20.com/song/" + songId + "\n\n— HOT TOP 20",
+  };
+}
+
+// Charts hook: every fresh Top 20 notification becomes an email. A song
+// that landed as a DJ Pick gets the DJ Pick email instead of the chart
+// email. One email per notification, stamped so re-runs never re-send.
+function emailChartNotifications(created, date) {
+  (async () => {
+    for (const n of created) {
+      try {
+        const stampKey = "emailed_notif_" + n.id;
+        if (mailStampGet(stampKey)) continue;
+        const entry = db.prepare("SELECT dj_pick FROM chart_entries WHERE chart_date = ? AND level = ? AND genre = ? AND region_key = ? AND song_id = ?").get(date, n.level, n.genre, n.region_key, n.song_id);
+        const song = db.prepare("SELECT title FROM songs WHERE id = ?").get(n.song_id);
+        const contact = artistContact(n.user_id);
+        if (!contact.email) { console.log("[mail] no email on file for user " + n.user_id + " (song " + n.song_id + ")"); mailStampSet(stampKey, "no-email " + new Date().toISOString()); continue; }
+        let subject, text;
+        if (entry && entry.dj_pick) { const p = djPickEmailText(contact.name || "artist", song ? song.title : "", n.song_id); subject = p.subject; text = p.text; }
+        else { subject = emailSubject(n); text = emailBody(n, contact.name || "artist", song ? song.title : "", date); }
+        const r = await sendEmail(contact.email, subject, text);
+        mailStampSet(stampKey, (r.sent ? "sent " : "queued ") + new Date().toISOString());
+      } catch (e) { console.log("[mail] notification " + (n && n.id) + " failed: " + (e && e.message)); }
+    }
+  })();
+}
+setNotifyHook(emailChartNotifications);
 
 /* --------------------------------- Stage ---------------------------------- */
 
@@ -1688,6 +1753,46 @@ function todaysHotSpots() {
   return { settings, pair, slateCount: slate.length, pairIndex, pairCount,
     slateCards: slate.map((r) => hotspotCard(r, false)) };
 }
+// AUTO-EMAIL — HOT SPOTS (owner, Nov 16, 2026): the moment a song takes
+// a deck, its artist is emailed. A hand placement emails once per
+// placement; a buzz-dealt song emails once per day while it holds the
+// deck. Stamps live in admin_config so rotations, re-runs and restarts
+// never re-send.
+function hotspotEmailText(artistName, card, slot) {
+  return {
+    subject: "🔥 You made the Hot Spot today on HOT TOP 20",
+    text: "Hi " + artistName + " — your song \"" + card.title + "\" made Hot Spot " + (slot === 1 ? "One" : "Two") + " today in the DJ Booth on HOT TOP 20!\n\n" +
+      "Your song is in the booth rotation today — no commercial interruption, just your song in play.\n\n" +
+      "⭐ Share your accomplishment — a Hot Spot only lasts so long, so post it today and tell your people to come listen.\n\n" +
+      "Listen here: https://hottop20.com\nYour song page: https://hottop20.com/song/" + card.id + "\n\n— HOT TOP 20",
+  };
+}
+async function emailHotSpotSlot(slot) {
+  const hs = todaysHotSpots();
+  const card = hs.pair[slot - 1];
+  if (!card) return { status: "empty" };
+  let identity;
+  if (card.placed) {
+    let setOn = "";
+    try { const row = db.prepare("SELECT value FROM admin_config WHERE key = ?").get("hotspot_slot" + slot); if (row && row.value) setOn = JSON.parse(row.value).set_on || ""; } catch (e) {}
+    identity = "placed:" + card.id + ":" + setOn;
+  } else {
+    identity = "dealt:" + card.id + ":" + todayStr();
+  }
+  const stampKey = "hs_emailed_" + slot;
+  if (mailStampGet(stampKey) === identity) return { status: "already" };
+  const song = db.prepare("SELECT artist_id FROM songs WHERE id = ?").get(card.id);
+  const contact = song ? artistContact(song.artist_id) : {};
+  if (!contact.email) { mailStampSet(stampKey, identity); console.log("[mail] hot spot " + slot + ": no email on file for song " + card.id); return { status: "no-email" }; }
+  const m = hotspotEmailText(contact.name || card.artist, card, slot);
+  const r = await sendEmail(contact.email, m.subject, m.text);
+  mailStampSet(stampKey, identity);
+  return { status: r.sent ? "sent" : "queued", artist: contact.name || card.artist, email: contact.email };
+}
+function hotspotEmailSweep() { emailHotSpotSlot(1).catch(() => {}); emailHotSpotSlot(2).catch(() => {}); }
+setTimeout(hotspotEmailSweep, 90000);
+setInterval(hotspotEmailSweep, 15 * 60 * 1000);
+
 function hotspotBoothHtml(hs) {
   const pairCards = hs.pair.filter(Boolean);
   if (!pairCards.length) return "";
@@ -7624,7 +7729,7 @@ app.post("/admin/spotlight", requireAdmin, (req, res) => {
 // clear a Hot Spot deck, and tune the booth's settings. Showcase only —
 // nothing here touches a score, a rank, or the chart. Immediate, like
 // chart placements: the booth on the home page runs it the same visit.
-app.post("/admin/hotspots/place", requireAdmin, (req, res) => {
+app.post("/admin/hotspots/place", requireAdmin, async (req, res) => {
   const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
   const slot = Number(req.body.slot);
   if (slot !== 1 && slot !== 2) return back("That Hot Spot slot doesn't exist.");
@@ -7638,7 +7743,12 @@ app.post("/admin/hotspots/place", requireAdmin, (req, res) => {
   if (!song) return back("That song isn't live — a Hot Spot needs a song that's uploaded and live.");
   db.prepare("INSERT INTO admin_config (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
     .run(key, JSON.stringify({ song_id: songId, set_on: todayStr() }));
-  return back("Hot Spot " + slot + " set — it's in the DJ booth on the home page right now.");
+  const mail = await emailHotSpotSlot(slot).catch(() => ({ status: "error" }));
+  const note = mail.status === "sent" ? " \u2709 Emailed " + (mail.artist || "the artist") + " the good news."
+    : mail.status === "queued" ? " \u2709 The artist's email is ready \u2014 it sends the moment mail is switched on."
+    : mail.status === "no-email" ? " (No email on file for that artist, so no email went out.)"
+    : mail.status === "already" ? " (That artist already got the Hot Spot email for this run.)" : "";
+  return back("Hot Spot " + slot + " set \u2014 it's in the DJ booth on the home page right now." + note);
 });
 app.post("/admin/hotspots/settings", requireAdmin, (req, res) => {
   const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));

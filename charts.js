@@ -309,6 +309,13 @@ function materializeDjVotes(db, date) {
   }
 }
 
+// AUTO-EMAIL HOOK (owner, Nov 16, 2026): server.js registers a callback
+// here; every recalc that creates chart-entry notifications hands them to
+// it so the artists get emailed automatically. Kept as a hook so charts.js
+// stays free of mail code, and wrapped so mail can never break a chart.
+let notifyHook = null;
+function setNotifyHook(fn) { notifyHook = typeof fn === "function" ? fn : null; }
+
 function recalc(db, date = todayStr()) {
   try { materializeDjVotes(db, date); } catch (e) { /* a pre-vote DB simply has no ballots */ }
   const prevDate = previousChartDate(db, date);
@@ -352,6 +359,7 @@ function recalc(db, date = todayStr()) {
     db.exec("ROLLBACK");
     throw err;
   }
+  if (notifyHook && created.length) { try { notifyHook(created, date); } catch (e) { /* mail never breaks a chart */ } }
   return { date, prevDate, notifications: created, entryCount: entries.length };
 }
 
@@ -375,4 +383,4 @@ function ensureCurrent(db, today = todayStr()) {
   return dealt;
 }
 
-module.exports = { computeRankings, recalc, latestChartDate, previousChartDate, todayStr, ensureCurrent, dailyDriftFn, LEVELS, CHART_GENRES, supportBonus, supportBySong };
+module.exports = { computeRankings, recalc, setNotifyHook, latestChartDate, previousChartDate, todayStr, ensureCurrent, dailyDriftFn, LEVELS, CHART_GENRES, supportBonus, supportBySong };
