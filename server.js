@@ -364,8 +364,8 @@ const DECK_IMG = (() => {
   catch (e) { return null; }
 })();
 if (DECK_IMG) {
-  app.get("/deck.jpg", (req, res) => {
-    res.setHeader("Content-Type", "image/jpeg");
+  app.get("/deck.webp", (req, res) => {
+    res.setHeader("Content-Type", "image/webp");
     res.setHeader("Cache-Control", "public, max-age=86400");
     res.end(DECK_IMG);
   });
@@ -635,9 +635,11 @@ h2{letter-spacing:1px}
 .ringwrap.dim{opacity:.72}
 .ttdeck{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:min(96%,620px);z-index:0;pointer-events:none;padding-bottom:4.4%}
 .tt-stage{position:relative}
-.tt-base{display:block;width:100%;height:auto;border-radius:12px;box-shadow:0 18px 34px rgba(0,0,0,.55)}
-.tt-disc{position:absolute;left:17.35%;top:5.82%;width:50.07%;z-index:1}
-.tt-arm{position:absolute;inset:0;z-index:2;background:url(/deck.jpg) center/100% 100% no-repeat;clip-path:polygon(60% 0%,83% 0%,83% 15%,80% 30%,72% 37%,65% 42%,62% 40%,51% 37%,51% 20%,55% 17%,62% 13%,63% 5%)}
+.tt-base{display:block;width:100%;height:auto;filter:drop-shadow(0 16px 20px rgba(0,0,0,.5))}
+.tt-spinwrap{position:absolute;left:42.46%;top:27.8%;width:29.28%;aspect-ratio:1;transform:translate(-50%,-50%) scaleY(.473);z-index:1}
+.tt-spin{position:absolute;inset:0;animation:ttspin 12s linear infinite}
+.tt-spin img{display:block;width:100%;height:100%}
+.tt-arm{position:absolute;inset:0;z-index:2;background:url(/deck.webp) center/100% 100% no-repeat;clip-path:polygon(60% 0%,83% 0%,83% 15%,80% 30%,72% 37%,65% 42%,62% 40%,51% 37%,51% 20%,55% 17%,62% 13%,63% 5%)}
 .tt-glow{position:absolute;z-index:3;border-radius:50%;filter:blur(7px);mix-blend-mode:screen;animation:ttglow 2.4s ease-in-out infinite alternate}
 @keyframes ttglow{from{opacity:.3}to{opacity:.75}}
 .tt-shadow{position:absolute;left:4%;right:4%;bottom:1%;height:3.4%;background:radial-gradient(ellipse at center,rgba(0,0,0,.65),transparent 70%);filter:blur(4px);z-index:-1}
@@ -2347,8 +2349,8 @@ app.get("/", (req, res) => {
       '<div class="tt-shadow"></div>' +
       foot.replace("POS", "left:5.4%") + foot.replace("POS", "right:5.4%") +
       '<div class="tt-stage">' +
-      '<img class="tt-base" src="/deck.jpg" alt="">' +
-      '<canvas class="tt-disc" width="684" height="317"></canvas>' +
+      '<img class="tt-base" src="/deck.webp" alt="">' +
+      '<div class="tt-spinwrap"><div class="tt-spin"><img src="/disc.webp" alt=""></div></div>' +
       '<div class="tt-arm"></div>' +
       '<div class="tt-glow" style="left:73%;top:36.5%;width:13%;height:38%;background:radial-gradient(ellipse,rgba(255,150,70,.55),rgba(70,210,255,.22) 55%,transparent 72%)"></div>' +
       '<div class="tt-glow" style="left:53%;top:77.3%;width:31%;height:14%;background:radial-gradient(ellipse,rgba(70,210,255,.5),rgba(255,120,80,.2) 55%,transparent 72%);animation-delay:1.1s"></div>' +
@@ -2642,41 +2644,6 @@ app.get("/", (req, res) => {
       <div class="ringnow" id="ringNowB"></div>
     </div></div>
   </div></div>
-  <script>
-  (function(){
-    var tex = new Image(); tex.src = "/disc.webp";
-    var off = document.createElement("canvas"); off.width = 684; off.height = 684;
-    var octx = off.getContext("2d");
-    var MB = 0.298, MF = 0.629, SH = 4;
-    function draw(cv, ang){
-      var c = cv.getContext("2d"); if (!c) return;
-      octx.save(); octx.clearRect(0,0,684,684); octx.translate(342,342); octx.rotate(ang); octx.drawImage(tex,-342,-342); octx.restore();
-      c.clearRect(0,0,684,317);
-      var y, h;
-      for (y = 0; y < 102; y += SH) { h = Math.min(SH, 102-y); c.drawImage(off, 0, 342+(y-102)/MB, 684, h/MB, 0, y, 684, h); }
-      for (y = 102; y < 317; y += SH) { h = Math.min(SH, 317-y); c.drawImage(off, 0, 342+(y-102)/MF, 684, h/MF, 0, y, 684, h); }
-    }
-    var discs = [];
-    function init(){
-      discs = Array.prototype.slice.call(document.querySelectorAll(".tt-disc"));
-      if (!discs.length) return;
-      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) { discs.forEach(function(cv){ draw(cv, 0); }); return; }
-      var t0 = null;
-      function frame(ts){
-        if (!t0) t0 = ts;
-        var ang = ((ts - t0) % 12000) / 12000 * Math.PI * 2;
-        discs.forEach(function(cv){
-          var rc = cv.getBoundingClientRect();
-          if (rc.bottom < -50 || rc.top > window.innerHeight + 50) return;
-          draw(cv, ang);
-        });
-        requestAnimationFrame(frame);
-      }
-      requestAnimationFrame(frame);
-    }
-    if (tex.complete && tex.naturalWidth) init(); else tex.onload = init;
-  })();
-  </script>
   ${boothAt("below")}
   ${plaqueStrip}
   ${dropStrip}
