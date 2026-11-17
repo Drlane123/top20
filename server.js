@@ -8548,6 +8548,31 @@ const VIEWCAST_KEYS = Object.keys(VIEWCAST_SETS);
 const backdropBuf = {};
 for (const k of VIEWCAST_KEYS) backdropBuf[k] = Buffer.from(VIEWCAST_SETS[k].data.split(",")[1], "base64");
 
+/* MediaPipe selfie-segmentation, vendored and served from Dale's own
+   site (Nov 16, 2026): the studios' cutout machinery rides as base64
+   data files — this repo's own pattern for binary assets — and this
+   route serves it same-origin, so the virtual background never
+   depends on an outside CDN loading. If a file is missing the route
+   404s and the studio shows its VIRTUAL BACKGROUND OFF notice. */
+const MEDIAPIPE_FILES = (() => {
+  const parts = {}, out = {};
+  try {
+    for (let i = 1; i <= 5; i++) {
+      const d = require("./mediapipe-data-" + i);
+      for (const name of Object.keys(d)) parts[name] = (parts[name] || "") + d[name];
+    }
+    for (const name of Object.keys(parts)) out[name] = Buffer.from(parts[name], "base64");
+  } catch (e) { /* data files absent — every request 404s, loudly, in the studio */ }
+  return out;
+})();
+app.get("/mediapipe/:file", (req, res) => {
+  const buf = MEDIAPIPE_FILES[req.params.file];
+  if (!buf) return res.status(404).send("not found");
+  const ext = path.extname(req.params.file);
+  res.set("Content-Type", ext === ".js" ? "application/javascript" : ext === ".wasm" ? "application/wasm" : "application/octet-stream");
+  res.set("Cache-Control", "public, max-age=604800");
+  return res.send(buf);
+});
 app.get("/viewcast/backdrop/:key.jpg", (req, res) => {
   const buf = backdropBuf[req.params.key];
   if (!buf) return res.status(404).end();
@@ -8725,7 +8750,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     <h2 style="margin-top:0">Your episodes</h2>
     ${eps.length ? epRows : `<p style="color:#8a8f99;margin:4px 0">None yet — your first recording lands here.</p>`}
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+  <script src="/mediapipe/selfie_segmentation.js" crossorigin="anonymous"></script>
   <script>
   var video = document.getElementById('vcam'), canvas = document.getElementById('vstage'), ctx = canvas.getContext('2d');
   var W = 1280, H = 720, stream = null, facing = 'user', micTrack = null;
@@ -8943,7 +8968,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     if (seg || mode === 'frame') return;
     try {
       if (typeof SelfieSegmentation === 'undefined') { mode = 'frame'; return; }
-      seg = new SelfieSegmentation({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f; } });
+      seg = new SelfieSegmentation({ locateFile: function (f) { return '/mediapipe/' + f; } });
       // Recipe: the segmentation model follows the screen shape —
       // the landscape model (1) for wide scenes, the general
       // model (0) for tall ones, as the reference projects ship it.
@@ -9234,7 +9259,7 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     if (seg || mode === 'frame') return;
     try {
       if (typeof SelfieSegmentation === 'undefined') { mode = 'frame'; return; }
-      seg = new SelfieSegmentation({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f; } });
+      seg = new SelfieSegmentation({ locateFile: function (f) { return '/mediapipe/' + f; } });
       // Recipe: the segmentation model follows the screen shape —
       // the landscape model (1) for wide scenes, the general
       // model (0) for tall ones, as the reference projects ship it.
@@ -10550,6 +10575,7 @@ app.get("/admin/interview", requireAdmin, (req, res) => {
   <p style="color:#c9cdd6">Your interview set is always the Panel Room — one backdrop, framed once, so it looks perfect every time no matter who sits in the host seat. Invite a guest by link (they need nothing but their phone — no Top 20 profile, no account), record the show, go live, and play their song or video in a media break, music-video-channel style.</p>
   <div class="panel">
     <canvas id="istage" width="1280" height="720" style="width:100%;border-radius:10px;background:#000;display:block"></canvas>
+    <p id="ivSegWarn" style="display:none;background:#4a1215;border:1px solid #ff5d5d;color:#ffd7d7;border-radius:9px;padding:10px 14px;font-weight:700;margin:10px 0 0">⚠ VIRTUAL BACKGROUND OFF — the cutout could not start, so you are showing in a framed picture with your room behind you. Check your connection, then turn the camera off and on again.</p>
     <video id="icam" playsinline muted style="display:none"></video>
     <video id="iremote" autoplay playsinline style="display:none"></video>
     <audio id="isong" style="display:none"></audio>
@@ -10559,6 +10585,7 @@ app.get("/admin/interview", requireAdmin, (req, res) => {
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
       <button type="button" onclick="ivStartCam()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">📷 Turn camera on</button>
       <button type="button" onclick="ivFlipCam()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">🔄 Flip camera</button>
+      <button type="button" onclick="ivStopCam()" style="background:#4a1215;color:#ffd7d7;border:1px solid #ff5d5d;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">📷 Turn camera off</button>
       <button type="button" id="ivRecBtn" onclick="ivStartRec()" disabled style="background:#c22743;color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer;opacity:.55">● Record</button>
       <button type="button" id="ivStopBtn" onclick="ivStopRec()" disabled style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer;opacity:.55">■ Stop</button>
       <button type="button" id="ivLiveBtn" onclick="ivGoLive()" style="background:#c22743;color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">🔴 GO LIVE</button>
@@ -10632,7 +10659,7 @@ app.get("/admin/interview", requireAdmin, (req, res) => {
       <p style="margin:0"><button type="button" id="ivPostBtn" onclick="ivPostEp()" disabled style="background:#1db954;color:#08130c;border:0;border-radius:9px;padding:12px 18px;font-weight:800;cursor:pointer;opacity:.55">⬆ Post interview to Viewcast</button></p>
     </div>
   </div>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+  <script src="/mediapipe/selfie_segmentation.js" crossorigin="anonymous"></script>
   <script>
   var W = 1280, H = 720;
   var cvs = document.getElementById('istage'), ctx = cvs.getContext('2d');
@@ -10640,6 +10667,9 @@ app.get("/admin/interview", requireAdmin, (req, res) => {
   var songEl = document.getElementById('isong'), vidEl = document.getElementById('ivid');
   var stream = null, facing = 'user', micTrack = null;
   var seg = null, segBusy = false, mode = 'virtual';
+  var segFails = 0;
+  function segWarn(on) { var w = document.getElementById('ivSegWarn'); if (w) w.style.display = on ? 'block' : 'none'; }
+  function segFail() { segFails++; if (segFails >= 3) { mode = 'frame'; segWarn(true); } else { seg = null; initSeg(); } }
   var IV_BUILD = '${BUILD}';
   var backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/panelroom.jpg?v=' + IV_BUILD;
   var personC = document.createElement('canvas'); personC.width = W; personC.height = H;
@@ -10813,6 +10843,7 @@ app.get("/admin/interview", requireAdmin, (req, res) => {
     }
   }
   function onSegRes(results) {
+    segFails = 0; segWarn(false);
     var camW = results.image.width, camH = results.image.height;
     if (!camW || !camH) return;
     var fitS = Math.min(W / camW, H / camH);
@@ -10857,19 +10888,19 @@ app.get("/admin/interview", requireAdmin, (req, res) => {
   function initSeg() {
     if (seg || mode === 'frame') return;
     try {
-      if (typeof SelfieSegmentation === 'undefined') { mode = 'frame'; return; }
-      seg = new SelfieSegmentation({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f; } });
+      if (typeof SelfieSegmentation === 'undefined') { mode = 'frame'; segWarn(true); return; }
+      seg = new SelfieSegmentation({ locateFile: function (f) { return '/mediapipe/' + f; } });
       seg.setOptions({ modelSelection: 1 });
       seg.onResults(onSegRes);
-    } catch (e) { seg = null; mode = 'frame'; }
+    } catch (e) { seg = null; mode = 'frame'; segWarn(true); }
   }
   function frameLoop(ts) {
     if (stream) {
       if (seg && !segBusy && camV.readyState >= 2) {
         segBusy = true;
         var p = null;
-        try { p = seg.send({ image: camV }); } catch (e) { mode = 'frame'; }
-        if (p && p.then) p.then(function () { segBusy = false; }, function () { segBusy = false; mode = 'frame'; });
+        try { p = seg.send({ image: camV }); } catch (e) { segBusy = false; segFail(); }
+        if (p && p.then) p.then(function () { segBusy = false; }, function () { segBusy = false; segFail(); });
         else segBusy = false;
       }
       if (!seg || mode === 'frame') paintFramePerson();
@@ -10963,6 +10994,14 @@ app.get("/admin/interview", requireAdmin, (req, res) => {
     } catch (e) { setStatus('The camera did not open — allow camera access for this site in your browser, then tap again.'); }
   }
   function ivFlipCam() { facing = (facing === 'user') ? 'environment' : 'user'; if (stream) ivStartCam(); }
+  function ivStopCam() {
+    if (!stream) { setStatus('The camera is already off.'); return; }
+    try { stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    stream = null; micTrack = null;
+    if (micSrc) { try { micSrc.disconnect(); } catch (e) {} micSrc = null; }
+    try { camV.srcObject = null; } catch (e) {}
+    setStatus('Camera off — the set is holding on the backdrop. Tap "Turn camera on" when you are ready.');
+  }
   /* ----- record + post (the Viewcast episode door) ----- */
   var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
   function fmtT(s) { var m = Math.floor(s / 60), r = s % 60; return m + ':' + (r < 10 ? '0' : '') + r; }
