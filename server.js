@@ -1733,7 +1733,7 @@ function hotspotBoothHtml(hs) {
         <span class="meta"><span class="t">${esc(c.title)}</span><br><span class="a">${esc(c.artist)}</span></span>
         <span class="nums"><b>${esc(c.genre)}</b></span>
       </a>
-      <p class="hs-buzz">Getting a buzz — ▶ ${fmtNum(c.plays)} plays · ♥ ${fmtNum(c.likes)} · ⤴ ${fmtNum(c.shares)}${c.placed ? " · ⭐ Owner’s pick" : ""}</p>
+      <p class="hs-buzz">Getting a buzz — ▶ ${fmtNum(c.plays)} plays · ♥ ${fmtNum(c.likes)} · ⤴ ${fmtNum(c.shares)}</p>
       <button type="button" class="hs-share" data-hs-share="${c.id}" data-hs-title="${esc(c.title)}" data-hs-artist="${esc(c.artist)}">⤴ Share</button>
     </div>`;
   return `
