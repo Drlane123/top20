@@ -1935,7 +1935,7 @@ function hotspotBoothHtml(hs) {
     <audio id="hsAudio" preload="none"></audio>
     <script>
     (function () {
-      var cfg = ${JSON.stringify({ songs: playOrder.map((c) => ({ id: c.id, title: c.title, artist: c.artist, audio: c.audio, ht: !!ANN["title-" + c.id] })), playSecs: st.playSeconds, cycleStart: cycleStart, cycleLenMs: cycleLenMs, v: 19 }).replace(/</g, "\\u003c")};
+      var cfg = ${JSON.stringify({ songs: playOrder.map((c) => ({ id: c.id, title: c.title, artist: c.artist, audio: "/booth/track/" + c.id, ht: !!ANN["title-" + c.id] })), playSecs: st.playSeconds, cycleStart: cycleStart, cycleLenMs: cycleLenMs, v: 19 }).replace(/</g, "\\u003c")};
       var audio = document.getElementById('hsAudio');
       var openBtn = document.getElementById('hsOpenBtn');
       var full = document.getElementById('hsFull');
@@ -1965,13 +1965,6 @@ function hotspotBoothHtml(hs) {
       var actx = null, analyser = null, freqData = null, meterRaf = null, vuSets = null, vuLevels = null;
       var VU_BANDS = [[1,2],[3,4],[5,6],[7,9],[10,13],[14,18],[19,24],[25,31],[32,40],[41,51],[52,65],[66,82],[83,104]];
       function ensureMeter() {
-        // HOTFIX (Nov 17, 2026): the tap is DISABLED until the booth
-        // streams songs same-origin. Uploaded songs redirect to R2
-        // storage (cross-origin, no CORS), and a MediaElementSource
-        // silences cross-origin audio — the DJ clips are same-origin
-        // (audible) but the songs went silent on the owner's phone.
-        // The bars keep their CSS dance meanwhile; playback first.
-        return;
         if (actx) { if (actx.state === 'suspended') { try { actx.resume(); } catch (e) {} } return; }
         try {
           var AC = window.AudioContext || window.webkitAudioContext;
@@ -4536,6 +4529,59 @@ app.get("/pcard/:id.jpg", async (req, res) => {
   } finally {
     if (tmpFile) { try { fs.unlinkSync(tmpFile); } catch { /* temp cleanup */ } }
   }
+});
+
+// Booth track stream (owner, Nov 17, 2026): the DJ Booth plays its
+// songs through this route so the audio is SAME-ORIGIN. Uploaded songs
+// otherwise redirect to the R2 bucket (cross-origin, no CORS), and a
+// Web Audio media-element tap silences cross-origin audio outright —
+// the booth's live VU meter needs the tap, so the booth's songs come
+// home through here: the local file when it is on disk, otherwise the
+// bucket copy streamed through, with Range support for the booth's
+// join-live seeking.
+app.get("/booth/track/:id", async (req, res) => {
+  try {
+    const song = db.prepare("SELECT audio_path FROM songs WHERE id = ? AND status = 'live'").get(parseInt(req.params.id, 10));
+    if (!song || !song.audio_path) return res.status(404).end();
+    const ap = String(song.audio_path);
+    const localFile = path.join(PUBLIC_DIR, "." + ap);
+    if (ap.startsWith("/") && !ap.includes("..") && localFile.startsWith(PUBLIC_DIR) && fs.existsSync(localFile)) {
+      return res.sendFile(localFile);
+    }
+    if (ap.startsWith("/uploads/") && storage.configured()) {
+      const key = "uploads/" + ap.slice("/uploads/".length);
+      if (req.method === "HEAD") {
+        const h = await storage.headObject(key);
+        if (!h) return res.status(404).end();
+        res.set("Content-Type", h.contentType || "audio/mpeg");
+        res.set("Content-Length", String(h.size || 0));
+        res.set("Accept-Ranges", "bytes");
+        return res.end();
+      }
+      const url = storage.presignGet(key, 3600);
+      if (!url) return res.status(404).end();
+      const headers = {};
+      if (req.headers.range) headers.Range = req.headers.range;
+      const ctl = new AbortController();
+      const t = setTimeout(() => ctl.abort(), 15000);
+      let up;
+      try { up = await fetch(url, { headers, signal: ctl.signal }); } finally { clearTimeout(t); }
+      if (!up.ok && up.status !== 206) return res.status(502).end();
+      res.status(up.status);
+      for (const hn of ["content-type", "content-length", "content-range", "accept-ranges"]) {
+        const v = up.headers.get(hn);
+        if (v) res.set(hn, v);
+      }
+      res.set("Cache-Control", "no-store");
+      if (!up.body) return res.end();
+      const { Readable } = require("node:stream");
+      const ns = Readable.fromWeb(up.body);
+      req.on("close", () => { try { ns.destroy(); } catch (e) {} });
+      ns.pipe(res);
+      return;
+    }
+    return res.status(404).end();
+  } catch (e) { try { res.status(500).end(); } catch (_) {} }
 });
 
 app.get("/song/:id", (req, res) => {
