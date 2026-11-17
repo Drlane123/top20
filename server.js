@@ -1965,6 +1965,13 @@ function hotspotBoothHtml(hs) {
       var actx = null, analyser = null, freqData = null, meterRaf = null, vuSets = null, vuLevels = null;
       var VU_BANDS = [[1,2],[3,4],[5,6],[7,9],[10,13],[14,18],[19,24],[25,31],[32,40],[41,51],[52,65],[66,82],[83,104]];
       function ensureMeter() {
+        // HOTFIX (Nov 17, 2026): the tap is DISABLED until the booth
+        // streams songs same-origin. Uploaded songs redirect to R2
+        // storage (cross-origin, no CORS), and a MediaElementSource
+        // silences cross-origin audio — the DJ clips are same-origin
+        // (audible) but the songs went silent on the owner's phone.
+        // The bars keep their CSS dance meanwhile; playback first.
+        return;
         if (actx) { if (actx.state === 'suspended') { try { actx.resume(); } catch (e) {} } return; }
         try {
           var AC = window.AudioContext || window.webkitAudioContext;
