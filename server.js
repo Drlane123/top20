@@ -636,9 +636,12 @@ h2{letter-spacing:1px}
 .ttdeck{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:min(96%,620px);z-index:0;pointer-events:none;padding-bottom:4.4%}
 .tt-stage{position:relative}
 .tt-base{display:block;width:100%;height:auto;filter:drop-shadow(0 16px 20px rgba(0,0,0,.5))}
-.tt-spinwrap{position:absolute;left:42.46%;top:27.8%;width:29.28%;aspect-ratio:1;transform:translate(-50%,-50%) scaleY(.473);z-index:1}
-.tt-spin{position:absolute;inset:0;animation:ttspin 12s linear infinite}
-.tt-spin img{display:block;width:100%;height:100%}
+.tt-vinyl{position:absolute;left:16.91%;top:6.36%;width:49.34%;height:67.24%;border-radius:50%;overflow:hidden;z-index:1;background:repeating-radial-gradient(ellipse at 50% 50%,#08090f 0 2px,#141826 2px 4px);box-shadow:0 0 18px rgba(80,180,255,.35),inset 0 0 0 2px rgba(140,220,255,.35),inset 0 0 42px rgba(0,0,0,.85)}
+.tt-sheen{position:absolute;inset:0;border-radius:50%;background:linear-gradient(118deg,transparent 26%,rgba(70,190,255,.13) 44%,transparent 58%),linear-gradient(295deg,transparent 55%,rgba(255,80,180,.09) 72%,transparent 86%);filter:blur(9px)}
+.tt-labelwrap{position:absolute;left:51.8%;top:31.9%;width:40.65%;height:87.8%;transform:translate(-50%,-50%) scaleY(.463)}
+.tt-label{position:absolute;inset:0;animation:ttspin 12s linear infinite}
+.tt-label svg{display:block;width:100%;height:100%}
+.tt-spindle{position:absolute;left:51.8%;top:31.9%;width:2.6%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle at 38% 35%,#ffe9a8,#c9a227 60%,#7a5f14);z-index:2;box-shadow:0 0 4px rgba(0,0,0,.6)}
 .tt-arm{position:absolute;inset:0;z-index:2;background:url(/deck.webp) center/100% 100% no-repeat;clip-path:polygon(60% 0%,83% 0%,83% 15%,80% 30%,72% 37%,65% 42%,62% 40%,51% 37%,51% 20%,55% 17%,62% 13%,63% 5%)}
 .tt-glow{position:absolute;z-index:3;border-radius:50%;filter:blur(7px);mix-blend-mode:screen;animation:ttglow 2.4s ease-in-out infinite alternate}
 @keyframes ttglow{from{opacity:.3}to{opacity:.75}}
@@ -2350,7 +2353,7 @@ app.get("/", (req, res) => {
       foot.replace("POS", "left:5.4%") + foot.replace("POS", "right:5.4%") +
       '<div class="tt-stage">' +
       '<img class="tt-base" src="/deck.webp" alt="">' +
-      '<div class="tt-spinwrap"><div class="tt-spin"><img src="/disc.webp" alt=""></div></div>' +
+      '<div class="tt-vinyl"><div class="tt-sheen"></div><div class="tt-labelwrap"><div class="tt-label"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="49" fill="#0b0714"/><circle cx="50" cy="50" r="47.5" fill="none" stroke="#ff4fd8" stroke-width="1.6" opacity=".85"/><circle cx="50" cy="50" r="38" fill="none" stroke="rgba(120,220,255,.35)" stroke-width=".8"/><circle cx="50" cy="12.5" r="3.4" fill="#ffd34d"/><text x="50" y="45" text-anchor="middle" font-size="13.5" font-weight="800" fill="#7fe7ff" letter-spacing="1">HOT</text><text x="50" y="61" text-anchor="middle" font-size="13.5" font-weight="800" fill="#7fe7ff" letter-spacing="1">TOP 20</text><circle cx="50" cy="50" r="3.6" fill="#05060a"/></svg></div></div><div class="tt-spindle"></div></div>' +
       '<div class="tt-arm"></div>' +
       '<div class="tt-glow" style="left:73%;top:36.5%;width:13%;height:38%;background:radial-gradient(ellipse,rgba(255,150,70,.55),rgba(70,210,255,.22) 55%,transparent 72%)"></div>' +
       '<div class="tt-glow" style="left:53%;top:77.3%;width:31%;height:14%;background:radial-gradient(ellipse,rgba(70,210,255,.5),rgba(255,120,80,.2) 55%,transparent 72%);animation-delay:1.1s"></div>' +
