@@ -1808,7 +1808,7 @@ function hotspotBoothHtml(hs) {
     <audio id="hsAudio" preload="none"></audio>
     <script>
     (function () {
-      var cfg = ${JSON.stringify({ songs: playOrder.map((c) => ({ id: c.id, title: c.title, artist: c.artist, audio: c.audio, ht: !!ANN["title-" + c.id] })), playSecs: st.playSeconds, cycleStart: cycleStart, cycleLenMs: cycleLenMs, v: 18 }).replace(/</g, "\\u003c")};
+      var cfg = ${JSON.stringify({ songs: playOrder.map((c) => ({ id: c.id, title: c.title, artist: c.artist, audio: c.audio, ht: !!ANN["title-" + c.id] })), playSecs: st.playSeconds, cycleStart: cycleStart, cycleLenMs: cycleLenMs, v: 19 }).replace(/</g, "\\u003c")};
       var audio = document.getElementById('hsAudio');
       var openBtn = document.getElementById('hsOpenBtn');
       var full = document.getElementById('hsFull');
