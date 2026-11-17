@@ -7928,6 +7928,11 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
     <p class="sub" style="margin:12px 0 0"><a href="/admin/viewcast" class="btn btn-blue" style="font-size:18px;padding:13px 22px">Open the Viewcast studio →</a></p>
   </div>
   <div class="panel">
+    <h2 style="margin-top:0">🎤 Interview Mode</h2>
+    <p class="sub">Sit a guest down in the Panel Room set — invite by link (no profile needed), record the show, go live, and play their song or a brand-new premiere file in a media break.</p>
+    <p class="sub" style="margin:12px 0 0"><a href="/admin/interview" class="btn btn-blue" style="font-size:18px;padding:13px 22px">Open Interview Mode →</a></p>
+  </div>
+  <div class="panel">
     <h2 style="margin-top:0">🎙️ DJ Drop Studio</h2>
     <p class="sub">The artists' free drop maker — preset DJ-voice drops and own-voice drops, with our effects. As staff you are let straight in with no profile, so you can test it end to end.</p>
     <p class="sub" style="margin:12px 0 0"><a href="/drops" class="btn btn-blue" style="font-size:18px;padding:13px 22px">Open the DJ Drop Studio →</a></p>
@@ -10229,6 +10234,1076 @@ app.get("/viewcast/join/:code", (req, res) => {
     var lv = document.getElementById('gleave'); lv.disabled = true; lv.style.opacity = .55;
     gset('You left the interview. Tap Join to come back in.');
   }
+  </script>`));
+});
+
+
+/* ------------------- TOP 20 INTERVIEW MODE ------------------------------
+   (Owner, Nov 16, 2026.) A sibling of the Viewcast studio, built on the
+   same machinery: the same canvas compositing + segmentation cutout, the
+   same guest-room signal relay (vcRooms above — the guest seat needs NO
+   Top 20 profile, account, or artist record, ever), the same episode
+   upload/post door, the same WebAudio mix idea. What is different is the
+   shape of the show, and it is Dale's shape:
+   - ONE dedicated backdrop (Panel Room) — never the Viewcast roster —
+     framed once so it looks perfect no matter who sits in the host seat.
+   - The guest rides in a picture-in-picture window over the host frame.
+   - RECORD first: the composed show (host + guest + media breaks, one
+     mixed audio) records exactly like a Viewcast take and posts through
+     the same episode door.
+   - A LIVE button: the host browser publishes that same composed stream
+     to a public watch page over the same kind of in-memory signal relay
+     (one peer connection per viewer, straight from the host's browser —
+     $0 to run; the honest limit is the host's own upload speed, so it
+     suits a roomful of viewers, not a stadium).
+   - MEDIA BREAK: the host plays the guest artist's song or profile
+     video off their Top 20 profile (optional picker — never a gate), OR
+     premieres a fresh file loaded right in the studio that is NOT on
+     Top 20 yet. A song fills the screen with its cover and a music-
+     video-style lower-third (title + artist at the bottom). A video
+     fades in full-screen; while any break plays, host and guest mics
+     are OUT of the show mix (the audience hears the media only) while
+     host and guest still hear each other off-air. A song hands the show
+     back when it ends; a video HOLDS at its end until the host presses
+     BACK TO SET. A studio-loaded file plays in the show ONLY — it never
+     enters the chart/upload pipeline; chart uploads still go through
+     the artist upload door. */
+
+/* ----- live watch rooms (in-memory signal relay, same pattern as the
+   guest rooms: RAM only, expire after 2 hours, media never touches the
+   server) ----- */
+const ivLiveRooms = new Map();
+function ivLiveRoom(code) {
+  const r = ivLiveRooms.get(code);
+  if (!r) return null;
+  if (Date.now() - r.created > 2 * 3600 * 1000) { ivLiveRooms.delete(code); return null; }
+  return r;
+}
+setInterval(() => { for (const code of [...ivLiveRooms.keys()]) ivLiveRoom(code); }, 10 * 60 * 1000).unref();
+
+app.post("/admin/interview/live", requireAdmin, (req, res) => {
+  const code = crypto.randomBytes(4).toString("hex");
+  ivLiveRooms.set(code, { created: Date.now(), hostQ: [], viewers: new Map(), hostSeen: 0 });
+  res.json({ ok: true, code, url: `/interview/watch/${code}` });
+});
+
+app.post("/api/interview/live/signal/:code", (req, res) => {
+  const room = ivLiveRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false });
+  const from = req.body && req.body.from === "host" ? "host" : "viewer";
+  const viewer = String((req.body && req.body.viewer) || "").replace(/[^a-z0-9]/gi, "").slice(0, 16);
+  const msg = req.body && req.body.msg;
+  if (!msg || !msg.type || !viewer) return res.status(400).json({ ok: false });
+  if (from === "viewer") {
+    if (!room.viewers.has(viewer)) room.viewers.set(viewer, { q: [], seen: 0 });
+    room.viewers.get(viewer).seen = Date.now();
+    room.hostQ.push({ viewer, msg });
+  } else {
+    const v = room.viewers.get(viewer);
+    if (v) v.q.push(msg);
+  }
+  res.json({ ok: true });
+});
+
+app.get("/api/interview/live/poll/:code/host", (req, res) => {
+  const room = ivLiveRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false });
+  room.hostSeen = Date.now();
+  const msgs = room.hostQ.splice(0, room.hostQ.length);
+  const now = Date.now();
+  const viewers = [...room.viewers.entries()].filter(([, v]) => v.seen > now - 15000).map(([id]) => id);
+  res.json({ ok: true, msgs, viewers });
+});
+
+app.get("/api/interview/live/poll/:code/viewer", (req, res) => {
+  const room = ivLiveRoom(req.params.code);
+  if (!room) return res.status(404).json({ ok: false });
+  const viewer = String(req.query.viewer || "").replace(/[^a-z0-9]/gi, "").slice(0, 16);
+  if (!viewer) return res.status(400).json({ ok: false });
+  if (!room.viewers.has(viewer)) room.viewers.set(viewer, { q: [], seen: 0 });
+  const v = room.viewers.get(viewer);
+  v.seen = Date.now();
+  const msgs = v.q.splice(0, v.q.length);
+  res.json({ ok: true, msgs, hostSeen: room.hostSeen > Date.now() - 8000 });
+});
+
+/* ----- media-break picker: the artist's own Top 20 media (optional —
+   the studio also premieres fresh files with no profile at all) ----- */
+app.get("/admin/interview/artists", requireAdmin, (req, res) => {
+  const q = String(req.query.q || "").trim();
+  const rows = db.prepare(
+    `SELECT u.id, u.name, u.city, u.state,
+       (SELECT COUNT(*) FROM songs s WHERE s.artist_id = u.id AND s.status = 'live') AS songs,
+       (SELECT COUNT(*) FROM videos v WHERE v.artist_id = u.id) AS has_video
+     FROM users u
+     WHERE u.id IN (SELECT artist_id FROM songs WHERE status = 'live')
+       AND (? = '' OR u.name LIKE ?)
+     ORDER BY u.name LIMIT 30`
+  ).all(q, "%" + q + "%");
+  res.set("Cache-Control", "no-store");
+  res.json({ ok: true, artists: rows });
+});
+
+app.get("/admin/interview/artist/:id/media", requireAdmin, (req, res) => {
+  const artist = db.prepare("SELECT id, name FROM users WHERE id = ?").get(req.params.id);
+  if (!artist) return res.status(404).json({ ok: false });
+  const songs = db.prepare("SELECT id, title, genre FROM songs WHERE artist_id = ? AND status = 'live' ORDER BY id").all(artist.id)
+    .map((s) => ({ id: s.id, title: s.title, genre: s.genre, audio: `/admin/interview/track/${s.id}`, cover: `/admin/interview/cover/${s.id}` }));
+  const v = db.prepare(
+    `SELECT v.id, v.kind, s.title AS song_title FROM videos v JOIN songs s ON s.id = v.song_id
+     WHERE v.artist_id = ? ORDER BY v.id DESC LIMIT 1`
+  ).get(artist.id);
+  res.set("Cache-Control", "no-store");
+  res.json({
+    ok: true, artist: { id: artist.id, name: artist.name }, songs,
+    video: v ? { id: v.id, kind: v.kind, title: v.song_title, url: `/admin/interview/video/${v.id}` } : null,
+  });
+});
+
+app.get("/admin/interview/track/:id", requireAdmin, (req, res) => viewcastMedia(req, res, "audio"));
+app.get("/admin/interview/cover/:id", requireAdmin, (req, res) => viewcastMedia(req, res, "cover"));
+
+async function interviewVideoFile(req, res) {
+  const row = db.prepare("SELECT video_path FROM videos WHERE id = ?").get(req.params.id);
+  if (!row) return res.status(404).end();
+  const rel = String(row.video_path || "").replace(/^\/+/, "");
+  if (!rel || rel.includes("..")) return res.status(404).end();
+  const local = path.join(PUBLIC_DIR, rel);
+  if (fs.existsSync(local)) return res.sendFile(local);
+  if (rel.startsWith("uploads/") && storage.configured()) {
+    try {
+      const buf = await storage.getObject(rel);
+      if (buf) { res.set("Cache-Control", "no-store"); return res.type("video/mp4").send(buf); }
+    } catch (e) { /* fall through to 404 */ }
+  }
+  return res.status(404).end();
+}
+app.get("/admin/interview/video/:id", requireAdmin, interviewVideoFile);
+
+/* ----- the guest seat: same vcRooms relay as Viewcast, interview dress.
+   No profile, no account, no artist record — the link is the whole key. */
+app.get("/interview/join/:code", (req, res) => {
+  const room = vcRoom(req.params.code);
+  if (!room) {
+    return res.status(404).send(layout("Link expired", "viewcast", `
+    <div class="panel" style="text-align:center">
+      <h2 style="margin-top:0">This interview link has expired</h2>
+      <p style="color:#c9cdd6">Links last two hours. Ask the host to open Interview Mode in Top 20 and send you a fresh one.</p>
+    </div>`));
+  }
+  res.send(layout("Join your Top 20 interview", "viewcast", `
+  <div style="text-align:center">
+    <h1>🎙️ You are invited — Top 20 Interview</h1>
+    <p style="color:#c9cdd6">You are about to sit down for a live interview on Top 20. No account, no app, nothing to download — just tap Join, let your browser use your camera, and you are on. The host may play your song or a video during the interview; when that happens it takes the full screen, just like a music video channel.</p>
+  </div>
+  <div class="panel">
+    <div style="position:relative">
+      <video id="gfeed" autoplay playsinline style="width:100%;border-radius:10px;background:#000;display:block"></video>
+      <video id="gself" autoplay playsinline muted style="position:absolute;right:10px;bottom:10px;width:26%;border-radius:8px;border:2px solid #c9a227;background:#000"></video>
+    </div>
+    <p id="gstatus" style="color:#f2c14e;margin:10px 0 4px">Tap Join when you are ready.</p>
+    <p style="text-align:center;margin:10px 0 2px">
+      <button type="button" id="gjoin" onclick="joinCall()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:13px 22px;font-weight:800;font-size:16px;cursor:pointer">🎥 Join the interview</button>
+      <button type="button" id="gleave" onclick="leaveCall()" disabled style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:13px 18px;font-weight:700;cursor:pointer;opacity:.55">Leave</button>
+    </p>
+    <p style="color:#8a8f99;font-size:12.5px;text-align:center">Good light on your face and a quiet spot make you look and sound your best. Your camera connects straight to the studio — nothing is recorded unless the host records it.</p>
+  </div>
+  <script>
+  var CODE = ${JSON.stringify(req.params.code)};
+  var pc = null, myStream = null, pollTimer = null, joined = false;
+  function gset(t) { document.getElementById('gstatus').textContent = t; }
+  async function gsend(msg) {
+    try { await fetch('/api/viewcast/signal/' + CODE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'guest', msg: msg }) }); } catch (e) {}
+  }
+  async function gpoll() {
+    try {
+      var r = await fetch('/api/viewcast/poll/' + CODE + '/guest');
+      if (!r.ok) { gset('This link has expired — ask the host for a fresh one.'); clearInterval(pollTimer); return; }
+      var j = await r.json();
+      for (var i = 0; i < j.msgs.length; i++) await ghandle(j.msgs[i]);
+    } catch (e) {}
+  }
+  async function ghandle(msg) {
+    if (!pc) return;
+    try {
+      if (msg.type === 'offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+        var ans = await pc.createAnswer();
+        await pc.setLocalDescription(ans);
+        gsend({ type: 'answer', data: ans });
+        gset('Connecting…');
+      } else if (msg.type === 'ice') {
+        if (msg.data) await pc.addIceCandidate(new RTCIceCandidate(msg.data));
+      } else if (msg.type === 'bye') {
+        gset('The host ended the interview. Thanks for coming on!');
+      }
+    } catch (e) {}
+  }
+  async function joinCall() {
+    if (joined) return;
+    try {
+      myStream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
+    } catch (e) { gset('The camera did not open — allow camera access for this site, then tap Join again.'); return; }
+    document.getElementById('gself').srcObject = myStream;
+    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    myStream.getTracks().forEach(function (t) { pc.addTrack(t, myStream); });
+    pc.ontrack = function (ev) { document.getElementById('gfeed').srcObject = ev.streams[0]; };
+    pc.onicecandidate = function (ev) { if (ev.candidate) gsend({ type: 'ice', data: ev.candidate }); };
+    pc.onconnectionstatechange = function () {
+      if (pc.connectionState === 'connected') gset('You are ON — the studio sees and hears you. Say hello!');
+      else if (pc.connectionState === 'failed') gset('The connection could not get through your network. Try a different Wi-Fi or mobile data, then rejoin.');
+      else if (pc.connectionState === 'disconnected') gset('Connection dropped — tap Leave, then Join again.');
+    };
+    joined = true;
+    await gsend({ type: 'hello' });
+    pollTimer = setInterval(gpoll, 900);
+    gpoll();
+    document.getElementById('gjoin').disabled = true;
+    var lv = document.getElementById('gleave'); lv.disabled = false; lv.style.opacity = 1;
+    gset('Waiting for the host to bring you in…');
+  }
+  function leaveCall() {
+    gsend({ type: 'bye' });
+    if (pollTimer) clearInterval(pollTimer);
+    if (pc) { try { pc.close(); } catch (e) {} pc = null; }
+    if (myStream) { myStream.getTracks().forEach(function (t) { t.stop(); }); myStream = null; }
+    joined = false;
+    document.getElementById('gjoin').disabled = false;
+    var lv = document.getElementById('gleave'); lv.disabled = true; lv.style.opacity = .55;
+    gset('You left the interview. Tap Join to come back in.');
+  }
+  </script>`));
+});
+
+/* ----- the public watch page for the LIVE button ----- */
+app.get("/interview/watch/:code", (req, res) => {
+  const room = ivLiveRoom(req.params.code);
+  if (!room) {
+    return res.status(404).send(layout("Show not found", "viewcast", `
+    <div class="panel" style="text-align:center">
+      <h2 style="margin-top:0">This live link is not running</h2>
+      <p style="color:#c9cdd6">The show may have ended, or the link has expired. Live interview links last two hours from when the host makes them.</p>
+    </div>`));
+  }
+  res.send(layout("Top 20 Interview — LIVE", "viewcast", `
+  <div style="text-align:center">
+    <h1>🔴 Top 20 Interview — LIVE</h1>
+    <p style="color:#c9cdd6">A live interview from the Top 20 studio. Press play if the picture does not start on its own.</p>
+  </div>
+  <div class="panel">
+    <video id="wfeed" autoplay playsinline controls style="width:100%;border-radius:10px;background:#000;display:block"></video>
+    <p id="wstatus" style="color:#f2c14e;margin:10px 0 4px">Connecting to the show…</p>
+  </div>
+  <script>
+  var CODE = ${JSON.stringify(req.params.code)};
+  var VID = Math.random().toString(16).slice(2, 10);
+  var pc = null, pollTimer = null;
+  function wset(t) { document.getElementById('wstatus').textContent = t; }
+  async function wsend(msg) {
+    try { await fetch('/api/interview/live/signal/' + CODE, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'viewer', viewer: VID, msg: msg }) }); } catch (e) {}
+  }
+  async function wpoll() {
+    try {
+      var r = await fetch('/api/interview/live/poll/' + CODE + '/viewer?viewer=' + VID);
+      if (!r.ok) { wset('This live link has expired.'); clearInterval(pollTimer); return; }
+      var j = await r.json();
+      for (var i = 0; i < j.msgs.length; i++) await whandle(j.msgs[i]);
+    } catch (e) {}
+  }
+  async function whandle(msg) {
+    if (!pc) return;
+    try {
+      if (msg.type === 'offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+        var ans = await pc.createAnswer();
+        await pc.setLocalDescription(ans);
+        wsend({ type: 'answer', data: ans });
+      } else if (msg.type === 'ice') {
+        if (msg.data) await pc.addIceCandidate(new RTCIceCandidate(msg.data));
+      } else if (msg.type === 'bye') {
+        wset('The show has ended — thanks for watching!');
+      }
+    } catch (e) {}
+  }
+  function startWatch() {
+    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    pc.ontrack = function (ev) { var v = document.getElementById('wfeed'); if (v.srcObject !== ev.streams[0]) { v.srcObject = ev.streams[0]; } };
+    pc.onicecandidate = function (ev) { if (ev.candidate) wsend({ type: 'ice', data: ev.candidate }); };
+    pc.onconnectionstatechange = function () {
+      if (pc.connectionState === 'connected') wset('● LIVE — you are watching the interview as it happens.');
+      else if (pc.connectionState === 'failed') wset('The connection could not get through your network. Try a different Wi-Fi or mobile data, then reload.');
+      else if (pc.connectionState === 'disconnected') wset('Connection dropped — reload the page to come back in.');
+    };
+    wsend({ type: 'hello' });
+    pollTimer = setInterval(wpoll, 900);
+    wpoll();
+  }
+  startWatch();
+  </script>`));
+});
+
+/* ----- the interview studio (admin) ----- */
+app.get("/admin/interview", requireAdmin, (req, res) => {
+  res.send(layout("Interview Studio", "viewcast", `
+  <p><a href="/admin/placements" style="color:#f2c14e">← Chart placements</a> · <a href="/admin/viewcast" style="color:#f2c14e">Viewcast Studio</a></p>
+  <h1>🎙️ Top 20 Interview Mode</h1>
+  <p style="color:#c9cdd6">Your interview set is always the Panel Room — one backdrop, framed once, so it looks perfect every time no matter who sits in the host seat. Invite a guest by link (they need nothing but their phone — no Top 20 profile, no account), record the show, go live, and play their song or video in a media break, music-video-channel style.</p>
+  <div class="panel">
+    <canvas id="istage" width="1280" height="720" style="width:100%;border-radius:10px;background:#000;display:block"></canvas>
+    <video id="icam" playsinline muted style="display:none"></video>
+    <video id="iremote" autoplay playsinline style="display:none"></video>
+    <audio id="isong" style="display:none"></audio>
+    <video id="ivid" playsinline style="display:none"></video>
+    <p id="istatus" style="color:#f2c14e;margin:10px 0 4px">Tap “Turn camera on” to open the set.</p>
+    <p style="margin:4px 0"><span id="itimer" style="font-weight:800;color:#ff5f6b"></span></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0">
+      <button type="button" onclick="ivStartCam()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">📷 Turn camera on</button>
+      <button type="button" onclick="ivFlipCam()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">🔄 Flip camera</button>
+      <button type="button" id="ivRecBtn" onclick="ivStartRec()" disabled style="background:#c22743;color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer;opacity:.55">● Record</button>
+      <button type="button" id="ivStopBtn" onclick="ivStopRec()" disabled style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer;opacity:.55">■ Stop</button>
+      <button type="button" id="ivLiveBtn" onclick="ivGoLive()" style="background:#c22743;color:#fff;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">🔴 GO LIVE</button>
+      <button type="button" id="ivLiveEndBtn" onclick="ivEndLive()" style="display:none;background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:9px;padding:11px 16px;font-weight:700;cursor:pointer">■ End live</button>
+    </div>
+    <div id="ivLiveBox" style="display:none;margin:8px 0">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="ivLiveLink" readonly style="flex:1;min-width:220px;padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+        <button type="button" onclick="ivCopyLive()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:11px 14px;font-weight:700;cursor:pointer">Copy watch link</button>
+      </div>
+      <p id="ivLiveStatus" style="color:#f2c14e;margin:8px 0 4px"></p>
+      <p style="color:#8a8f99;font-size:12.5px;margin:4px 0">Anyone with the watch link sees this exact screen, live. The stream runs from this device, so it suits a roomful of viewers.</p>
+    </div>
+    <div style="margin:12px 0 4px;max-width:640px">
+      <p style="margin:0 0 6px"><strong>🎚️ Adjust — your seat in the set</strong> <span style="color:#8a8f99;font-size:12.5px\">(opens on your Viewcast wide-screen settings)</span></p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px">
+        <label style="color:#c9cdd6;font-size:13px">Slim <span id="ivSlimPct" style="color:#f2c14e;font-weight:800"></span><input type="range" id="ivSlimR" min="0" max="100" value="68" style="width:100%"></label>
+        <label style="color:#c9cdd6;font-size:13px">Step back <span id="ivBackPct" style="color:#f2c14e;font-weight:800"></span><input type="range" id="ivBackR" min="0" max="100" value="38" style="width:100%"></label>
+        <label style="color:#c9cdd6;font-size:13px">Smooth <span id="ivSmoothPct" style="color:#f2c14e;font-weight:800"></span><input type="range" id="ivSmoothR" min="0" max="100" value="0" style="width:100%"></label>
+        <label style="color:#c9cdd6;font-size:13px">Brighten <span id="ivBrightPct" style="color:#f2c14e;font-weight:800"></span><input type="range" id="ivBrightR" min="0" max="100" value="0" style="width:100%"></label>
+        <label style="color:#c9cdd6;font-size:13px">Widen <span id="ivWidePct" style="color:#f2c14e;font-weight:800"></span><input type="range" id="ivWideR" min="0" max="100" value="0" style="width:100%"></label>
+        <label style="color:#c9cdd6;font-size:13px">Zoom <span id="ivZoomPct" style="color:#f2c14e;font-weight:800"></span><input type="range" id="ivZoomR" min="0" max="100" value="27" style="width:100%"></label>
+      </div>
+      <p style="margin:6px 0 0"><button type="button" onclick="ivResetFx()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:7px 12px;font-weight:700;cursor:pointer">Reset to my defaults</button></p>
+    </div>
+    <div style="display:grid;gap:8px;margin-top:12px;max-width:560px">
+      <input id="ivname" placeholder="Name on screen — e.g. Dale · Top 20 (optional)" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+      <input id="ivtopic" placeholder="Topic line — e.g. Interview (optional)" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+      <input id="ivguestname" placeholder="Guest name — shows on their window (optional)" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+    </div>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">👥 Bring in your guest — free, no profile needed</h2>
+    <p style="color:#c9cdd6;margin:6px 0">Make an invite link and send it to your guest. They tap it on any phone — no Top 20 profile, no account, no app — and their camera lands in the corner window of your set. The recording and the live show keep both of you.</p>
+    <p style="margin:8px 0"><button type="button" id="ivInvBtn" onclick="ivMakeInvite()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">🔗 Make my invite link</button></p>
+    <div id="ivInvBox" style="display:none">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input id="ivInvLink" readonly style="flex:1;min-width:220px;padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+        <button type="button" onclick="ivCopyInvite()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:11px 14px;font-weight:700;cursor:pointer">Copy link</button>
+        <button type="button" onclick="ivEndGuest()" style="background:#3a1120;color:#ffb3c1;border:1px solid #6e2c3a;border-radius:8px;padding:11px 14px;font-weight:700;cursor:pointer">End guest</button>
+      </div>
+      <p id="ivInvStatus" style="color:#f2c14e;margin:8px 0 4px">Send that link to your guest — waiting for them…</p>
+    </div>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">🎬 Media break — play their song or video</h2>
+    <p style="color:#c9cdd6;margin:6px 0">Just like a music video channel: a song fills the screen with its cover and its title across the bottom; a video fades in full-screen. While the break plays, you and your guest drop to the background and your mics leave the show — the audience hears the media only, while you two can still hear each other off-air. A song hands the show back when it ends; a video holds at the end until you press BACK TO SET.</p>
+    <p style="margin:10px 0"><button type="button" id="ivBackBtn" onclick="ivBackToSet()" style="display:none;background:#c22743;color:#fff;border:0;border-radius:9px;padding:13px 22px;font-weight:800;font-size:16px;cursor:pointer">⏮ BACK TO SET</button></p>
+    <p id="ivBreakStatus" style="color:#f2c14e;margin:6px 0"></p>
+    <p style="margin:12px 0 6px"><strong>From their Top 20 profile</strong> <span style="color:#8a8f99;font-size:12.5px">(if the artist is on the site — never required)</span></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input id="ivArtistQ" placeholder="Artist name — e.g. Amara Cole" style="flex:1;min-width:200px;padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+      <button type="button" onclick="ivSearchArtists()" style="background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:11px 14px;font-weight:700;cursor:pointer">Find artist</button>
+    </div>
+    <div id="ivArtistList" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"></div>
+    <div id="ivMediaList" style="display:grid;gap:8px;margin-top:10px;max-width:640px"></div>
+    <p style="margin:16px 0 6px"><strong>⭐ Premiere a file that is not on Top 20 yet</strong></p>
+    <p style="color:#8a8f99;font-size:12.5px;margin:4px 0 8px">An artist just sent you something brand new? Load it right here and play it in the show — first heard here. This plays in the interview ONLY: it does <strong style="color:#e9ecf2">not</strong> upload the song to Top 20 and does <strong style="color:#e9ecf2">not</strong> put it on any chart. Chart uploads still go through the regular artist upload door.</p>
+    <div style="display:grid;gap:8px;max-width:560px">
+      <input type="file" id="ivFile" accept="audio/*,video/*" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+      <input id="ivFileTitle" placeholder="Title on screen — blank uses the file name" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+      <p style="margin:0"><button type="button" onclick="ivPlayFile()" style="background:#f2c14e;color:#131313;border:0;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer">▶ Play it in the show</button></p>
+    </div>
+  </div>
+  <div class="panel">
+    <h2 style="margin-top:0">Post the interview</h2>
+    <p style="color:#c9cdd6;margin:6px 0">After you stop a recording, watch it back, give it a title, and post it — it lands on the public Viewcast page as an episode, filmed in the Panel Room set. Manage or hide episodes any time in the Viewcast Studio.</p>
+    <video id="ivprev" controls playsinline style="display:none;width:100%;border-radius:10px;margin-top:6px;background:#000"></video>
+    <div style="display:grid;gap:8px;margin-top:10px;max-width:560px">
+      <input id="ivtitle" placeholder="Episode title — e.g. Interview: Amara Cole" style="padding:11px;border-radius:8px;border:1px solid #2c3a6e;background:#0a0f22;color:#e9ecf2">
+      <p style="margin:0"><button type="button" id="ivPostBtn" onclick="ivPostEp()" disabled style="background:#1db954;color:#08130c;border:0;border-radius:9px;padding:12px 18px;font-weight:800;cursor:pointer;opacity:.55">⬆ Post interview to Viewcast</button></p>
+    </div>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+  <script>
+  var W = 1280, H = 720;
+  var cvs = document.getElementById('istage'), ctx = cvs.getContext('2d');
+  var camV = document.getElementById('icam'), remV = document.getElementById('iremote');
+  var songEl = document.getElementById('isong'), vidEl = document.getElementById('ivid');
+  var stream = null, facing = 'user', micTrack = null;
+  var seg = null, segBusy = false, mode = 'virtual';
+  var IV_BUILD = '${BUILD}';
+  var backdropImg = new Image(); backdropImg.src = '/viewcast/backdrop/panelroom.jpg?v=' + IV_BUILD;
+  var personC = document.createElement('canvas'); personC.width = W; personC.height = H;
+  var pctx = personC.getContext('2d');
+  var maskC = document.createElement('canvas'); maskC.width = W; maskC.height = H;
+  var maskX = maskC.getContext('2d');
+  var setC = document.createElement('canvas'); setC.width = W; setC.height = H;
+  var setX = setC.getContext('2d');
+  var medC = document.createElement('canvas'); medC.width = W; medC.height = H;
+  var medX = medC.getContext('2d');
+  // Dale's own Viewcast wide-screen (YouTube) settings open the seat:
+  // Slim 68, Step back 38, Zoom 27 (Nov 6) — the interview keeps them.
+  var FX_DEF = { slim: 68, back: 38, smooth: 0, bright: 0, wide: 0, zoom: 27 };
+  var fxSlim = .68, fxBack = .38, fxSmooth = 0, fxBright = 0, fxWide = 0, fxZoom = .27;
+  function setStatus(t) { document.getElementById('istatus').textContent = t; }
+  function invSet(t) { document.getElementById('ivInvStatus').textContent = t; }
+  function breakSet(t) { document.getElementById('ivBreakStatus').textContent = t; }
+  function liveSet(t) { document.getElementById('ivLiveStatus').textContent = t; }
+  // Self-heal, same rule as the Viewcast studio: a page left open on an
+  // old build refreshes itself once when a new build ships — never while
+  // recording or live.
+  (function () {
+    if (IV_BUILD === 'dev') return;
+    function chk() {
+      fetch('/version', { cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (j) {
+        if (!j || !j.build || j.build === IV_BUILD) return;
+        try { if (typeof recorder !== 'undefined' && recorder && recorder.state === 'recording') return; } catch (e) {}
+        try { if (typeof liveOn !== 'undefined' && liveOn) return; } catch (e) {}
+        try {
+          if (sessionStorage.getItem('ivHealed') === j.build) return;
+          sessionStorage.setItem('ivHealed', j.build);
+        } catch (e) {}
+        location.reload();
+      }).catch(function () {});
+    }
+    setTimeout(chk, 4000); setInterval(chk, 45000);
+  })();
+
+  function drawCover(c, el, x, y, w, h) {
+    var iw = el.videoWidth || el.naturalWidth || el.width, ih = el.videoHeight || el.naturalHeight || el.height;
+    if (!iw || !ih) return;
+    var sa = iw / ih, da = w / h, sw, sh, sx, sy;
+    if (sa > da) { sh = ih; sw = ih * da; sx = (iw - sw) / 2; sy = 0; } else { sw = iw; sh = iw / da; sx = 0; sy = (ih - sh) / 2; }
+    c.drawImage(el, sx, sy, sw, sh, x, y, w, h);
+  }
+  function drawFit(c, img, x, y, w, h) {
+    var iw = img.naturalWidth || img.width, ih = img.naturalHeight || img.height;
+    if (!iw || !ih) return;
+    c.drawImage(img, x, y, w, h);
+  }
+  function roundRectPath(c, x, y, w, h, r) { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); }
+  function guestName() { return (document.getElementById('ivguestname').value || '').trim(); }
+  function drawChrome(c) {
+    c.save();
+    c.lineWidth = Math.max(6, H * 0.012); c.strokeStyle = '#c9a227'; c.strokeRect(6, 6, W - 12, H - 12);
+    c.lineWidth = 2; c.strokeStyle = 'rgba(233,236,242,.85)'; c.strokeRect(18, 18, W - 36, H - 36);
+    var name = (document.getElementById('ivname').value || '').trim();
+    var topic = (document.getElementById('ivtopic').value || '').trim();
+    if (name || topic) {
+      var bh = H * 0.135, by = H - bh - 30, bw = Math.min(W * 0.66, W - 60);
+      c.fillStyle = 'rgba(2,6,18,.78)'; roundRectPath(c, 30, by, bw, bh, 10); c.fill();
+      c.fillStyle = '#f2c14e'; c.fillRect(30, by, 7, bh);
+      if (name) { c.fillStyle = '#ffffff'; c.font = '800 ' + Math.round(H * 0.04) + 'px Arial'; c.fillText(name, 54, by + bh * (topic ? 0.33 : 0.5)); }
+      if (topic) { c.fillStyle = '#c9cdd6'; c.font = Math.round(H * 0.03) + 'px Arial'; c.fillText(topic, 54, by + bh * (name ? 0.72 : 0.5)); }
+    }
+    c.restore();
+  }
+  function drawFeetShadow(c) {
+    var gy = H * 0.985, R = W * 0.26;
+    var grd = c.createRadialGradient(W / 2, gy, 8, W / 2, gy, R);
+    grd.addColorStop(0, 'rgba(0,0,0,.35)'); grd.addColorStop(1, 'rgba(0,0,0,0)');
+    c.save();
+    c.translate(W / 2, gy); c.scale(1, 0.12); c.translate(-W / 2, -gy);
+    c.fillStyle = grd; c.fillRect(W / 2 - R, gy - R, R * 2, R * 2);
+    c.restore();
+  }
+  function drawPerson(c) {
+    var s = (0.72 + fxZoom * 0.55) * (1 - fxBack * 0.28);
+    var dw = W * s * (1 - fxSlim * 0.14) * (1 + fxWide * 0.3), dh = H * s;
+    c.drawImage(personC, 0, 0, W, H, (W - dw) / 2, H - dh, dw, dh);
+  }
+  function drawGuestWin(c) {
+    if (!guestOn || remV.readyState < 2) return;
+    var w = W * 0.30, h = w * 9 / 16, x = W - w - 36, y = H - h - 36;
+    c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip();
+    drawCover(c, remV, x, y, w, h);
+    c.restore();
+    c.lineWidth = 5; c.strokeStyle = '#c9a227'; c.strokeRect(x, y, w, h);
+    var label = (guestName() || 'GUEST').toUpperCase();
+    c.font = '800 ' + Math.round(H * 0.024) + 'px Arial';
+    var bw = c.measureText(label).width + 20, bh = H * 0.045;
+    c.fillStyle = 'rgba(2,6,18,.78)'; c.fillRect(x, y, bw, bh);
+    c.fillStyle = '#f2c14e'; c.textBaseline = 'middle';
+    c.fillText(label, x + 10, y + bh / 2 + 1);
+    c.textBaseline = 'alphabetic';
+  }
+  function drawSet(c) {
+    c.save(); c.clearRect(0, 0, W, H);
+    drawFit(c, backdropImg, 0, 0, W, H);
+    if (stream) { drawFeetShadow(c); drawPerson(c); }
+    else {
+      c.fillStyle = 'rgba(2,6,18,.55)'; c.fillRect(0, 0, W, H);
+      c.fillStyle = '#f2c14e'; c.font = '800 ' + Math.round(H * 0.045) + 'px Arial'; c.textAlign = 'center';
+      c.fillText('📷 Turn the camera on to open the set', W / 2, H / 2);
+      c.textAlign = 'left';
+    }
+    c.restore();
+    drawGuestWin(c);
+    drawChrome(c);
+  }
+  function drawSmallWin(c, el, x, y, w, h, label) {
+    if (!el || (el.readyState !== undefined && el.readyState < 2 && el !== camV)) return;
+    c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip();
+    drawCover(c, el, x, y, w, h);
+    c.restore();
+    c.lineWidth = 3; c.strokeStyle = 'rgba(201,162,39,.9)'; c.strokeRect(x, y, w, h);
+    c.font = '800 ' + Math.round(H * 0.02) + 'px Arial';
+    var tw = c.measureText(label).width + 14;
+    c.fillStyle = 'rgba(2,6,18,.78)'; c.fillRect(x, y, tw, H * 0.038);
+    c.fillStyle = '#f2c14e'; c.textBaseline = 'middle'; c.fillText(label, x + 7, y + H * 0.019 + 1); c.textBaseline = 'alphabetic';
+  }
+  var breakKind = null, breakTitle = '', breakArtist = '', breakActive = false, breakHold = false;
+  var breakT = 0, breakTarget = 0, lastTs = 0;
+  var coverImg = new Image(), coverReady = false;
+  function drawMedia(c) {
+    c.save(); c.clearRect(0, 0, W, H);
+    c.fillStyle = '#000'; c.fillRect(0, 0, W, H);
+    if (breakKind === 'video') {
+      if (vidEl.readyState >= 2) drawCover(c, vidEl, 0, 0, W, H);
+    } else if (breakKind === 'song') {
+      if (coverReady) drawCover(c, coverImg, 0, 0, W, H);
+      else {
+        var grd0 = c.createLinearGradient(0, 0, 0, H);
+        grd0.addColorStop(0, '#141c33'); grd0.addColorStop(1, '#05070f');
+        c.fillStyle = grd0; c.fillRect(0, 0, W, H);
+        c.fillStyle = '#f2c14e'; c.font = '800 ' + Math.round(H * 0.22) + 'px Arial'; c.textAlign = 'center';
+        c.fillText('♪', W / 2, H * 0.52); c.textAlign = 'left';
+      }
+      c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(0, 0, W, H);
+      var grd = c.createLinearGradient(0, H * 0.45, 0, H);
+      grd.addColorStop(0, 'rgba(0,0,0,0)'); grd.addColorStop(1, 'rgba(0,0,0,.88)');
+      c.fillStyle = grd; c.fillRect(0, 0, W, H);
+      // The lower-third, music-video style: title + artist at the bottom.
+      var by = H * 0.795;
+      c.fillStyle = '#f2c14e'; c.fillRect(54, by, 7, H * 0.115);
+      c.fillStyle = '#ffffff'; c.font = '800 ' + Math.round(H * 0.05) + 'px Arial';
+      c.fillText('♪ ' + breakTitle, 78, by + H * 0.052);
+      if (breakArtist) { c.fillStyle = '#e9ecf2'; c.font = '600 ' + Math.round(H * 0.031) + 'px Arial'; c.fillText(breakArtist, 78, by + H * 0.102); }
+    }
+    // Host and guest fall to the background — small windows, low corners.
+    if (stream) drawSmallWin(c, camV, 24, H - H * 0.185 - 24, W * 0.17, H * 0.185, (document.getElementById('ivname').value || 'HOST').toUpperCase().slice(0, 18));
+    if (guestOn) drawSmallWin(c, remV, W - W * 0.17 - 24, H - H * 0.185 - 24, W * 0.17, H * 0.185, (guestName() || 'GUEST').toUpperCase());
+    c.restore();
+  }
+  function compose(ts) {
+    var dt = Math.min(60, ts - (lastTs || ts)); lastTs = ts;
+    if (breakT !== breakTarget) {
+      var step = dt / 650;
+      breakT = breakTarget > breakT ? Math.min(breakTarget, breakT + step) : Math.max(breakTarget, breakT - step);
+    }
+    drawSet(setX);
+    ctx.clearRect(0, 0, W, H);
+    ctx.drawImage(setC, 0, 0);
+    if (breakT > 0) {
+      drawMedia(medX);
+      ctx.save(); ctx.globalAlpha = breakT;
+      var sc = 1.05 - 0.05 * breakT;
+      ctx.translate(W / 2, H / 2); ctx.scale(sc, sc); ctx.translate(-W / 2, -H / 2);
+      ctx.drawImage(medC, 0, 0);
+      ctx.restore();
+    }
+  }
+  function onSegRes(results) {
+    var camW = results.image.width, camH = results.image.height;
+    if (!camW || !camH) return;
+    var fitS = Math.min(W / camW, H / camH);
+    var pfW = Math.round(camW * fitS), pfH = Math.round(camH * fitS);
+    // Wide screen, tall phone picture: stretch sideways to the full
+    // width at natural height — the wide-screen picture rule from the
+    // Viewcast studio (Nov 6), so a phone camera never sits as a column.
+    if (W > H && camW < camH) pfW = W;
+    var pfX = Math.round((W - pfW) / 2), pfY = Math.round(pfH > H ? (H - pfH) * 0.25 : (H - pfH) / 2);
+    maskX.save(); maskX.clearRect(0, 0, W, H);
+    maskX.fillStyle = '#000'; maskX.fillRect(0, 0, W, H);
+    maskX.drawImage(results.segmentationMask, pfX, pfY, pfW, pfH);
+    maskX.restore();
+    pctx.save(); pctx.clearRect(0, 0, W, H);
+    try { pctx.filter = 'blur(4px)'; } catch (e) {}
+    pctx.drawImage(maskC, 0, 0, W, H);
+    try { pctx.filter = 'none'; } catch (e) {}
+    pctx.globalCompositeOperation = 'source-in';
+    var tint = 'brightness(.98) saturate(1.04)';
+    if (fxSmooth > 0) {
+      try { pctx.filter = tint + ' blur(3px) brightness(1.04)'; } catch (e) {}
+      pctx.drawImage(results.image, pfX, pfY, pfW, pfH);
+    }
+    try { pctx.filter = (tint + (fxBright > 0 ? ' brightness(' + (1 + fxBright * 0.18).toFixed(3) + ')' : '')).trim(); } catch (e) {}
+    pctx.globalAlpha = fxSmooth > 0 ? 1 - 0.45 * fxSmooth : 1;
+    pctx.drawImage(results.image, pfX, pfY, pfW, pfH);
+    pctx.globalAlpha = 1;
+    try { pctx.filter = 'none'; } catch (e) {}
+    pctx.restore();
+  }
+  function paintFramePerson() {
+    pctx.save(); pctx.clearRect(0, 0, W, H);
+    var ar = (camV.videoWidth && camV.videoHeight) ? camV.videoWidth / camV.videoHeight : 16 / 9;
+    var ch = H * 0.84, cw = ch * ar;
+    if (cw > W * 0.88) { cw = W * 0.88; ch = cw / ar; }
+    var cx = (W - cw) / 2, cy = (H - ch) / 2;
+    pctx.beginPath(); pctx.rect(cx, cy, cw, ch); pctx.clip();
+    drawCover(pctx, camV, cx, cy, cw, ch);
+    pctx.restore();
+    pctx.lineWidth = 6; pctx.strokeStyle = '#c9a227'; pctx.strokeRect(cx, cy, cw, ch);
+  }
+  function initSeg() {
+    if (seg || mode === 'frame') return;
+    try {
+      if (typeof SelfieSegmentation === 'undefined') { mode = 'frame'; return; }
+      seg = new SelfieSegmentation({ locateFile: function (f) { return 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/' + f; } });
+      seg.setOptions({ modelSelection: 1 });
+      seg.onResults(onSegRes);
+    } catch (e) { seg = null; mode = 'frame'; }
+  }
+  function frameLoop(ts) {
+    if (stream) {
+      if (seg && !segBusy && camV.readyState >= 2) {
+        segBusy = true;
+        var p = null;
+        try { p = seg.send({ image: camV }); } catch (e) { mode = 'frame'; }
+        if (p && p.then) p.then(function () { segBusy = false; }, function () { segBusy = false; mode = 'frame'; });
+        else segBusy = false;
+      }
+      if (!seg || mode === 'frame') paintFramePerson();
+    }
+    compose(ts || 0);
+    requestAnimationFrame(frameLoop);
+  }
+  requestAnimationFrame(frameLoop);
+
+  /* ----- the show mix: one WebAudio graph, three listeners -----
+     mixDest is THE SHOW (what records and what live viewers hear).
+     guestDest is the guest's own feed (host voice + media, never the
+     guest's own voice back). The host monitors guest + media on the
+     device speakers. A media break only turns the two mic gains into
+     the SHOW down — every talkback path stays open off-air. */
+  var AC = null, mixDest = null, guestDest = null;
+  var micMix = null, guestMix = null, micGuestG = null, guestMonG = null;
+  var mediaMix = null, mediaMon = null, mediaGuestG = null;
+  var micSrc = null, guestSrc = null, songSrc = null, vidSrc = null;
+  function mkGain(v, dest) { var n = AC.createGain(); n.gain.value = v; if (dest) n.connect(dest); return n; }
+  function ensureAudio() {
+    if (AC) { if (AC.state === 'suspended') AC.resume(); wireMic(); return; }
+    try {
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      mixDest = AC.createMediaStreamDestination();
+      guestDest = AC.createMediaStreamDestination();
+      micMix = mkGain(1, mixDest);
+      micGuestG = mkGain(1, guestDest);
+      guestMix = mkGain(1, mixDest);
+      guestMonG = mkGain(0.9, AC.destination);
+      mediaMix = mkGain(1, mixDest);
+      mediaMon = mkGain(0.9, AC.destination);
+      mediaGuestG = mkGain(1, guestDest);
+      wireMic();
+    } catch (e) {}
+  }
+  function wireMic() {
+    if (!AC || !stream || micSrc) return;
+    try {
+      micSrc = AC.createMediaStreamSource(stream);
+      micSrc.connect(micMix); micSrc.connect(micGuestG);
+    } catch (e) {}
+  }
+  function wireGuestAudio() {
+    if (!AC || !guestStream) return;
+    try {
+      if (guestSrc && guestSrc._for === guestStream.id) return;
+      guestSrc = AC.createMediaStreamSource(guestStream);
+      guestSrc._for = guestStream.id;
+      guestSrc.connect(guestMix); guestSrc.connect(guestMonG);
+    } catch (e) {}
+  }
+  function wireMediaAudio() {
+    if (!AC) return;
+    try {
+      if (!songSrc) { songSrc = AC.createMediaElementSource(songEl); songSrc.connect(mediaMix); songSrc.connect(mediaMon); songSrc.connect(mediaGuestG); }
+    } catch (e) {}
+    try {
+      if (!vidSrc) { vidSrc = AC.createMediaElementSource(vidEl); vidSrc.connect(mediaMix); vidSrc.connect(mediaMon); vidSrc.connect(mediaGuestG); }
+    } catch (e) {}
+  }
+  var _showStream = null;
+  function showStream() {
+    if (_showStream) return _showStream;
+    ensureAudio();
+    var cs = cvs.captureStream(30);
+    var ms = new MediaStream();
+    cs.getVideoTracks().forEach(function (t) { ms.addTrack(t); });
+    if (mixDest) mixDest.stream.getAudioTracks().forEach(function (t) { ms.addTrack(t); });
+    _showStream = ms;
+    return ms;
+  }
+  function setShowMics(on) {
+    if (!AC) return;
+    var t = AC.currentTime;
+    micMix.gain.setTargetAtTime(on ? 1 : 0, t, 0.05);
+    guestMix.gain.setTargetAtTime(on ? 1 : 0, t, 0.05);
+  }
+  /* ----- camera ----- */
+  async function ivStartCam() {
+    try {
+      if (stream) { var tr = stream.getTracks(); for (var i = 0; i < tr.length; i++) tr[i].stop(); micSrc = null; }
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: facing, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: true });
+      camV.srcObject = stream;
+      await camV.play();
+      micTrack = stream.getAudioTracks()[0] || null;
+      ensureAudio();
+      initSeg();
+      var rb = document.getElementById('ivRecBtn'); rb.disabled = false; rb.style.opacity = 1;
+      setStatus(mode === 'frame' ? 'Camera on (framed-picture mode — the cutout library did not load). You are on the set.' : 'Camera on — you are on the set. Invite your guest, then record or go live.');
+    } catch (e) { setStatus('The camera did not open — allow camera access for this site in your browser, then tap again.'); }
+  }
+  function ivFlipCam() { facing = (facing === 'user') ? 'environment' : 'user'; if (stream) ivStartCam(); }
+  /* ----- record + post (the Viewcast episode door) ----- */
+  var recorder = null, chunks = [], recTimer = null, recStart = 0, lastBlob = null;
+  function fmtT(s) { var m = Math.floor(s / 60), r = s % 60; return m + ':' + (r < 10 ? '0' : '') + r; }
+  function ivStartRec() {
+    if (!stream) { setStatus('Turn the camera on first.'); return; }
+    chunks = [];
+    var ss = showStream();
+    var mt = '';
+    if (window.MediaRecorder) {
+      if (MediaRecorder.isTypeSupported('video/mp4')) mt = 'video/mp4';
+      else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) mt = 'video/webm;codecs=vp9,opus';
+      else if (MediaRecorder.isTypeSupported('video/webm')) mt = 'video/webm';
+    }
+    try { recorder = new MediaRecorder(ss, mt ? { mimeType: mt } : undefined); }
+    catch (e) { setStatus('This browser cannot record — try Chrome.'); return; }
+    recorder.ondataavailable = function (ev) { if (ev.data && ev.data.size) chunks.push(ev.data); };
+    recorder.onstop = ivOnRecStop;
+    recorder.start(500);
+    recStart = Date.now();
+    var tv = document.getElementById('itimer');
+    tv.textContent = '● REC 0:00';
+    recTimer = setInterval(function () { tv.textContent = '● REC ' + fmtT(Math.floor((Date.now() - recStart) / 1000)); }, 500);
+    document.getElementById('ivRecBtn').disabled = true;
+    var sb = document.getElementById('ivStopBtn'); sb.disabled = false; sb.style.opacity = 1;
+    setStatus(guestOn ? 'Recording — you and your guest are both in this take.' : 'Recording… talk away.');
+  }
+  function ivStopRec() {
+    if (recorder && recorder.state !== 'inactive') recorder.stop();
+    clearInterval(recTimer); document.getElementById('itimer').textContent = '';
+    document.getElementById('ivRecBtn').disabled = false;
+    var sb = document.getElementById('ivStopBtn'); sb.disabled = true; sb.style.opacity = .55;
+  }
+  function ivOnRecStop() {
+    lastBlob = new Blob(chunks, { type: (recorder && recorder.mimeType) || 'video/webm' });
+    var prev = document.getElementById('ivprev');
+    prev.src = URL.createObjectURL(lastBlob); prev.style.display = 'block';
+    var pb = document.getElementById('ivPostBtn'); pb.disabled = false; pb.style.opacity = 1;
+    setStatus('Take saved on this device — watch it back below, then post it.');
+  }
+  async function ivPostEp() {
+    var title = (document.getElementById('ivtitle').value || '').trim();
+    if (!title) { setStatus('Give the interview a title first.'); return; }
+    if (!lastBlob) { setStatus('Record a take first.'); return; }
+    var fd = new FormData();
+    fd.append('video', lastBlob, 'viewcast' + (lastBlob.type.indexOf('mp4') >= 0 ? '.mp4' : '.webm'));
+    fd.append('title', title); fd.append('backdrop', 'panelroom');
+    var pb = document.getElementById('ivPostBtn'); pb.disabled = true; pb.style.opacity = .55;
+    setStatus('Posting your interview — this can take a moment for a long take…');
+    try {
+      var r = await fetch('/admin/viewcast/upload', { method: 'POST', body: fd });
+      var j = await r.json();
+      if (j.ok) setStatus('Posted! It is on the Viewcast page now — manage it any time in the Viewcast Studio list.');
+      else { setStatus(j.error || 'Posting failed — try again.'); pb.disabled = false; pb.style.opacity = 1; }
+    } catch (e) { setStatus('Posting failed — check your connection and try again.'); pb.disabled = false; pb.style.opacity = 1; }
+  }
+  /* ----- the guest seat (same relay as Viewcast) ----- */
+  var roomCode = null, pc = null, guestStream = null, guestOn = false, offerOut = false, hostPollTimer = null;
+  async function ivMakeInvite() {
+    try {
+      var r = await fetch('/admin/viewcast/room', { method: 'POST' });
+      var j = await r.json();
+      if (!j.ok) { invSet('The invite could not be made — try again.'); return; }
+      roomCode = j.code;
+      document.getElementById('ivInvLink').value = location.origin + '/interview/join/' + roomCode;
+      document.getElementById('ivInvBox').style.display = 'block';
+      document.getElementById('ivInvBtn').textContent = '🔗 Make a fresh invite link';
+      invSet(stream ? 'Send that link to your guest — waiting for them…' : 'Link ready — now turn your camera on above, then send the link.');
+      if (hostPollTimer) clearInterval(hostPollTimer);
+      hostPollTimer = setInterval(ivHostPoll, 900);
+      ivHostPoll();
+    } catch (e) { invSet('The invite could not be made — check your connection.'); }
+  }
+  function ivCopyInvite() {
+    var inp = document.getElementById('ivInvLink');
+    inp.select(); inp.setSelectionRange(0, 9999);
+    if (navigator.clipboard) navigator.clipboard.writeText(inp.value).then(function () { invSet('Link copied — send it to your guest.'); }, function () { document.execCommand('copy'); });
+    else document.execCommand('copy');
+  }
+  async function ivHsend(msg) {
+    if (!roomCode) return;
+    try { await fetch('/api/viewcast/signal/' + roomCode, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'host', msg: msg }) }); } catch (e) {}
+  }
+  async function ivHostPoll() {
+    if (!roomCode) return;
+    try {
+      var r = await fetch('/api/viewcast/poll/' + roomCode + '/host');
+      if (!r.ok) { invSet('This invite link expired — make a fresh one.'); clearInterval(hostPollTimer); return; }
+      var j = await r.json();
+      for (var i = 0; i < j.msgs.length; i++) await ivHandleHostMsg(j.msgs[i]);
+      if (j.peerJoined && !offerOut && !guestOn) ivStartCall();
+    } catch (e) {}
+  }
+  async function ivHandleHostMsg(msg) {
+    if (msg.type === 'hello') { if (!offerOut && !guestOn) ivStartCall(); return; }
+    if (!pc) return;
+    try {
+      if (msg.type === 'answer') await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+      else if (msg.type === 'ice') { if (msg.data) await pc.addIceCandidate(new RTCIceCandidate(msg.data)); }
+      else if (msg.type === 'bye') ivGuestGone('Your guest left the interview. The link still works if they come back.');
+    } catch (e) {}
+  }
+  function ivStartCall() {
+    if (offerOut || guestOn) return;
+    if (!stream) { invSet('Your guest is here — turn your camera on above and they come in.'); return; }
+    offerOut = true;
+    pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    var ss = showStream();
+    ss.getVideoTracks().forEach(function (t) { pc.addTrack(t, ss); });
+    if (guestDest) guestDest.stream.getAudioTracks().forEach(function (t) { pc.addTrack(t, guestDest.stream); });
+    pc.ontrack = function (ev) {
+      guestStream = ev.streams[0];
+      remV.srcObject = guestStream;
+      wireGuestAudio();
+    };
+    pc.onicecandidate = function (ev) { if (ev.candidate) ivHsend({ type: 'ice', data: ev.candidate }); };
+    pc.onconnectionstatechange = function () {
+      if (!pc) return;
+      if (pc.connectionState === 'connected') { guestOn = true; wireGuestAudio(); invSet('● Your guest is ON — they are in the corner window. Record or go live when ready.'); }
+      else if (pc.connectionState === 'failed') ivGuestGone('The connection could not get through your guest network. They can try different Wi-Fi or mobile data and tap the link again.');
+      else if (pc.connectionState === 'disconnected' && guestOn) ivGuestGone('Your guest connection dropped. The link still works if they come back.');
+    };
+    pc.createOffer().then(function (o) { return pc.setLocalDescription(o); }).then(function () { ivHsend({ type: 'offer', data: pc.localDescription }); }).catch(function () {});
+    invSet('Your guest is here — bringing them in…');
+  }
+  function ivGuestGone(note) {
+    if (pc) { try { pc.close(); } catch (e) {} pc = null; }
+    guestStream = null; guestOn = false; offerOut = false;
+    remV.srcObject = null;
+    invSet(note);
+  }
+  function ivEndGuest() { ivHsend({ type: 'bye' }); ivGuestGone('Guest ended. Make a fresh link any time.'); }
+
+  /* ----- media break ----- */
+  function ivBeginBreak() {
+    breakActive = true; breakHold = false; breakTarget = 1;
+    setShowMics(false);
+    document.getElementById('ivBackBtn').style.display = 'inline-block';
+  }
+  function ivBackToSet() {
+    if (!breakActive) return;
+    breakActive = false; breakHold = false; breakTarget = 0;
+    try { songEl.pause(); } catch (e) {}
+    try { vidEl.pause(); } catch (e) {}
+    setShowMics(true);
+    document.getElementById('ivBackBtn').style.display = 'none';
+    breakSet('Back on the set — mics live.');
+  }
+  function ivPlaySong(o) {
+    ensureAudio(); wireMediaAudio();
+    breakKind = 'song'; breakTitle = o.title || ''; breakArtist = o.artist || '';
+    coverReady = false;
+    if (o.cover) { coverImg.onload = function () { coverReady = true; }; coverImg.src = o.cover; }
+    try { vidEl.pause(); } catch (e) {}
+    songEl.src = o.audio; songEl.currentTime = 0;
+    var p = songEl.play(); if (p && p.catch) p.catch(function () {});
+    ivBeginBreak();
+    breakSet('🎵 On the break: ' + breakTitle + (breakArtist ? ' — ' + breakArtist : '') + '. It hands the show back when it ends — or press BACK TO SET.');
+  }
+  function ivPlayVideo(o) {
+    ensureAudio(); wireMediaAudio();
+    breakKind = 'video'; breakTitle = o.title || '';
+    try { songEl.pause(); } catch (e) {}
+    vidEl.src = o.url; vidEl.currentTime = 0;
+    var p = vidEl.play(); if (p && p.catch) p.catch(function () {});
+    ivBeginBreak();
+    breakSet('🎬 On the break: ' + (breakTitle || 'video') + ' — full screen, mics out of the show. It holds at the end for BACK TO SET.');
+  }
+  songEl.addEventListener('ended', function () { if (breakActive && breakKind === 'song') ivBackToSet(); });
+  vidEl.addEventListener('ended', function () {
+    if (breakActive && breakKind === 'video') {
+      breakHold = true;
+      breakSet('The video ended — holding on the last frame. Press BACK TO SET when you are ready.');
+    }
+  });
+  var fileObjUrl = null;
+  function ivPlayFile() {
+    var inp = document.getElementById('ivFile');
+    var f = inp.files && inp.files[0];
+    if (!f) { breakSet('Pick a file first — audio or video, right off this device.'); return; }
+    if (fileObjUrl) URL.revokeObjectURL(fileObjUrl);
+    fileObjUrl = URL.createObjectURL(f);
+    var typed = (document.getElementById('ivFileTitle').value || '').trim();
+    var title = typed || f.name.replace(/\.[^.]+$/, '');
+    if ((f.type || '').indexOf('video') === 0) ivPlayVideo({ title: title, url: fileObjUrl });
+    else ivPlaySong({ title: title, artist: '⭐ First heard here — Top 20 premiere', audio: fileObjUrl, cover: null });
+  }
+  function ivMkBtn(label, fn) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.textContent = label;
+    b.style.cssText = 'background:#1a2140;color:#e9ecf2;border:1px solid #2c3a6e;border-radius:8px;padding:10px 13px;font-weight:700;cursor:pointer;text-align:left';
+    b.addEventListener('click', fn);
+    return b;
+  }
+  async function ivSearchArtists() {
+    var q = document.getElementById('ivArtistQ').value || '';
+    var box = document.getElementById('ivArtistList');
+    box.innerHTML = '';
+    document.getElementById('ivMediaList').innerHTML = '';
+    try {
+      var r = await fetch('/admin/interview/artists?q=' + encodeURIComponent(q));
+      var j = await r.json();
+      var list = j.artists || [];
+      if (!list.length) {
+        var p = document.createElement('p');
+        p.style.color = '#8a8f99'; p.style.margin = '4px 0';
+        p.textContent = 'No artists with live songs match. The premiere box below works with no profile at all.';
+        box.appendChild(p);
+        return;
+      }
+      list.forEach(function (a) {
+        box.appendChild(ivMkBtn('👤 ' + a.name + ' — ' + a.city + ', ' + a.state, function () { ivLoadMedia(a); }));
+      });
+    } catch (e) { breakSet('The artist list did not load — check your connection.'); }
+  }
+  async function ivLoadMedia(a) {
+    var box = document.getElementById('ivMediaList');
+    box.innerHTML = '';
+    try {
+      var r = await fetch('/admin/interview/artist/' + a.id + '/media');
+      var j = await r.json();
+      if (!j.ok) return;
+      var h = document.createElement('p');
+      h.style.margin = '2px 0'; h.style.color = '#c9cdd6';
+      var strong = document.createElement('strong'); strong.textContent = j.artist.name;
+      h.appendChild(strong);
+      h.appendChild(document.createTextNode(' — tap to play in the show:'));
+      box.appendChild(h);
+      j.songs.forEach(function (s) {
+        box.appendChild(ivMkBtn('🎵 ' + s.title + ' (' + s.genre + ')', function () {
+          ivPlaySong({ title: s.title, artist: j.artist.name, audio: s.audio, cover: s.cover });
+        }));
+      });
+      if (j.video) {
+        box.appendChild(ivMkBtn('🎬 Their profile video — ' + j.video.title, function () {
+          ivPlayVideo({ title: j.video.title, url: j.video.url });
+        }));
+      }
+      if (!j.songs.length && !j.video) {
+        var p = document.createElement('p');
+        p.style.color = '#8a8f99'; p.textContent = 'Nothing playable on their profile yet.';
+        box.appendChild(p);
+      }
+    } catch (e) { breakSet('That artist media did not load — try again.'); }
+  }
+  /* ----- LIVE ----- */
+  var liveCode = null, liveOn = false, livePCs = {}, livePollTimer = null;
+  async function ivGoLive() {
+    if (!stream) { setStatus('Turn the camera on first — the live show is this screen.'); return; }
+    try {
+      var r = await fetch('/admin/interview/live', { method: 'POST' });
+      var j = await r.json();
+      if (!j.ok) { setStatus('Live could not start — try again.'); return; }
+      liveCode = j.code; liveOn = true;
+      document.getElementById('ivLiveLink').value = location.origin + j.url;
+      document.getElementById('ivLiveBox').style.display = 'block';
+      document.getElementById('ivLiveBtn').style.display = 'none';
+      document.getElementById('ivLiveEndBtn').style.display = 'inline-block';
+      liveSet('🔴 LIVE — share the watch link. Viewers watching: 0');
+      if (livePollTimer) clearInterval(livePollTimer);
+      livePollTimer = setInterval(ivLivePoll, 1200);
+      ivLivePoll();
+    } catch (e) { setStatus('Live could not start — check your connection.'); }
+  }
+  function ivCopyLive() {
+    var inp = document.getElementById('ivLiveLink');
+    inp.select(); inp.setSelectionRange(0, 9999);
+    if (navigator.clipboard) navigator.clipboard.writeText(inp.value).then(function () { liveSet('Watch link copied — send it out.'); }, function () { document.execCommand('copy'); });
+    else document.execCommand('copy');
+  }
+  async function ivLivePoll() {
+    if (!liveCode) return;
+    try {
+      var r = await fetch('/api/interview/live/poll/' + liveCode + '/host');
+      if (!r.ok) { ivEndLive(); return; }
+      var j = await r.json();
+      for (var i = 0; i < j.msgs.length; i++) await ivLiveHandle(j.msgs[i].viewer, j.msgs[i].msg);
+      if (liveOn) liveSet('🔴 LIVE — share the watch link. Viewers watching: ' + j.viewers.length);
+    } catch (e) {}
+  }
+  async function ivLiveHandle(vid, msg) {
+    if (msg.type === 'hello') { ivStartViewer(vid); return; }
+    var pc = livePCs[vid]; if (!pc) return;
+    try {
+      if (msg.type === 'answer') await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+      else if (msg.type === 'ice') { if (msg.data) await pc.addIceCandidate(new RTCIceCandidate(msg.data)); }
+      else if (msg.type === 'bye') ivCloseViewer(vid);
+    } catch (e) {}
+  }
+  function ivLsend(vid, msg) {
+    if (!liveCode) return;
+    fetch('/api/interview/live/signal/' + liveCode, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: 'host', viewer: vid, msg: msg }) }).catch(function () {});
+  }
+  function ivStartViewer(vid) {
+    if (livePCs[vid]) return;
+    var pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+    livePCs[vid] = pc;
+    var ss = showStream();
+    ss.getTracks().forEach(function (t) { pc.addTrack(t, ss); });
+    pc.onicecandidate = function (ev) { if (ev.candidate) ivLsend(vid, { type: 'ice', data: ev.candidate }); };
+    pc.onconnectionstatechange = function () {
+      if (pc.connectionState === 'failed' || pc.connectionState === 'closed') ivCloseViewer(vid);
+    };
+    pc.createOffer().then(function (o) { return pc.setLocalDescription(o); }).then(function () { ivLsend(vid, { type: 'offer', data: pc.localDescription }); }).catch(function () {});
+  }
+  function ivCloseViewer(vid) {
+    var pc = livePCs[vid];
+    if (pc) { try { pc.close(); } catch (e) {} delete livePCs[vid]; }
+  }
+  function ivEndLive() {
+    for (var vid in livePCs) { ivLsend(vid, { type: 'bye' }); ivCloseViewer(vid); }
+    if (livePollTimer) clearInterval(livePollTimer);
+    liveOn = false; liveCode = null;
+    document.getElementById('ivLiveBox').style.display = 'none';
+    document.getElementById('ivLiveBtn').style.display = 'inline-block';
+    document.getElementById('ivLiveEndBtn').style.display = 'none';
+  }
+  /* ----- adjust sliders ----- */
+  function paintFx() {
+    var m = [['ivSlimPct', fxSlim], ['ivBackPct', fxBack], ['ivSmoothPct', fxSmooth], ['ivBrightPct', fxBright], ['ivWidePct', fxWide], ['ivZoomPct', fxZoom]];
+    for (var i = 0; i < m.length; i++) { var el = document.getElementById(m[i][0]); if (el) el.textContent = Math.round(m[i][1] * 100) + '%'; }
+  }
+  function bindFx(id, key) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('input', function () {
+      var v = Math.max(0, Math.min(100, +el.value || 0)) / 100;
+      if (key === 'slim') fxSlim = v; else if (key === 'back') fxBack = v;
+      else if (key === 'smooth') fxSmooth = v; else if (key === 'bright') fxBright = v;
+      else if (key === 'wide') fxWide = v; else if (key === 'zoom') fxZoom = v;
+      paintFx();
+    });
+  }
+  bindFx('ivSlimR', 'slim'); bindFx('ivBackR', 'back'); bindFx('ivSmoothR', 'smooth');
+  bindFx('ivBrightR', 'bright'); bindFx('ivWideR', 'wide'); bindFx('ivZoomR', 'zoom');
+  function ivResetFx() {
+    fxSlim = FX_DEF.slim / 100; fxBack = FX_DEF.back / 100; fxSmooth = 0; fxBright = 0; fxWide = 0; fxZoom = FX_DEF.zoom / 100;
+    var pairs = [['ivSlimR', fxSlim], ['ivBackR', fxBack], ['ivSmoothR', fxSmooth], ['ivBrightR', fxBright], ['ivWideR', fxWide], ['ivZoomR', fxZoom]];
+    for (var i = 0; i < pairs.length; i++) { var el = document.getElementById(pairs[i][0]); if (el) el.value = Math.round(pairs[i][1] * 100); }
+    paintFx();
+  }
+  paintFx();
   </script>`));
 });
 
