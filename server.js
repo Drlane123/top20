@@ -1829,7 +1829,7 @@ function hotspotBoothHtml(hs) {
     cycleStart = Math.floor(Date.now() / cycleLenMs) * cycleLenMs;
   }
   const catchLine = `<p class="hs-catch">🔥 Want to get in the Hot Spot? <a href="/profile">Create a profile</a> and load your song.</p>`;
-  const vu = (cls) => `<div class="hs-vu ${cls}" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>`;
+  const vu = (cls) => `<div class="hs-vu ${cls}" aria-hidden="true"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>`;
   const tabDeck = (c, i) => `
       <div class="hs-tdeck">
         <div class="hs-twrap">
@@ -1881,6 +1881,13 @@ function hotspotBoothHtml(hs) {
     .hs-vu span:nth-child(5){animation-duration:.53s;animation-delay:.19s}
     .hs-vu span:nth-child(6){animation-duration:.62s;animation-delay:.11s}
     .hs-vu span:nth-child(7){animation-duration:.45s;animation-delay:.02s}
+    .hs-vu span:nth-child(8){animation-duration:.58s;animation-delay:.13s}
+    .hs-vu span:nth-child(9){animation-duration:.44s;animation-delay:.06s}
+    .hs-vu span:nth-child(10){animation-duration:.7s;animation-delay:.17s}
+    .hs-vu span:nth-child(11){animation-duration:.5s;animation-delay:.09s}
+    .hs-vu span:nth-child(12){animation-duration:.64s;animation-delay:.21s}
+    .hs-vu span:nth-child(13){animation-duration:.47s;animation-delay:.03s}
+    .hs-vu.live span{animation:none}
     @keyframes hsVu{from{transform:scaleY(.3)}to{transform:scaleY(1)}}
     .hs-open{background:linear-gradient(180deg,#ff9a5c,#e2543e);color:#fff;border:1px solid #a32e1c;border-radius:999px;padding:12px 20px;font-weight:900;letter-spacing:1px;cursor:pointer}
     .hs-catch{text-align:center;color:#ffe9b0;font-weight:700;font-size:13.5px;margin:10px 4px 2px}
@@ -1948,6 +1955,60 @@ function hotspotBoothHtml(hs) {
           try { audio.volume = Math.max(0, Math.min(1, from + (target - from) * (n / steps))); } catch (e) {}
           if (n >= steps) { clearInterval(fadeInt); fadeInt = null; if (done) done(); }
         }, 50);
+      }
+      // LIVE METER (owner, Nov 17, 2026): the VU bars are fed by the
+      // actual booth audio through an analyser — the song (and the
+      // DJ's call) move the bars, like a real radio meter. Same bars,
+      // same look, a little wider with more bars. Built lazily on the
+      // first open (a tap is the gesture Web Audio needs); if anything
+      // fails the bars keep their CSS dance and the music never stops.
+      var actx = null, analyser = null, freqData = null, meterRaf = null, vuSets = null, vuLevels = null;
+      var VU_BANDS = [[1,2],[3,4],[5,6],[7,9],[10,13],[14,18],[19,24],[25,31],[32,40],[41,51],[52,65],[66,82],[83,104]];
+      function ensureMeter() {
+        if (actx) { if (actx.state === 'suspended') { try { actx.resume(); } catch (e) {} } return; }
+        try {
+          var AC = window.AudioContext || window.webkitAudioContext;
+          if (!AC) return;
+          var ctx = new AC();
+          var srcNode = ctx.createMediaElementSource(audio);
+          var an = ctx.createAnalyser();
+          an.fftSize = 256;
+          an.smoothingTimeConstant = 0.55;
+          srcNode.connect(an);
+          an.connect(ctx.destination);
+          actx = ctx; analyser = an;
+          freqData = new Uint8Array(an.frequencyBinCount);
+          vuSets = [];
+          vuLevels = [];
+          for (var b = 0; b < VU_BANDS.length; b++) vuLevels.push(0);
+          var vus = document.querySelectorAll('#hsBooth .hs-vu');
+          for (var i = 0; i < vus.length; i++) { vus[i].classList.add('live'); vuSets.push(vus[i].querySelectorAll('span')); }
+          window.__hsVuLive = true;
+        } catch (e) { actx = null; analyser = null; }
+      }
+      function drawMeter() {
+        meterRaf = requestAnimationFrame(drawMeter);
+        if (!analyser || !freqData || !vuSets) return;
+        analyser.getByteFrequencyData(freqData);
+        for (var b = 0; b < VU_BANDS.length; b++) {
+          var lo = VU_BANDS[b][0], hi = VU_BANDS[b][1], sum = 0;
+          for (var k = lo; k <= hi; k++) sum += freqData[k];
+          var v = (sum / ((hi - lo + 1) * 255)) * (0.9 + b * 0.09);
+          if (v > 1) v = 1;
+          if (v > vuLevels[b]) vuLevels[b] = v; else vuLevels[b] *= 0.8;
+          var t = 'scaleY(' + (0.07 + 0.93 * vuLevels[b]).toFixed(3) + ')';
+          for (var s = 0; s < vuSets.length; s++) { if (vuSets[s][b]) vuSets[s][b].style.transform = t; }
+        }
+      }
+      function startMeter() {
+        ensureMeter();
+        if (analyser && meterRaf === null) { meterRaf = requestAnimationFrame(drawMeter); }
+      }
+      function stopMeter() {
+        if (meterRaf !== null) { cancelAnimationFrame(meterRaf); meterRaf = null; }
+        var vus = document.querySelectorAll('#hsBooth .hs-vu');
+        for (var i = 0; i < vus.length; i++) vus[i].classList.remove('live');
+        window.__hsVuLive = false;
       }
       function callFor(i) {
         var s = cfg.songs[i];
@@ -2052,6 +2113,7 @@ function hotspotBoothHtml(hs) {
       }
       function openBooth() {
         isOpen = true;
+        startMeter();
         full.hidden = false;
         openBtn.textContent = '✖ CLOSE THE BOOTH';
         cur = -1;
@@ -2059,6 +2121,7 @@ function hotspotBoothHtml(hs) {
       }
       function closeBooth() {
         isOpen = false;
+        stopMeter();
         openBtn.textContent = '🎧 OPEN THE BOOTH';
         stopChain();
         clearTimers();
