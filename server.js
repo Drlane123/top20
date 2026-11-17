@@ -359,6 +359,28 @@ if (HEADER_LOGO) {
     res.end(HEADER_LOGO);
   });
 }
+const DECK_IMG = (() => {
+  try { return Buffer.from(require("./deck-data"), "base64"); }
+  catch (e) { return null; }
+})();
+if (DECK_IMG) {
+  app.get("/deck.jpg", (req, res) => {
+    res.setHeader("Content-Type", "image/jpeg");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.end(DECK_IMG);
+  });
+}
+const DISC_IMG = (() => {
+  try { return Buffer.from(require("./disc-data"), "base64"); }
+  catch (e) { return null; }
+})();
+if (DISC_IMG) {
+  app.get("/disc.webp", (req, res) => {
+    res.setHeader("Content-Type", "image/webp");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.end(DISC_IMG);
+  });
+}
 // Search engines (owner, Nov 2, 2026): a real robots.txt and a
 // sitemap, so Google's crawlers come back clean and pick up the
 // platinum favicon and the public pages. The site 404'd robots.txt
@@ -611,10 +633,15 @@ h2{letter-spacing:1px}
 .ringwrap{transition:opacity .6s ease}
 .ringwrap.lit{background:radial-gradient(300px 150px at 50% 46%,rgba(43,92,255,.17),transparent 68%)}
 .ringwrap.dim{opacity:.72}
-.ttdeck{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:min(94%,600px);z-index:0;pointer-events:none}
-.ttdeck svg{display:block;width:100%;height:auto}
-.tt-spin{transform-box:fill-box;transform-origin:center;animation:ttspin 12s linear infinite}
-.tt-spin.rev{animation-direction:reverse}
+.ttdeck{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:min(96%,620px);z-index:0;pointer-events:none;padding-bottom:4.4%}
+.tt-stage{position:relative}
+.tt-base{display:block;width:100%;height:auto;border-radius:12px;box-shadow:0 18px 34px rgba(0,0,0,.55)}
+.tt-disc{position:absolute;left:17.35%;top:5.82%;width:50.07%;z-index:1}
+.tt-arm{position:absolute;inset:0;z-index:2;background:url(/deck.jpg) center/100% 100% no-repeat;clip-path:polygon(60% 0%,83% 0%,83% 15%,80% 30%,72% 37%,65% 42%,62% 40%,51% 37%,51% 20%,55% 17%,62% 13%,63% 5%)}
+.tt-glow{position:absolute;z-index:3;border-radius:50%;filter:blur(7px);mix-blend-mode:screen;animation:ttglow 2.4s ease-in-out infinite alternate}
+@keyframes ttglow{from{opacity:.3}to{opacity:.75}}
+.tt-shadow{position:absolute;left:4%;right:4%;bottom:1%;height:3.4%;background:radial-gradient(ellipse at center,rgba(0,0,0,.65),transparent 70%);filter:blur(4px);z-index:-1}
+.tt-foot{position:absolute;bottom:0;width:7.4%;z-index:-1}
 @keyframes ttspin{to{transform:rotate(360deg)}}
 .prog{display:block;height:5px;background:#232429;border-radius:99px;overflow:hidden;margin-top:6px}
 .prog i{display:block;height:100%;background:linear-gradient(90deg,#2b5cff,#7db1ff);border-radius:99px;transition:width .5s linear}
@@ -2314,65 +2341,18 @@ app.get("/", (req, res) => {
   // touches the chart — it only reads engagement for the buzz deal.
   const hsNow = todaysHotSpots();
   const boothHtml = hotspotBoothHtml(hsNow);
-  function ttDeck(u, rev) {
-    var dots = "", ticks = "";
-    for (var di = 0; di < 72; di++) {
-      var da = (di / 72) * Math.PI * 2;
-      dots += '<circle cx="' + (128 * Math.cos(da)).toFixed(1) + '" cy="' + (128 * Math.sin(da)).toFixed(1) + '" r="2.8" fill="#3a3e44"/>';
-    }
-    for (var ti = 0; ti < 48; ti++) {
-      var ta = Math.PI * (ti + 0.5) / 48;
-      var tx = (222 + 140 * Math.cos(ta)).toFixed(1), ty = (88 + 48 * Math.sin(ta)).toFixed(1);
-      ticks += '<path d="M' + tx + ',' + ty + ' L' + tx + ',' + (parseFloat(ty) + 11).toFixed(1) + '" stroke="rgba(205,210,218,.20)" stroke-width="2"/>';
-    }
-    return '<div class="ttdeck" aria-hidden="true"><svg viewBox="0 0 460 216" xmlns="http://www.w3.org/2000/svg">' +
-      '<defs>' +
-      '<linearGradient id="ttBody' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b3e44"/><stop offset=".5" stop-color="#1a1b1e"/><stop offset="1" stop-color="#26282d"/></linearGradient>' +
-      '<linearGradient id="ttSide' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#232529"/><stop offset="1" stop-color="#0d0e10"/></linearGradient>' +
-      '<linearGradient id="ttBand' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a4e55"/><stop offset=".55" stop-color="#22242a"/><stop offset="1" stop-color="#131418"/></linearGradient>' +
-      '<radialGradient id="ttPlat' + u + '"><stop offset="0" stop-color="#e6eaef"/><stop offset=".55" stop-color="#b4bac2"/><stop offset=".88" stop-color="#7e858f"/><stop offset="1" stop-color="#5f666f"/></radialGradient>' +
-      '<linearGradient id="ttGold' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7e08a"/><stop offset=".45" stop-color="#d4af37"/><stop offset=".8" stop-color="#9a7b1e"/><stop offset="1" stop-color="#e9c860"/></linearGradient>' +
-      '<linearGradient id="ttSheen' + u + '" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff" stop-opacity=".14"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>' +
-      '</defs>' +
-      '<ellipse cx="230" cy="202" rx="205" ry="10" fill="#000" opacity=".5"/>' +
-      '<g><rect x="39" y="158" width="46" height="34" rx="8" fill="#0a0a0c" stroke="#2b2e33"/><path d="M41,168 L83,168 M41,176 L83,176 M41,184 L83,184" stroke="#202227" stroke-width="2"/><ellipse cx="62" cy="192" rx="26" ry="5.5" fill="#000" stroke="#26282d"/></g>' +
-      '<g><rect x="375" y="158" width="46" height="34" rx="8" fill="#0a0a0c" stroke="#2b2e33"/><path d="M377,168 L419,168 M377,176 L419,176 M377,184 L419,184" stroke="#202227" stroke-width="2"/><ellipse cx="398" cy="192" rx="26" ry="5.5" fill="#000" stroke="#26282d"/></g>' +
-      '<rect x="26" y="32" width="408" height="120" rx="14" fill="url(#ttBody' + u + ')" stroke="#34373d"/>' +
-      '<polygon points="26,32 200,32 110,152 26,152" fill="url(#ttSheen' + u + ')"/>' +
-      '<rect x="26" y="152" width="408" height="25" rx="10" fill="url(#ttSide' + u + ')"/>' +
-      '<rect x="26" y="150" width="408" height="3" fill="url(#ttGold' + u + ')" opacity=".85"/>' +
-      '<circle cx="44" cy="165" r="2.6" fill="url(#ttGold' + u + ')"/><circle cx="416" cy="165" r="2.6" fill="url(#ttGold' + u + ')"/>' +
-      '<circle cx="48" cy="50" r="6" fill="#141518" stroke="#494d54"/><circle cx="66" cy="48" r="2.2" fill="#ff4b4b"/>' +
-      '<circle cx="58" cy="94" r="15" fill="#101114" stroke="#9aa1a9" stroke-width="2"/><circle cx="58" cy="94" r="8" fill="#2b2e33" stroke="#565b63"/>' +
-      '<circle cx="80" cy="110" r="2.4" fill="#39ff6a"/>' +
-      '<rect x="44" y="124" width="11" height="11" rx="2" fill="#1d1f23" stroke="#3a3e44"/><rect x="60" y="124" width="11" height="11" rx="2" fill="#1d1f23" stroke="#3a3e44"/>' +
-      '<ellipse cx="222" cy="96" rx="148" ry="51" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="3"/>' +
-      '<path d="M82,88 A140,48 0 0 0 362,88 L362,100 A140,48 0 0 1 82,100 Z" fill="url(#ttBand' + u + ')"/>' + ticks +
-      '<path d="M82,100 A140,48 0 0 0 362,100" stroke="rgba(0,0,0,.6)" fill="none"/>' +
-      '<g transform="translate(222,88) scale(1,0.343)"><g class="tt-spin' + (rev ? ' rev' : '') + '">' +
-      '<circle r="140" fill="url(#ttPlat' + u + ')" stroke="#565d66" stroke-width="1.5"/>' + dots +
-      '<circle r="124" fill="none" stroke="rgba(0,0,0,.35)"/>' +
-      '<circle cy="8" r="121" fill="#000" opacity=".35"/>' +
-      '<circle r="121" fill="#17181a"/>' +
-      '<circle r="118" fill="#0a0a0b"/>' +
-      '<circle r="100" fill="none" stroke="rgba(255,255,255,.05)"/><circle r="84" fill="none" stroke="rgba(255,255,255,.05)"/><circle r="66" fill="none" stroke="rgba(255,255,255,.05)"/>' +
-      '<circle r="34" fill="url(#ttGold' + u + ')"/><circle r="34" fill="none" stroke="#7a5f14"/><circle r="13" fill="none" stroke="rgba(0,0,0,.25)"/>' +
-      '<circle r="5" fill="#dfe3e8" stroke="#666c74"/>' +
-      '</g></g>' +
-      '<circle cx="344" cy="58" r="5" fill="#57b6ff" opacity=".3"/><circle cx="344" cy="58" r="2.2" fill="#57b6ff"/>' +
-      '<rect x="387" y="78" width="7" height="15" rx="2" fill="#1d1f23" stroke="#3a3e44"/>' +
-      '<path d="M374,50 L389,37" stroke="#101114" stroke-width="8" stroke-linecap="round"/><circle cx="392" cy="34" r="10" fill="#101114" stroke="#3a3e44"/><circle cx="392" cy="34" r="5" fill="#26282d"/>' +
-      '<circle cx="372" cy="52" r="21" fill="#141518" stroke="#494d54"/>' +
-      '<circle cx="372" cy="52" r="14.5" fill="#232529" stroke="#5b6067"/>' +
-      '<circle cx="372" cy="52" r="5.5" fill="#3a3e44"/>' +
-      '<circle cx="361" cy="58" r="7" fill="#1d1f23" stroke="#494d54"/><path d="M361,58 L324,73" stroke="#101114" stroke-width="9" stroke-linecap="round"/>' +
-      '<path d="M361,55.5 L324,70.5" stroke="rgba(255,255,255,.15)" stroke-width="1.8" stroke-linecap="round"/>' +
-      '<ellipse cx="302" cy="81" rx="15" ry="3.5" fill="#000" opacity=".3"/><g transform="translate(317,75) rotate(27)"><rect x="-21" y="-5.5" width="25" height="11" rx="2.5" fill="#26292f" stroke="#5b6067"/><circle cx="-15" cy="0" r="2.4" fill="#9aa1a9"/><path d="M2,-5 L10,-9" stroke="#9aa1a9" stroke-width="1.6" fill="none"/><rect x="-24" y="3" width="3" height="6" fill="#888e96"/></g>' +
-      '<path d="M410,90 L410,144" stroke="#08090a" stroke-width="6" stroke-linecap="round"/>' +
-      '<path d="M410,90 L410,144" stroke="#33363c" stroke-width="1.6" stroke-linecap="round"/>' +
-      '<path d="M416,96 L421,96 M416,108 L421,108 M416,120 L421,120 M416,132 L421,132 M416,142 L421,142" stroke="#4a4e55" stroke-width="1.4"/>' +
-      '<g transform="translate(410,114)"><rect x="-5" y="-10" width="10" height="20" rx="2" fill="#1b1d20" stroke="#6a6f77"/><path d="M-5,-3 L5,-3 M-5,3 L5,3" stroke="#454a51" stroke-width="1.4"/></g>' +
-      '</svg></div>';
+  function ttDeck() {
+    var foot = '<svg class="tt-foot" style="POS" viewBox="0 0 46 30"><rect x="3" y="2" width="40" height="20" rx="7" fill="#0a0a0c" stroke="#2b2e33"/><path d="M5,9 L41,9 M5,15 L41,15" stroke="#202227" stroke-width="2"/><ellipse cx="23" cy="23" rx="21" ry="5" fill="#000" stroke="#26282d"/></svg>';
+    return '<div class="ttdeck" aria-hidden="true">' +
+      '<div class="tt-shadow"></div>' +
+      foot.replace("POS", "left:5.4%") + foot.replace("POS", "right:5.4%") +
+      '<div class="tt-stage">' +
+      '<img class="tt-base" src="/deck.jpg" alt="">' +
+      '<canvas class="tt-disc" width="684" height="317"></canvas>' +
+      '<div class="tt-arm"></div>' +
+      '<div class="tt-glow" style="left:73%;top:36.5%;width:13%;height:38%;background:radial-gradient(ellipse,rgba(255,150,70,.55),rgba(70,210,255,.22) 55%,transparent 72%)"></div>' +
+      '<div class="tt-glow" style="left:53%;top:77.3%;width:31%;height:14%;background:radial-gradient(ellipse,rgba(70,210,255,.5),rgba(255,120,80,.2) 55%,transparent 72%);animation-delay:1.1s"></div>' +
+      '</div></div>';
   }
   const boothAt = (pos) => (hsNow.settings.position === pos ? boothHtml : "");
   const homeFirst = homeEntries.slice(0, 5);
@@ -2654,14 +2634,49 @@ app.get("/", (req, res) => {
     <p class="sub">The Top 20 never sits still — the first 10 ride one spinner, the next 10 ride the other. The song that's playing sticks out big, with its timer running under it. Drag a spinner to look around — it always swings back to the song that's playing.</p>
     <div class="ringsrow"><div class="ringcol">
     <div class="spinlabel" id="spinLabelA">TOP 10</div>
-    <div class="ringwrap" id="wrapA">${ttDeck("A", false)}<div class="ring" id="ringA"></div><div class="upnext" id="upNextA" hidden></div></div>
+    <div class="ringwrap" id="wrapA">${ttDeck()}<div class="ring" id="ringA"></div><div class="upnext" id="upNextA" hidden></div></div>
     <div class="ringnow" id="ringNowA"></div>
     </div><div class="ringcol" id="ringBBlock">
       <div class="spinlabel" id="spinLabelB">11 – 20</div>
-      <div class="ringwrap" id="wrapB">${ttDeck("B", false)}<div class="ring" id="ringB"></div><div class="upnext" id="upNextB" hidden></div></div>
+      <div class="ringwrap" id="wrapB">${ttDeck()}<div class="ring" id="ringB"></div><div class="upnext" id="upNextB" hidden></div></div>
       <div class="ringnow" id="ringNowB"></div>
     </div></div>
   </div></div>
+  <script>
+  (function(){
+    var tex = new Image(); tex.src = "/disc.webp";
+    var off = document.createElement("canvas"); off.width = 684; off.height = 684;
+    var octx = off.getContext("2d");
+    var MB = 0.298, MF = 0.629, SH = 4;
+    function draw(cv, ang){
+      var c = cv.getContext("2d"); if (!c) return;
+      octx.save(); octx.clearRect(0,0,684,684); octx.translate(342,342); octx.rotate(ang); octx.drawImage(tex,-342,-342); octx.restore();
+      c.clearRect(0,0,684,317);
+      var y, h;
+      for (y = 0; y < 102; y += SH) { h = Math.min(SH, 102-y); c.drawImage(off, 0, 342+(y-102)/MB, 684, h/MB, 0, y, 684, h); }
+      for (y = 102; y < 317; y += SH) { h = Math.min(SH, 317-y); c.drawImage(off, 0, 342+(y-102)/MF, 684, h/MF, 0, y, 684, h); }
+    }
+    var discs = [];
+    function init(){
+      discs = Array.prototype.slice.call(document.querySelectorAll(".tt-disc"));
+      if (!discs.length) return;
+      if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) { discs.forEach(function(cv){ draw(cv, 0); }); return; }
+      var t0 = null;
+      function frame(ts){
+        if (!t0) t0 = ts;
+        var ang = ((ts - t0) % 12000) / 12000 * Math.PI * 2;
+        discs.forEach(function(cv){
+          var rc = cv.getBoundingClientRect();
+          if (rc.bottom < -50 || rc.top > window.innerHeight + 50) return;
+          draw(cv, ang);
+        });
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    }
+    if (tex.complete && tex.naturalWidth) init(); else tex.onload = init;
+  })();
+  </script>
   ${boothAt("below")}
   ${plaqueStrip}
   ${dropStrip}
