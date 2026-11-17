@@ -1601,6 +1601,20 @@ async function sendEmail(to, subject, text) {
     return { sent: true };
   } catch (e) { console.log("[mail] ERROR " + (e && e.message) + " to=" + to); return { sent: false, reason: "error" }; }
 }
+function mailDeskCard() {
+  const on = !!process.env.RESEND_API_KEY;
+  return `<div class="panel" style="border:2px solid ${on ? "#3fae5a" : "#c0392b"}">
+    <h2 style="margin-top:0">\u2709\uFE0F Artist email \u2014 ${on ? "SWITCHED ON" : "NOT SWITCHED ON"}</h2>
+    <p class="sub">${on
+      ? "The app can see its Resend key, and artist emails (Hot Spot, Top 20 chart entry, DJ Pick) send from <b style=\"color:#fff\">" + esc(MAIL_FROM) + "</b>. If an artist says an email never came, run the test below \u2014 it shows Resend\u2019s own answer."
+      : "The app <b style=\"color:#fff\">cannot see a key named RESEND_API_KEY</b> in its server settings, so artist emails are being held as ready-to-send. Check the Render Environment row: the name must be exactly RESEND_API_KEY."}</p>
+    <form method="post" action="/admin/mail/test">
+      <label class="sub">Send a test email to<br>
+      <input type="email" name="email" required placeholder="your email address" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
+      <button class="btn btn-blue" type="submit">Send the test email</button>
+    </form>
+  </div>`;
+}
 function artistContact(userId) {
   try { return db.prepare("SELECT name, email FROM users WHERE id = ?").get(userId) || {}; } catch (e) { return {}; }
 }
@@ -7982,6 +7996,18 @@ app.post("/admin/preflight/:id/release", requireAdmin, (req, res) => {
 // chart and a position, and the song is pinned there on every chart
 // from today until the placement ends or is removed. Scores are never
 // touched — this moves chart order only (charts.js applyAdminPlacements).
+app.post("/admin/mail/test", requireAdmin, async (req, res) => {
+  const to = String((req.body && req.body.email) || "").trim();
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(to)) return back("Type a real email address for the test.");
+  const r = await sendEmail(to, "\u2705 HOT TOP 20 email test", "Hi Dale \u2014 this is your HOT TOP 20 app proving it can send.\n\nIf you\u2019re reading this in your inbox, artist emails are LIVE: Hot Spot, Top 20 chart entry and DJ Pick emails will reach your artists the moment they earn them.\n\n\u2014 HOT TOP 20");
+  if (r.sent) return back("\u2705 TEST EMAIL SENT to " + to + " \u2014 Resend accepted it. Check that inbox (and its spam folder). Artist email is LIVE.");
+  if (r.reason === "unconfigured") return back("\u274C Mail is NOT switched on: the app cannot see a key named RESEND_API_KEY. In Render \u2192 top20 \u2192 Environment, the row\u2019s name must be exactly RESEND_API_KEY \u2014 check for a typo or a trailing space, then Save, rebuild, and deploy.");
+  if (r.reason === "http-401" || r.reason === "http-403") return back("\u274C Resend REFUSED the key (" + r.reason.replace("http-", "HTTP ") + "). The app found a key, but it is not a live one \u2014 the usual cause is the deleted key still sitting in the box, or a half-paste. In Resend \u2192 API Keys, copy the live key again; in Render, clear the VALUE box fully and paste it in one go; then Save, rebuild, and deploy.");
+  if (r.reason && r.reason.indexOf("http-") === 0) return back("\u274C Resend answered " + r.reason.replace("http-", "HTTP ") + " \u2014 the key was seen but the send was refused. Tell Buddy the number and he\u2019ll read Resend\u2019s rule for it.");
+  return back("\u274C The test could not reach Resend at all (network error). Try once more in a minute; if it repeats, tell Buddy.");
+});
+
 app.get("/admin/placements", requireAdmin, async (req, res) => {
   const songs = db.prepare(`
     SELECT s.id, s.title, s.genre, u.name AS artist FROM songs s
@@ -8030,6 +8056,7 @@ app.get("/admin/placements", requireAdmin, async (req, res) => {
   ${req.query.admsg ? `<p class="note" style="color:#ffd98a">${esc(req.query.admsg)}</p>` : ""}
   <p class="sub">Owner tool. Place any song that's already uploaded and live into a chart at the position you choose. You can enter a placement any time — it goes onto the chart IMMEDIATELY, the second you place it, and holds through each midnight recalculation until it ends or you remove it (removals also take effect right away). A song's evaluation scores are never changed — this sets chart position only.</p>
   ${req.query.msg ? `<div class="panel" style="border-left:3px solid var(--accent)"><p class="sub" style="margin:0">${esc(req.query.msg)}</p></div>` : ""}
+  ${mailDeskCard()}
   ${plaqueOrdersCard()}
   ${hotspotAdminHtml(songs)}
   <div class="panel">
