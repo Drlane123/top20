@@ -642,7 +642,7 @@ h2{letter-spacing:1px}
 .tt-label{position:absolute;inset:0;animation:ttspin 12s linear infinite}
 .tt-label svg{display:block;width:100%;height:100%}
 .tt-spindle{position:absolute;left:50%;top:50%;width:2.6%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle at 38% 35%,#ffe9a8,#c9a227 60%,#7a5f14);z-index:2;box-shadow:0 0 4px rgba(0,0,0,.6)}
-.tt-arm{position:absolute;inset:0;z-index:2;background:url(/deck.webp?v=chrome1) center/100% 100% no-repeat;clip-path:polygon(67.29% 0%,86.90% 0%,86.90% 15%,84.34% 30%,77.51% 37%,71.53% 42%,68.98% 40%,59.61% 37%,59.61% 20%,63.03% 17%,68.98% 13%,69.83% 5%)}
+.tt-arm{position:absolute;inset:0;z-index:2;background:url(/deck.webp?v=chrome1) center/100% 100% no-repeat;clip-path:polygon(71% 2%,80% 4%,80.5% 17%,74% 22%,64% 28%,59% 31%,55.5% 31%,54% 23%,57% 17%,61% 16%,68% 10%)}
 .tt-shadow{position:absolute;left:4%;right:4%;bottom:1%;height:3.4%;background:radial-gradient(ellipse at center,rgba(0,0,0,.65),transparent 70%);filter:blur(4px);z-index:-1}
 .tt-foot{position:absolute;bottom:0;width:7.4%;z-index:-1}
 @keyframes ttspin{to{transform:rotate(360deg)}}
@@ -2351,6 +2351,7 @@ app.get("/", (req, res) => {
       '<div class="tt-stage">' +
       '<img class="tt-base" src="/deck.webp?v=chrome1" alt="">' +
       '<div class="tt-vinyl"><div class="tt-sheen"></div><div class="tt-labelwrap"><div class="tt-label"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="49" fill="#0b0714"/><circle cx="50" cy="50" r="47.5" fill="none" stroke="#ff4fd8" stroke-width="1.6" opacity=".85"/><circle cx="50" cy="50" r="38" fill="none" stroke="rgba(120,220,255,.35)" stroke-width=".8"/><circle cx="50" cy="12.5" r="3.4" fill="#ffd34d"/><text x="50" y="45" text-anchor="middle" font-size="13.5" font-weight="800" fill="#7fe7ff" letter-spacing="1">HOT</text><text x="50" y="61" text-anchor="middle" font-size="13.5" font-weight="800" fill="#7fe7ff" letter-spacing="1">TOP 20</text><circle cx="50" cy="50" r="3.6" fill="#05060a"/></svg></div></div><div class="tt-spindle"></div></div>' +
+      '<div class="tt-arm"></div>' +
       '</div></div>';
   }
   const boothAt = (pos) => (hsNow.settings.position === pos ? boothHtml : "");
