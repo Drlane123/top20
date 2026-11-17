@@ -574,10 +574,10 @@ h2{letter-spacing:1px}
 /* The Spinner — the Top 20 covers ride a rotating 3D ring (SpinQuest-style
    motion, owner request): front cover big and glowing, the ring keeps
    turning on its own and swings to each song as it plays. */
-.ringwrap{position:relative;height:238px;margin-top:10px;perspective:720px;overflow:hidden;
+.ringwrap{position:relative;height:308px;margin-top:10px;perspective:720px;overflow:hidden;
   -webkit-mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent);
   mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent)}
-.ring{position:absolute;left:50%;top:50%;width:0;height:0;transform-style:preserve-3d;
+.ring{position:absolute;left:50%;top:38%;width:0;height:0;transform-style:preserve-3d;
   transition:transform 1.1s cubic-bezier(.25,.8,.25,1)}
 .cell{position:absolute;left:-50px;top:-66px;width:100px;text-align:center;cursor:pointer;backface-visibility:hidden;
   transition:opacity .8s ease,transform .45s ease}
@@ -611,6 +611,11 @@ h2{letter-spacing:1px}
 .ringwrap{transition:opacity .6s ease}
 .ringwrap.lit{background:radial-gradient(300px 150px at 50% 46%,rgba(43,92,255,.17),transparent 68%)}
 .ringwrap.dim{opacity:.72}
+.ttdeck{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:min(94%,600px);z-index:0;pointer-events:none}
+.ttdeck svg{display:block;width:100%;height:auto}
+.tt-spin{transform-box:fill-box;transform-origin:center;animation:ttspin 12s linear infinite}
+.tt-spin.rev{animation-direction:reverse}
+@keyframes ttspin{to{transform:rotate(360deg)}}
 .prog{display:block;height:5px;background:#232429;border-radius:99px;overflow:hidden;margin-top:6px}
 .prog i{display:block;height:100%;background:linear-gradient(90deg,#2b5cff,#7db1ff);border-radius:99px;transition:width .5s linear}
 .stagegrid{display:block}
@@ -2309,6 +2314,49 @@ app.get("/", (req, res) => {
   // touches the chart — it only reads engagement for the buzz deal.
   const hsNow = todaysHotSpots();
   const boothHtml = hotspotBoothHtml(hsNow);
+  function ttDeck(u, rev) {
+    var dots = "";
+    for (var di = 0; di < 60; di++) {
+      var da = (di / 60) * Math.PI * 2;
+      dots += '<circle cx="' + (88 * Math.cos(da)).toFixed(1) + '" cy="' + (88 * Math.sin(da)).toFixed(1) + '" r="2.3" fill="#31353c"/>';
+    }
+    return '<div class="ttdeck" aria-hidden="true"><svg viewBox="0 0 440 196" xmlns="http://www.w3.org/2000/svg">' +
+      '<defs>' +
+      '<linearGradient id="ttTop' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f4f6f8"/><stop offset=".45" stop-color="#ccd1d9"/><stop offset=".62" stop-color="#e9edf1"/><stop offset="1" stop-color="#a7aeb8"/></linearGradient>' +
+      '<linearGradient id="ttEdge' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7b828c"/><stop offset=".55" stop-color="#43484f"/><stop offset="1" stop-color="#2e3238"/></linearGradient>' +
+      '<linearGradient id="ttGold' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7e08a"/><stop offset=".45" stop-color="#d4af37"/><stop offset=".8" stop-color="#9a7b1e"/><stop offset="1" stop-color="#e9c860"/></linearGradient>' +
+      '<radialGradient id="ttPlat' + u + '"><stop offset="0" stop-color="#e3e7ec"/><stop offset=".55" stop-color="#b9bfc8"/><stop offset=".85" stop-color="#878e98"/><stop offset="1" stop-color="#6d747d"/></radialGradient>' +
+      '<radialGradient id="ttLabel' + u + '"><stop offset="0" stop-color="#2b5cff"/><stop offset=".55" stop-color="#1c46a8"/><stop offset="1" stop-color="#0d1f4b"/></radialGradient>' +
+      '<linearGradient id="ttSheen' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".5"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>' +
+      '</defs>' +
+      '<ellipse cx="220" cy="184" rx="196" ry="10" fill="#000" opacity=".45"/>' +
+      '<rect x="14" y="124" width="412" height="40" rx="11" fill="url(#ttEdge' + u + ')"/>' +
+      '<rect x="14" y="121" width="412" height="3.5" fill="url(#ttGold' + u + ')"/>' +
+      '<circle cx="30" cy="144" r="3" fill="url(#ttGold' + u + ')"/><circle cx="410" cy="144" r="3" fill="url(#ttGold' + u + ')"/>' +
+      '<rect x="193" y="137" width="54" height="11" rx="2.5" fill="url(#ttGold' + u + ')" opacity=".9"/>' +
+      '<rect x="14" y="36" width="412" height="88" rx="16" fill="url(#ttTop' + u + ')" stroke="#787f88"/>' +
+      '<rect x="14" y="36" width="412" height="34" rx="16" fill="url(#ttSheen' + u + ')"/>' +
+      '<rect x="24" y="45" width="392" height="64" rx="12" fill="none" stroke="url(#ttGold' + u + ')" stroke-width="2" opacity=".95"/>' +
+      '<rect x="32" y="90" width="36" height="21" rx="4" fill="#2c3036" stroke="#969da6"/>' +
+      '<circle cx="78" cy="96" r="2.6" fill="#39ff6a"/><circle cx="100" cy="54" r="2.4" fill="#ff4b4b"/>' +
+      '<rect x="409" y="52" width="5" height="46" rx="2.5" fill="#23262b"/>' +
+      '<rect x="402" y="70" width="19" height="9" rx="2.5" fill="url(#ttTop' + u + ')" stroke="#5c626b"/>' +
+      '<g transform="translate(200,80) scale(1,0.44)"><g class="tt-spin' + (rev ? ' rev' : '') + '">' +
+      '<circle r="98" fill="url(#ttPlat' + u + ')" stroke="#686e76" stroke-width="1.5"/>' + dots +
+      '<circle r="77" fill="none" stroke="rgba(20,22,26,.35)"/>' +
+      '<circle r="71" fill="#0a0a0c"/>' +
+      '<circle r="56" fill="none" stroke="rgba(255,255,255,.055)"/><circle r="44" fill="none" stroke="rgba(255,255,255,.055)"/><circle r="32" fill="none" stroke="rgba(255,255,255,.055)"/>' +
+      '<circle r="23" fill="url(#ttLabel' + u + ')"/><circle r="23" fill="none" stroke="url(#ttGold' + u + ')" stroke-width="1.6"/><circle r="15.5" fill="none" stroke="rgba(255,255,255,.18)"/>' +
+      '<circle r="4.5" fill="#e9edf2" stroke="#6d747d"/>' +
+      '</g></g>' +
+      '<circle cx="364" cy="76" r="15" fill="url(#ttTop' + u + ')" stroke="#787f88"/>' +
+      '<circle cx="364" cy="76" r="15" fill="none" stroke="url(#ttGold' + u + ')" stroke-width="1.5"/>' +
+      '<g transform="translate(356,70) rotate(168)"><rect x="-84" y="-3.5" width="84" height="7" rx="3.5" fill="url(#ttTop' + u + ')" stroke="#6d747d"/></g>' +
+      '<g transform="translate(276,88) rotate(168)"><rect x="-4" y="-5" width="17" height="10" rx="2" fill="#22252a"/></g>' +
+      '<circle cx="364" cy="76" r="6" fill="#33373d"/>' +
+      '<circle cx="40" cy="58" r="3.2" fill="url(#ttGold' + u + ')" stroke="rgba(0,0,0,.25)"/><circle cx="400" cy="58" r="3.2" fill="url(#ttGold' + u + ')" stroke="rgba(0,0,0,.25)"/><circle cx="40" cy="102" r="3.2" fill="url(#ttGold' + u + ')" stroke="rgba(0,0,0,.25)"/><circle cx="400" cy="102" r="3.2" fill="url(#ttGold' + u + ')" stroke="rgba(0,0,0,.25)"/>' +
+      '</svg></div>';
+  }
   const boothAt = (pos) => (hsNow.settings.position === pos ? boothHtml : "");
   const homeFirst = homeEntries.slice(0, 5);
   const homeRest = homeEntries.slice(5);
@@ -2589,11 +2637,11 @@ app.get("/", (req, res) => {
     <p class="sub">The Top 20 never sits still — the first 10 ride one spinner, the next 10 ride the other. The song that's playing sticks out big, with its timer running under it. Drag a spinner to look around — it always swings back to the song that's playing.</p>
     <div class="ringsrow"><div class="ringcol">
     <div class="spinlabel" id="spinLabelA">TOP 10</div>
-    <div class="ringwrap" id="wrapA"><div class="ring" id="ringA"></div><div class="upnext" id="upNextA" hidden></div></div>
+    <div class="ringwrap" id="wrapA">${ttDeck("A", false)}<div class="ring" id="ringA"></div><div class="upnext" id="upNextA" hidden></div></div>
     <div class="ringnow" id="ringNowA"></div>
     </div><div class="ringcol" id="ringBBlock">
       <div class="spinlabel" id="spinLabelB">11 – 20</div>
-      <div class="ringwrap" id="wrapB"><div class="ring" id="ringB"></div><div class="upnext" id="upNextB" hidden></div></div>
+      <div class="ringwrap" id="wrapB">${ttDeck("B", true)}<div class="ring" id="ringB"></div><div class="upnext" id="upNextB" hidden></div></div>
       <div class="ringnow" id="ringNowB"></div>
     </div></div>
   </div></div>
