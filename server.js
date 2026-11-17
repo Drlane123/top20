@@ -2322,7 +2322,7 @@ app.get("/", (req, res) => {
     }
     for (var ti = 0; ti < 48; ti++) {
       var ta = Math.PI * (ti + 0.5) / 48;
-      var tx = (222 + 140 * Math.cos(ta)).toFixed(1), ty = (94 + 48 * Math.sin(ta)).toFixed(1);
+      var tx = (222 + 140 * Math.cos(ta)).toFixed(1), ty = (88 + 48 * Math.sin(ta)).toFixed(1);
       ticks += '<path d="M' + tx + ',' + ty + ' L' + tx + ',' + (parseFloat(ty) + 11).toFixed(1) + '" stroke="rgba(205,210,218,.20)" stroke-width="2"/>';
     }
     return '<div class="ttdeck" aria-hidden="true"><svg viewBox="0 0 460 216" xmlns="http://www.w3.org/2000/svg">' +
@@ -2346,10 +2346,10 @@ app.get("/", (req, res) => {
       '<circle cx="58" cy="94" r="15" fill="#101114" stroke="#9aa1a9" stroke-width="2"/><circle cx="58" cy="94" r="8" fill="#2b2e33" stroke="#565b63"/>' +
       '<circle cx="80" cy="110" r="2.4" fill="#39ff6a"/>' +
       '<rect x="44" y="124" width="11" height="11" rx="2" fill="#1d1f23" stroke="#3a3e44"/><rect x="60" y="124" width="11" height="11" rx="2" fill="#1d1f23" stroke="#3a3e44"/>' +
-      '<ellipse cx="222" cy="102" rx="148" ry="51" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="3"/>' +
-      '<path d="M82,94 A140,48 0 0 0 362,94 L362,106 A140,48 0 0 1 82,106 Z" fill="url(#ttBand' + u + ')"/>' + ticks +
-      '<path d="M82,106 A140,48 0 0 0 362,106" stroke="rgba(0,0,0,.6)" fill="none"/>' +
-      '<g transform="translate(222,94) scale(1,0.343)"><g class="tt-spin' + (rev ? ' rev' : '') + '">' +
+      '<ellipse cx="222" cy="96" rx="148" ry="51" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="3"/>' +
+      '<path d="M82,88 A140,48 0 0 0 362,88 L362,100 A140,48 0 0 1 82,100 Z" fill="url(#ttBand' + u + ')"/>' + ticks +
+      '<path d="M82,100 A140,48 0 0 0 362,100" stroke="rgba(0,0,0,.6)" fill="none"/>' +
+      '<g transform="translate(222,88) scale(1,0.343)"><g class="tt-spin' + (rev ? ' rev' : '') + '">' +
       '<circle r="140" fill="url(#ttPlat' + u + ')" stroke="#565d66" stroke-width="1.5"/>' + dots +
       '<circle r="124" fill="none" stroke="rgba(0,0,0,.35)"/>' +
       '<circle cy="8" r="121" fill="#000" opacity=".35"/>' +
@@ -2359,15 +2359,15 @@ app.get("/", (req, res) => {
       '<circle r="34" fill="url(#ttGold' + u + ')"/><circle r="34" fill="none" stroke="#7a5f14"/><circle r="13" fill="none" stroke="rgba(0,0,0,.25)"/>' +
       '<circle r="5" fill="#dfe3e8" stroke="#666c74"/>' +
       '</g></g>' +
-      '<circle cx="338" cy="70" r="5" fill="#57b6ff" opacity=".3"/><circle cx="338" cy="70" r="2.2" fill="#57b6ff"/>' +
+      '<circle cx="344" cy="58" r="5" fill="#57b6ff" opacity=".3"/><circle cx="344" cy="58" r="2.2" fill="#57b6ff"/>' +
       '<rect x="387" y="78" width="7" height="15" rx="2" fill="#1d1f23" stroke="#3a3e44"/>' +
-      '<circle cx="392" cy="34" r="10" fill="#101114" stroke="#3a3e44"/><circle cx="392" cy="34" r="5" fill="#26282d"/>' +
-      '<circle cx="372" cy="52" r="19" fill="#141518" stroke="#494d54"/>' +
-      '<circle cx="372" cy="52" r="13" fill="#232529" stroke="#5b6067"/>' +
+      '<path d="M374,50 L389,37" stroke="#101114" stroke-width="8" stroke-linecap="round"/><circle cx="392" cy="34" r="10" fill="#101114" stroke="#3a3e44"/><circle cx="392" cy="34" r="5" fill="#26282d"/>' +
+      '<circle cx="372" cy="52" r="21" fill="#141518" stroke="#494d54"/>' +
+      '<circle cx="372" cy="52" r="14.5" fill="#232529" stroke="#5b6067"/>' +
       '<circle cx="372" cy="52" r="5.5" fill="#3a3e44"/>' +
-      '<path d="M363,60 L326,79" stroke="#101114" stroke-width="9" stroke-linecap="round"/>' +
-      '<path d="M363,57.5 L326,76.5" stroke="rgba(255,255,255,.15)" stroke-width="1.8" stroke-linecap="round"/>' +
-      '<g transform="translate(319,81) rotate(27)"><rect x="-21" y="-5.5" width="25" height="11" rx="2.5" fill="#26292f" stroke="#5b6067"/><circle cx="-15" cy="0" r="2.4" fill="#9aa1a9"/><path d="M2,-5 L10,-9" stroke="#9aa1a9" stroke-width="1.6" fill="none"/><rect x="-24" y="3" width="3" height="6" fill="#888e96"/></g>' +
+      '<circle cx="361" cy="58" r="7" fill="#1d1f23" stroke="#494d54"/><path d="M361,58 L324,73" stroke="#101114" stroke-width="9" stroke-linecap="round"/>' +
+      '<path d="M361,55.5 L324,70.5" stroke="rgba(255,255,255,.15)" stroke-width="1.8" stroke-linecap="round"/>' +
+      '<ellipse cx="302" cy="81" rx="15" ry="3.5" fill="#000" opacity=".3"/><g transform="translate(317,75) rotate(27)"><rect x="-21" y="-5.5" width="25" height="11" rx="2.5" fill="#26292f" stroke="#5b6067"/><circle cx="-15" cy="0" r="2.4" fill="#9aa1a9"/><path d="M2,-5 L10,-9" stroke="#9aa1a9" stroke-width="1.6" fill="none"/><rect x="-24" y="3" width="3" height="6" fill="#888e96"/></g>' +
       '<path d="M410,90 L410,144" stroke="#08090a" stroke-width="6" stroke-linecap="round"/>' +
       '<path d="M410,90 L410,144" stroke="#33363c" stroke-width="1.6" stroke-linecap="round"/>' +
       '<path d="M416,96 L421,96 M416,108 L421,108 M416,120 L421,120 M416,132 L421,132 M416,142 L421,142" stroke="#4a4e55" stroke-width="1.4"/>' +
@@ -2658,7 +2658,7 @@ app.get("/", (req, res) => {
     <div class="ringnow" id="ringNowA"></div>
     </div><div class="ringcol" id="ringBBlock">
       <div class="spinlabel" id="spinLabelB">11 – 20</div>
-      <div class="ringwrap" id="wrapB">${ttDeck("B", true)}<div class="ring" id="ringB"></div><div class="upnext" id="upNextB" hidden></div></div>
+      <div class="ringwrap" id="wrapB">${ttDeck("B", false)}<div class="ring" id="ringB"></div><div class="upnext" id="upNextB" hidden></div></div>
       <div class="ringnow" id="ringNowB"></div>
     </div></div>
   </div></div>
