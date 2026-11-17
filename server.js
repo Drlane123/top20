@@ -2315,49 +2315,63 @@ app.get("/", (req, res) => {
   const hsNow = todaysHotSpots();
   const boothHtml = hotspotBoothHtml(hsNow);
   function ttDeck(u, rev) {
-    var dots = "";
+    var dots = "", ticks = "";
     for (var di = 0; di < 72; di++) {
       var da = (di / 72) * Math.PI * 2;
-      dots += '<circle cx="' + (117 * Math.cos(da)).toFixed(1) + '" cy="' + (117 * Math.sin(da)).toFixed(1) + '" r="2.6" fill="#c9ced6"/>';
+      dots += '<circle cx="' + (128 * Math.cos(da)).toFixed(1) + '" cy="' + (128 * Math.sin(da)).toFixed(1) + '" r="2.8" fill="#3a3e44"/>';
     }
-    return '<div class="ttdeck" aria-hidden="true"><svg viewBox="0 0 460 200" xmlns="http://www.w3.org/2000/svg">' +
+    for (var ti = 0; ti < 48; ti++) {
+      var ta = Math.PI * (ti + 0.5) / 48;
+      var tx = (222 + 140 * Math.cos(ta)).toFixed(1), ty = (94 + 48 * Math.sin(ta)).toFixed(1);
+      ticks += '<path d="M' + tx + ',' + ty + ' L' + tx + ',' + (parseFloat(ty) + 11).toFixed(1) + '" stroke="rgba(205,210,218,.20)" stroke-width="2"/>';
+    }
+    return '<div class="ttdeck" aria-hidden="true"><svg viewBox="0 0 460 216" xmlns="http://www.w3.org/2000/svg">' +
       '<defs>' +
-      '<linearGradient id="ttBody' + u + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b3e44"/><stop offset=".45" stop-color="#17181b"/><stop offset=".75" stop-color="#26282d"/><stop offset="1" stop-color="#101114"/></linearGradient>' +
-      '<linearGradient id="ttSide' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#26282d"/><stop offset="1" stop-color="#0e0f11"/></linearGradient>' +
+      '<linearGradient id="ttBody' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3b3e44"/><stop offset=".5" stop-color="#1a1b1e"/><stop offset="1" stop-color="#26282d"/></linearGradient>' +
+      '<linearGradient id="ttSide' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#232529"/><stop offset="1" stop-color="#0d0e10"/></linearGradient>' +
+      '<linearGradient id="ttBand' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4a4e55"/><stop offset=".55" stop-color="#22242a"/><stop offset="1" stop-color="#131418"/></linearGradient>' +
+      '<radialGradient id="ttPlat' + u + '"><stop offset="0" stop-color="#e6eaef"/><stop offset=".55" stop-color="#b4bac2"/><stop offset=".88" stop-color="#7e858f"/><stop offset="1" stop-color="#5f666f"/></radialGradient>' +
       '<linearGradient id="ttGold' + u + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#f7e08a"/><stop offset=".45" stop-color="#d4af37"/><stop offset=".8" stop-color="#9a7b1e"/><stop offset="1" stop-color="#e9c860"/></linearGradient>' +
-      '<linearGradient id="ttSheen' + u + '" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff" stop-opacity=".16"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>' +
+      '<linearGradient id="ttSheen' + u + '" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#ffffff" stop-opacity=".14"/><stop offset="1" stop-color="#ffffff" stop-opacity="0"/></linearGradient>' +
       '</defs>' +
-      '<ellipse cx="232" cy="184" rx="200" ry="11" fill="#000" opacity=".5"/>' +
-      '<rect x="46" y="158" width="32" height="24" rx="6" fill="#0b0c0e" stroke="#2b2e33"/>' +
-      '<rect x="384" y="138" width="32" height="24" rx="6" fill="#0b0c0e" stroke="#2b2e33"/>' +
-      '<polygon points="70,38 38,150 38,168 70,56" fill="#0d0e10"/>' +
-      '<polygon points="38,150 428,128 428,146 38,168" fill="url(#ttSide' + u + ')"/>' +
-      '<polygon points="38,150 428,128 428,130.5 38,152.5" fill="url(#ttGold' + u + ')" opacity=".85"/>' +
-      '<polygon points="70,38 398,20 428,128 38,150" fill="url(#ttBody' + u + ')" stroke="#34373d"/>' +
-      '<polygon points="70,38 238,29 140,150 38,150" fill="url(#ttSheen' + u + ')"/>' +
-      '<ellipse cx="98" cy="54" rx="12" ry="6.5" fill="#0a0a0c" stroke="#8f959e" stroke-width="1.2"/>' +
-      '<ellipse cx="98" cy="53" rx="6" ry="3" fill="#2e3237"/>' +
-      '<circle cx="126" cy="47" r="2.6" fill="#4a4e55" stroke="#17181b"/><circle cx="141" cy="45" r="2.6" fill="#4a4e55" stroke="#17181b"/>' +
-      '<circle cx="84" cy="68" r="2.2" fill="#ff4b4b"/>' +
-      '<g transform="translate(218,84) scale(1,0.344)"><g class="tt-spin' + (rev ? ' rev' : '') + '">' +
-      '<circle r="128" fill="#22242a" stroke="#9aa1a9" stroke-width="2"/>' + dots +
-      '<circle r="105" fill="none" stroke="rgba(0,0,0,.45)"/>' +
-      '<circle r="100" fill="#0a0a0b"/>' +
-      '<circle r="84" fill="none" stroke="rgba(255,255,255,.05)"/><circle r="68" fill="none" stroke="rgba(255,255,255,.05)"/><circle r="52" fill="none" stroke="rgba(255,255,255,.05)"/>' +
-      '<circle r="30" fill="url(#ttGold' + u + ')"/><circle r="30" fill="none" stroke="#7a5f14"/><circle r="11" fill="none" stroke="rgba(0,0,0,.25)"/>' +
-      '<circle r="4.5" fill="#dfe3e8" stroke="#666c74"/>' +
+      '<ellipse cx="230" cy="202" rx="205" ry="10" fill="#000" opacity=".5"/>' +
+      '<g><rect x="39" y="158" width="46" height="34" rx="8" fill="#0a0a0c" stroke="#2b2e33"/><path d="M41,168 L83,168 M41,176 L83,176 M41,184 L83,184" stroke="#202227" stroke-width="2"/><ellipse cx="62" cy="192" rx="26" ry="5.5" fill="#000" stroke="#26282d"/></g>' +
+      '<g><rect x="375" y="158" width="46" height="34" rx="8" fill="#0a0a0c" stroke="#2b2e33"/><path d="M377,168 L419,168 M377,176 L419,176 M377,184 L419,184" stroke="#202227" stroke-width="2"/><ellipse cx="398" cy="192" rx="26" ry="5.5" fill="#000" stroke="#26282d"/></g>' +
+      '<rect x="26" y="32" width="408" height="120" rx="14" fill="url(#ttBody' + u + ')" stroke="#34373d"/>' +
+      '<polygon points="26,32 200,32 110,152 26,152" fill="url(#ttSheen' + u + ')"/>' +
+      '<rect x="26" y="152" width="408" height="25" rx="10" fill="url(#ttSide' + u + ')"/>' +
+      '<rect x="26" y="150" width="408" height="3" fill="url(#ttGold' + u + ')" opacity=".85"/>' +
+      '<circle cx="44" cy="165" r="2.6" fill="url(#ttGold' + u + ')"/><circle cx="416" cy="165" r="2.6" fill="url(#ttGold' + u + ')"/>' +
+      '<circle cx="48" cy="50" r="6" fill="#141518" stroke="#494d54"/><circle cx="66" cy="48" r="2.2" fill="#ff4b4b"/>' +
+      '<circle cx="58" cy="94" r="15" fill="#101114" stroke="#9aa1a9" stroke-width="2"/><circle cx="58" cy="94" r="8" fill="#2b2e33" stroke="#565b63"/>' +
+      '<circle cx="80" cy="110" r="2.4" fill="#39ff6a"/>' +
+      '<rect x="44" y="124" width="11" height="11" rx="2" fill="#1d1f23" stroke="#3a3e44"/><rect x="60" y="124" width="11" height="11" rx="2" fill="#1d1f23" stroke="#3a3e44"/>' +
+      '<ellipse cx="222" cy="102" rx="148" ry="51" fill="none" stroke="rgba(0,0,0,.55)" stroke-width="3"/>' +
+      '<path d="M82,94 A140,48 0 0 0 362,94 L362,106 A140,48 0 0 1 82,106 Z" fill="url(#ttBand' + u + ')"/>' + ticks +
+      '<path d="M82,106 A140,48 0 0 0 362,106" stroke="rgba(0,0,0,.6)" fill="none"/>' +
+      '<g transform="translate(222,94) scale(1,0.343)"><g class="tt-spin' + (rev ? ' rev' : '') + '">' +
+      '<circle r="140" fill="url(#ttPlat' + u + ')" stroke="#565d66" stroke-width="1.5"/>' + dots +
+      '<circle r="124" fill="none" stroke="rgba(0,0,0,.35)"/>' +
+      '<circle cy="8" r="121" fill="#000" opacity=".35"/>' +
+      '<circle r="121" fill="#17181a"/>' +
+      '<circle r="118" fill="#0a0a0b"/>' +
+      '<circle r="100" fill="none" stroke="rgba(255,255,255,.05)"/><circle r="84" fill="none" stroke="rgba(255,255,255,.05)"/><circle r="66" fill="none" stroke="rgba(255,255,255,.05)"/>' +
+      '<circle r="34" fill="url(#ttGold' + u + ')"/><circle r="34" fill="none" stroke="#7a5f14"/><circle r="13" fill="none" stroke="rgba(0,0,0,.25)"/>' +
+      '<circle r="5" fill="#dfe3e8" stroke="#666c74"/>' +
       '</g></g>' +
-      '<circle cx="330" cy="60" r="5" fill="#57b6ff" opacity=".3"/><circle cx="330" cy="60" r="2.2" fill="#57b6ff"/>' +
-      '<path d="M352,43 L374,33" stroke="#141518" stroke-width="9" stroke-linecap="round"/>' +
-      '<ellipse cx="352" cy="46" rx="17" ry="9" fill="#141518" stroke="#494d54"/>' +
-      '<ellipse cx="352" cy="43" rx="12" ry="6" fill="#232529" stroke="#5b6067"/>' +
-      '<path d="M349,47 L273,77" stroke="#0e0f11" stroke-width="7" stroke-linecap="round"/>' +
-      '<path d="M349,45.5 L273,75.5" stroke="rgba(255,255,255,.16)" stroke-width="1.6" stroke-linecap="round"/>' +
-      '<g transform="translate(270,78) rotate(22)"><rect x="-17" y="-4.5" width="19" height="9" rx="2" fill="#26292f" stroke="#5b6067"/><rect x="-18.5" y="3" width="2.5" height="5" fill="#888e96"/></g>' +
-      '<path d="M392,50 L412,106" stroke="#08090a" stroke-width="6" stroke-linecap="round"/>' +
-      '<path d="M392,50 L412,106" stroke="#33363c" stroke-width="1.6" stroke-linecap="round"/>' +
-      '<g transform="translate(403,80) rotate(73)"><rect x="-9" y="-4.5" width="18" height="9" rx="2" fill="#1b1d20" stroke="#6a6f77"/><rect x="-1" y="-4.5" width="2" height="9" fill="#c8ccd2"/></g>' +
-      '<circle cx="86" cy="130" r="2.6" fill="#3d4148" stroke="#101114"/><circle cx="402" cy="112" r="2.6" fill="#3d4148" stroke="#101114"/>' +
+      '<circle cx="338" cy="70" r="5" fill="#57b6ff" opacity=".3"/><circle cx="338" cy="70" r="2.2" fill="#57b6ff"/>' +
+      '<rect x="387" y="78" width="7" height="15" rx="2" fill="#1d1f23" stroke="#3a3e44"/>' +
+      '<circle cx="392" cy="34" r="10" fill="#101114" stroke="#3a3e44"/><circle cx="392" cy="34" r="5" fill="#26282d"/>' +
+      '<circle cx="372" cy="52" r="19" fill="#141518" stroke="#494d54"/>' +
+      '<circle cx="372" cy="52" r="13" fill="#232529" stroke="#5b6067"/>' +
+      '<circle cx="372" cy="52" r="5.5" fill="#3a3e44"/>' +
+      '<path d="M363,60 L326,79" stroke="#101114" stroke-width="9" stroke-linecap="round"/>' +
+      '<path d="M363,57.5 L326,76.5" stroke="rgba(255,255,255,.15)" stroke-width="1.8" stroke-linecap="round"/>' +
+      '<g transform="translate(319,81) rotate(27)"><rect x="-21" y="-5.5" width="25" height="11" rx="2.5" fill="#26292f" stroke="#5b6067"/><circle cx="-15" cy="0" r="2.4" fill="#9aa1a9"/><path d="M2,-5 L10,-9" stroke="#9aa1a9" stroke-width="1.6" fill="none"/><rect x="-24" y="3" width="3" height="6" fill="#888e96"/></g>' +
+      '<path d="M410,90 L410,144" stroke="#08090a" stroke-width="6" stroke-linecap="round"/>' +
+      '<path d="M410,90 L410,144" stroke="#33363c" stroke-width="1.6" stroke-linecap="round"/>' +
+      '<path d="M416,96 L421,96 M416,108 L421,108 M416,120 L421,120 M416,132 L421,132 M416,142 L421,142" stroke="#4a4e55" stroke-width="1.4"/>' +
+      '<g transform="translate(410,114)"><rect x="-5" y="-10" width="10" height="20" rx="2" fill="#1b1d20" stroke="#6a6f77"/><path d="M-5,-3 L5,-3 M-5,3 L5,3" stroke="#454a51" stroke-width="1.4"/></g>' +
       '</svg></div>';
   }
   const boothAt = (pos) => (hsNow.settings.position === pos ? boothHtml : "");
