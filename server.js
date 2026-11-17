@@ -643,8 +643,6 @@ h2{letter-spacing:1px}
 .tt-label svg{display:block;width:100%;height:100%}
 .tt-spindle{position:absolute;left:51.8%;top:31.9%;width:2.6%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle at 38% 35%,#ffe9a8,#c9a227 60%,#7a5f14);z-index:2;box-shadow:0 0 4px rgba(0,0,0,.6)}
 .tt-arm{position:absolute;inset:0;z-index:2;background:url(/deck.webp) center/100% 100% no-repeat;clip-path:polygon(60% 0%,83% 0%,83% 15%,80% 30%,72% 37%,65% 42%,62% 40%,51% 37%,51% 20%,55% 17%,62% 13%,63% 5%)}
-.tt-glow{position:absolute;z-index:3;border-radius:50%;filter:blur(7px);mix-blend-mode:screen;animation:ttglow 2.4s ease-in-out infinite alternate}
-@keyframes ttglow{from{opacity:.3}to{opacity:.75}}
 .tt-shadow{position:absolute;left:4%;right:4%;bottom:1%;height:3.4%;background:radial-gradient(ellipse at center,rgba(0,0,0,.65),transparent 70%);filter:blur(4px);z-index:-1}
 .tt-foot{position:absolute;bottom:0;width:7.4%;z-index:-1}
 @keyframes ttspin{to{transform:rotate(360deg)}}
@@ -2355,8 +2353,6 @@ app.get("/", (req, res) => {
       '<img class="tt-base" src="/deck.webp" alt="">' +
       '<div class="tt-vinyl"><div class="tt-sheen"></div><div class="tt-labelwrap"><div class="tt-label"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="49" fill="#0b0714"/><circle cx="50" cy="50" r="47.5" fill="none" stroke="#ff4fd8" stroke-width="1.6" opacity=".85"/><circle cx="50" cy="50" r="38" fill="none" stroke="rgba(120,220,255,.35)" stroke-width=".8"/><circle cx="50" cy="12.5" r="3.4" fill="#ffd34d"/><text x="50" y="45" text-anchor="middle" font-size="13.5" font-weight="800" fill="#7fe7ff" letter-spacing="1">HOT</text><text x="50" y="61" text-anchor="middle" font-size="13.5" font-weight="800" fill="#7fe7ff" letter-spacing="1">TOP 20</text><circle cx="50" cy="50" r="3.6" fill="#05060a"/></svg></div></div><div class="tt-spindle"></div></div>' +
       '<div class="tt-arm"></div>' +
-      '<div class="tt-glow" style="left:73%;top:36.5%;width:13%;height:38%;background:radial-gradient(ellipse,rgba(255,150,70,.55),rgba(70,210,255,.22) 55%,transparent 72%)"></div>' +
-      '<div class="tt-glow" style="left:53%;top:77.3%;width:31%;height:14%;background:radial-gradient(ellipse,rgba(70,210,255,.5),rgba(255,120,80,.2) 55%,transparent 72%);animation-delay:1.1s"></div>' +
       '</div></div>';
   }
   const boothAt = (pos) => (hsNow.settings.position === pos ? boothHtml : "");
