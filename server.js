@@ -1603,9 +1603,9 @@ async function sendEmail(to, subject, text) {
 }
 function mailDeskCard() {
   const on = !!process.env.RESEND_API_KEY;
-  return `<div class="panel" style="border:2px solid ${on ? "#3fae5a" : "#c0392b"}">
-    <h2 style="margin-top:0">\u2709\uFE0F Artist email \u2014 ${on ? "SWITCHED ON" : "NOT SWITCHED ON"}</h2>
-    <p class="sub">${on
+  return `<details class="panel" style="border:2px solid ${on ? "#3fae5a" : "#c0392b"}">
+    <summary style="cursor:pointer;font-weight:900;font-size:19px;color:#fff">\u2709\uFE0F Artist email \u2014 ${on ? "SWITCHED ON" : "NOT SWITCHED ON"} <span class="sub" style="font-weight:400;font-size:14px">\u2014 tap to open the tester</span></summary>
+    <p class="sub" style="margin-top:12px">${on
       ? "The app can see its Resend key, and artist emails (Hot Spot, Top 20 chart entry, DJ Pick) send from <b style=\"color:#fff\">" + esc(MAIL_FROM) + "</b>. If an artist says an email never came, run the test below \u2014 it shows Resend\u2019s own answer."
       : "The app <b style=\"color:#fff\">cannot see a key named RESEND_API_KEY</b> in its server settings, so artist emails are being held as ready-to-send. Check the Render Environment row: the name must be exactly RESEND_API_KEY."}</p>
     <form method="post" action="/admin/mail/test">
@@ -1613,8 +1613,9 @@ function mailDeskCard() {
       <input type="email" name="email" required placeholder="your email address" style="width:100%;padding:12px;margin:6px 0 12px;border-radius:10px;border:1px solid #3a4a6b;background:#0a1122;color:#fff"></label>
       <button class="btn btn-blue" type="submit">Send the test email</button>
     </form>
-  </div>`;
+  </details>`;
 }
+
 function artistContact(userId) {
   try { return db.prepare("SELECT name, email FROM users WHERE id = ?").get(userId) || {}; } catch (e) { return {}; }
 }
