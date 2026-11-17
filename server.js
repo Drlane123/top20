@@ -633,16 +633,16 @@ h2{letter-spacing:1px}
 .ringwrap{transition:opacity .6s ease}
 .ringwrap.lit{background:radial-gradient(300px 150px at 50% 46%,rgba(43,92,255,.17),transparent 68%)}
 .ringwrap.dim{opacity:.72}
-.ttdeck{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:min(96%,620px);z-index:0;pointer-events:none;padding-bottom:4.4%}
+.ttdeck{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:min(96%,620px);z-index:0;pointer-events:none;padding-bottom:0.6%}
 .tt-stage{position:relative}
 .tt-base{display:block;width:100%;height:auto;filter:drop-shadow(0 16px 20px rgba(0,0,0,.5))}
-.tt-vinyl{position:absolute;left:26.90%;top:6.36%;width:42.07%;height:67.24%;border-radius:50%;overflow:hidden;z-index:1;background:repeating-radial-gradient(ellipse at 50% 50%,#08090f 0 2px,#141826 2px 4px);box-shadow:0 0 18px rgba(80,180,255,.35),inset 0 0 0 2px rgba(140,220,255,.35),inset 0 0 42px rgba(0,0,0,.85)}
-.tt-sheen{position:absolute;inset:0;border-radius:50%;background:linear-gradient(118deg,transparent 26%,rgba(70,190,255,.13) 44%,transparent 58%),linear-gradient(295deg,transparent 55%,rgba(255,80,180,.09) 72%,transparent 86%);filter:blur(9px)}
-.tt-labelwrap{position:absolute;left:56.62%;top:31.9%;width:34.64%;height:87.8%;transform:translate(-50%,-50%) scaleY(.463)}
+.tt-vinyl{position:absolute;left:15.64%;top:17.61%;width:59.36%;height:17.91%;border-radius:50%;overflow:hidden;z-index:1;background:repeating-radial-gradient(ellipse at 50% 50%,#08090f 0 2px,#141826 2px 4px);box-shadow:0 2px 10px rgba(0,0,0,.55),inset 0 0 0 2px rgba(200,210,220,.25),inset 0 0 42px rgba(0,0,0,.85)}
+.tt-sheen{position:absolute;inset:0;border-radius:50%;background:linear-gradient(118deg,transparent 26%,rgba(255,255,255,.10) 44%,transparent 58%),linear-gradient(295deg,transparent 55%,rgba(255,255,255,.05) 72%,transparent 86%);filter:blur(9px)}
+.tt-labelwrap{position:absolute;left:50%;top:50%;width:43%;height:400%;transform:translate(-50%,-50%) scaleY(.108)}
 .tt-label{position:absolute;inset:0;animation:ttspin 12s linear infinite}
 .tt-label svg{display:block;width:100%;height:100%}
-.tt-spindle{position:absolute;left:51.8%;top:31.9%;width:2.6%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle at 38% 35%,#ffe9a8,#c9a227 60%,#7a5f14);z-index:2;box-shadow:0 0 4px rgba(0,0,0,.6)}
-.tt-arm{position:absolute;inset:0;z-index:2;background:url(/deck.webp?v=backwide4) center/100% 100% no-repeat;clip-path:polygon(67.29% 0%,86.90% 0%,86.90% 15%,84.34% 30%,77.51% 37%,71.53% 42%,68.98% 40%,59.61% 37%,59.61% 20%,63.03% 17%,68.98% 13%,69.83% 5%)}
+.tt-spindle{position:absolute;left:50%;top:50%;width:2.6%;aspect-ratio:1;transform:translate(-50%,-50%);border-radius:50%;background:radial-gradient(circle at 38% 35%,#ffe9a8,#c9a227 60%,#7a5f14);z-index:2;box-shadow:0 0 4px rgba(0,0,0,.6)}
+.tt-arm{position:absolute;inset:0;z-index:2;background:url(/deck.webp?v=chrome1) center/100% 100% no-repeat;clip-path:polygon(67.29% 0%,86.90% 0%,86.90% 15%,84.34% 30%,77.51% 37%,71.53% 42%,68.98% 40%,59.61% 37%,59.61% 20%,63.03% 17%,68.98% 13%,69.83% 5%)}
 .tt-shadow{position:absolute;left:4%;right:4%;bottom:1%;height:3.4%;background:radial-gradient(ellipse at center,rgba(0,0,0,.65),transparent 70%);filter:blur(4px);z-index:-1}
 .tt-foot{position:absolute;bottom:0;width:7.4%;z-index:-1}
 @keyframes ttspin{to{transform:rotate(360deg)}}
@@ -2348,11 +2348,9 @@ app.get("/", (req, res) => {
     var foot = '<svg class="tt-foot" style="POS" viewBox="0 0 46 30"><rect x="3" y="2" width="40" height="20" rx="7" fill="#0a0a0c" stroke="#2b2e33"/><path d="M5,9 L41,9 M5,15 L41,15" stroke="#202227" stroke-width="2"/><ellipse cx="23" cy="23" rx="21" ry="5" fill="#000" stroke="#26282d"/></svg>';
     return '<div class="ttdeck" aria-hidden="true">' +
       '<div class="tt-shadow"></div>' +
-      foot.replace("POS", "left:12.1%") + foot.replace("POS", "right:3.6%") +
       '<div class="tt-stage">' +
-      '<img class="tt-base" src="/deck.webp?v=backwide4" alt="">' +
+      '<img class="tt-base" src="/deck.webp?v=chrome1" alt="">' +
       '<div class="tt-vinyl"><div class="tt-sheen"></div><div class="tt-labelwrap"><div class="tt-label"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="49" fill="#0b0714"/><circle cx="50" cy="50" r="47.5" fill="none" stroke="#ff4fd8" stroke-width="1.6" opacity=".85"/><circle cx="50" cy="50" r="38" fill="none" stroke="rgba(120,220,255,.35)" stroke-width=".8"/><circle cx="50" cy="12.5" r="3.4" fill="#ffd34d"/><text x="50" y="45" text-anchor="middle" font-size="13.5" font-weight="800" fill="#7fe7ff" letter-spacing="1">HOT</text><text x="50" y="61" text-anchor="middle" font-size="13.5" font-weight="800" fill="#7fe7ff" letter-spacing="1">TOP 20</text><circle cx="50" cy="50" r="3.6" fill="#05060a"/></svg></div></div><div class="tt-spindle"></div></div>' +
-      '<div class="tt-arm"></div>' +
       '</div></div>';
   }
   const boothAt = (pos) => (hsNow.settings.position === pos ? boothHtml : "");
