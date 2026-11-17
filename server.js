@@ -1854,6 +1854,7 @@ function hotspotBoothHtml(hs) {
         <span class="nums"><b>${esc(c.genre)}</b></span>
       </a>
       <p class="hs-buzz">Getting a buzz — ▶ ${fmtNum(c.plays)} plays · ♥ ${fmtNum(c.likes)} · ⤴ ${fmtNum(c.shares)}</p>
+      <button type="button" class="hs-play" data-hs-play="${i}">▶ Play</button>
       <button type="button" class="hs-share" data-hs-share="${c.id}" data-hs-title="${esc(c.title)}" data-hs-artist="${esc(c.artist)}">⤴ Share</button>
     </div>`;
   return `
@@ -1907,6 +1908,8 @@ function hotspotBoothHtml(hs) {
     .hs-badge{font-size:11px;font-weight:900;letter-spacing:1.2px;color:#ff9a5c;margin-bottom:6px}
     .hs-buzz{color:#bcd;font-size:12.5px;margin:8px 0}
     .hs-share{background:rgba(255,190,60,.12);border:1px solid rgba(255,190,60,.45);color:#ffd98a;border-radius:999px;padding:7px 13px;font-size:12px;font-weight:800;cursor:pointer}
+    .hs-play{background:rgba(57,255,106,.10);border:1px solid rgba(57,255,106,.5);color:#9dffb0;border-radius:999px;padding:7px 13px;font-size:12px;font-weight:800;cursor:pointer;margin-right:8px}
+    .hs-play:disabled{opacity:.65;cursor:default}
     .hs-stat{color:#bcd;font-size:12.5px;text-align:center;margin-top:10px}
     </style>
     <div class="hs-tab" id="hsTab">
@@ -1943,7 +1946,7 @@ function hotspotBoothHtml(hs) {
       var statEl = document.getElementById('hsStat');
       if (!audio || !openBtn || !full || !cfg.songs.length) return;
       var decks = [document.getElementById('hsDeck0'), document.getElementById('hsDeck1')];
-      var isOpen = false, cur = -1, timers = [], fadeInt = null, mode = 'idle', chain = null, chainGen = 0;
+      var isOpen = false, cur = -1, timers = [], fadeInt = null, mode = 'idle', chain = null, chainGen = 0, previewTop = false;
       function clearTimers() { for (var i = 0; i < timers.length; i++) clearTimeout(timers[i]); timers = []; }
       function later(fn, ms) { timers.push(setTimeout(fn, ms)); }
       function fadeTo(target, ms, done) {
@@ -2009,6 +2012,14 @@ function hotspotBoothHtml(hs) {
         var vus = document.querySelectorAll('#hsBooth .hs-vu');
         for (var i = 0; i < vus.length; i++) vus[i].classList.remove('live');
         window.__hsVuLive = false;
+      }
+      function updatePlayBtns() {
+        var btns = document.querySelectorAll('[data-hs-play]');
+        for (var i = 0; i < btns.length; i++) {
+          var idx = parseInt(btns[i].getAttribute('data-hs-play'), 10);
+          if (isOpen && idx === cur) { btns[i].textContent = '\uD83C\uDFA7 On air now'; btns[i].disabled = true; }
+          else { btns[i].textContent = '\u25B6 Play'; btns[i].disabled = false; }
+        }
       }
       function callFor(i) {
         var s = cfg.songs[i];
@@ -2081,12 +2092,13 @@ function hotspotBoothHtml(hs) {
         callEl.textContent = callFor(cur);
         statEl.textContent = 'In the booth now: ' + s.title + ' by ' + s.artist + ' — live on the booth radio.';
         for (var d = 0; d < decks.length; d++) { if (decks[d]) decks[d].classList.toggle('on', d === cur); }
+        updatePlayBtns();
         playChain(cur, function () { startSong(); });
       }
       function startSong() {
         if (!isOpen) return;
-        var offset = 0, remainMs = 0;
-        if (cfg.playSecs > 0 && cfg.cycleLenMs > 0) {
+        var offset = 0, remainMs = 0, fromTop = previewTop; previewTop = false;
+        if (!fromTop && cfg.playSecs > 0 && cfg.cycleLenMs > 0) {
           var p = livePos();
           if (p.idx !== cur) { startChainFor(p.idx); return; }
           offset = p.offset; remainMs = p.remainMs;
@@ -2104,6 +2116,14 @@ function hotspotBoothHtml(hs) {
         audio.addEventListener('loadedmetadata', onMeta);
         try { audio.volume = 0; } catch (e) {}
         var pr = audio.play(); if (pr && pr.catch) pr.catch(function () {});
+        if (fromTop && cfg.playSecs > 0) {
+          var adv = function () {
+            audio.removeEventListener('loadedmetadata', adv);
+            var d = audio.duration || 0;
+            if (d > 0) later(function () { beginAtLive(); }, (d + 0.8) * 1000);
+          };
+          audio.addEventListener('loadedmetadata', adv);
+        }
         fadeTo(1, 900);
         try { fetch('/api/play/' + s.id, { method: 'POST' }); } catch (e) {}
         if (cfg.playSecs > 0 && remainMs > 0) {
@@ -2111,13 +2131,14 @@ function hotspotBoothHtml(hs) {
           later(function () { beginAtLive(); }, remainMs);
         }
       }
-      function openBooth() {
+      function openBooth(startIdx) {
         isOpen = true;
         startMeter();
         full.hidden = false;
         openBtn.textContent = '✖ CLOSE THE BOOTH';
         cur = -1;
-        beginAtLive();
+        if (typeof startIdx === 'number') { previewTop = true; startChainFor(startIdx); }
+        else beginAtLive();
       }
       function closeBooth() {
         isOpen = false;
@@ -2127,6 +2148,7 @@ function hotspotBoothHtml(hs) {
         clearTimers();
         fadeTo(0, 350, function () { try { audio.pause(); } catch (e) {} });
         for (var d = 0; d < decks.length; d++) { if (decks[d]) decks[d].classList.remove('on'); }
+        updatePlayBtns();
         full.hidden = true;
       }
       openBtn.addEventListener('click', function () { if (isOpen) closeBooth(); else openBooth(); });
@@ -2139,6 +2161,12 @@ function hotspotBoothHtml(hs) {
         if (!isOpen) return;
         if (mode === 'chain') { chainStep(); return; }
         if (!(cfg.playSecs > 0)) beginAtLive();
+      });
+      var pbtns = document.querySelectorAll('[data-hs-play]');
+      for (var p2 = 0; p2 < pbtns.length; p2++) pbtns[p2].addEventListener('click', function () {
+        var idx = parseInt(this.getAttribute('data-hs-play'), 10);
+        if (!isOpen) openBooth(idx);
+        else { previewTop = true; startChainFor(idx); }
       });
       var sbtns = document.querySelectorAll('[data-hs-share]');
       for (var s2 = 0; s2 < sbtns.length; s2++) sbtns[s2].addEventListener('click', function () {
