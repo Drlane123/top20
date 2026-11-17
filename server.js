@@ -634,7 +634,7 @@ h2{letter-spacing:1px}
 .ringwrap.lit{background:radial-gradient(300px 150px at 50% 46%,rgba(43,92,255,.17),transparent 68%)}
 .ringwrap.dim{opacity:.72}
 .ttdeck{position:absolute;left:50%;bottom:0;transform:translateX(-50%);width:min(96%,620px);z-index:0;pointer-events:none;padding-bottom:4.4%}
-.tt-stage{position:relative}
+.tt-stage{position:relative;transform:rotate(-1.03deg)}
 .tt-base{display:block;width:100%;height:auto;filter:drop-shadow(0 16px 20px rgba(0,0,0,.5))}
 .tt-vinyl{position:absolute;left:16.91%;top:6.36%;width:49.34%;height:67.24%;border-radius:50%;overflow:hidden;z-index:1;background:repeating-radial-gradient(ellipse at 50% 50%,#08090f 0 2px,#141826 2px 4px);box-shadow:0 0 18px rgba(80,180,255,.35),inset 0 0 0 2px rgba(140,220,255,.35),inset 0 0 42px rgba(0,0,0,.85)}
 .tt-sheen{position:absolute;inset:0;border-radius:50%;background:linear-gradient(118deg,transparent 26%,rgba(70,190,255,.13) 44%,transparent 58%),linear-gradient(295deg,transparent 55%,rgba(255,80,180,.09) 72%,transparent 86%);filter:blur(9px)}
