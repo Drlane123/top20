@@ -8953,10 +8953,25 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
     ctx.lineWidth = 6; ctx.strokeStyle = '#c9a227'; ctx.strokeRect(cx, cy, cw, ch);
     drawChrome();
   }
+  var msk1 = null, msx1 = null;
   function onSeg(results) {
     ctx.save();
     ctx.clearRect(0, 0, W, H);
-    ctx.drawImage(results.segmentationMask, 0, 0, W, H);
+    // Person shape from BOTH mask channels (Nov 16 phone fix), same
+    // rule as the other studios: lesser of red and alpha per pixel.
+    if (!msk1) { msk1 = document.createElement('canvas'); msk1.width = 480; msk1.height = Math.max(2, Math.round(480 * H / W)); msx1 = msk1.getContext('2d', { willReadFrequently: true }); }
+    msx1.save(); msx1.clearRect(0, 0, msk1.width, msk1.height);
+    msx1.drawImage(results.segmentationMask, 0, 0, msk1.width, msk1.height);
+    msx1.restore();
+    try {
+      var mid1 = msx1.getImageData(0, 0, msk1.width, msk1.height), mdp1 = mid1.data;
+      for (var mi1 = 0; mi1 < mdp1.length; mi1 += 4) {
+        var mshape1 = mdp1[mi1] < mdp1[mi1 + 3] ? mdp1[mi1] : mdp1[mi1 + 3];
+        mdp1[mi1] = 255; mdp1[mi1 + 1] = 255; mdp1[mi1 + 2] = 255; mdp1[mi1 + 3] = mshape1;
+      }
+      msx1.putImageData(mid1, 0, 0);
+    } catch (e) {}
+    ctx.drawImage(msk1, 0, 0, W, H);
     ctx.globalCompositeOperation = 'source-in';
     ctx.drawImage(results.image, 0, 0, W, H);
     ctx.globalCompositeOperation = 'destination-over';
@@ -9411,7 +9426,11 @@ app.get("/admin/viewcast", requireAdmin, (req, res) => {
           // tonight is gone; this is the floor the tall screen was
           // perfect on.
           var gateT = 30;
-          for (var mi = 3; mi < mp.length; mi += 4) { if (mp[mi] < gateT) mp[mi] = 0; }
+          // Person shape from BOTH mask channels first (Nov 16 phone
+          // fix): phones can deliver the mask opaque, its shape only
+          // in the red channel — the lesser of red and alpha is the
+          // shape on every browser, and the gate judges that shape.
+          for (var mi = 3; mi < mp.length; mi += 4) { var mshape2 = mp[mi - 3] < mp[mi] ? mp[mi - 3] : mp[mi]; mp[mi] = mshape2 < gateT ? 0 : mshape2; }
           maskX.putImageData(md, 0, 0);
         } catch (e) {}
         hctx.save(); hctx.clearRect(0, 0, W, H);
@@ -10676,6 +10695,8 @@ app.get("/admin/interview", requireAdmin, (req, res) => {
   var pctx = personC.getContext('2d');
   var maskC = document.createElement('canvas'); maskC.width = W; maskC.height = H;
   var maskX = maskC.getContext('2d');
+  var mskS = document.createElement('canvas'); mskS.width = 480; mskS.height = 270;
+  var msx = mskS.getContext('2d', { willReadFrequently: true });
   var setC = document.createElement('canvas'); setC.width = W; setC.height = H;
   var setX = setC.getContext('2d');
   var medC = document.createElement('canvas'); medC.width = W; medC.height = H;
@@ -10853,13 +10874,27 @@ app.get("/admin/interview", requireAdmin, (req, res) => {
     // Viewcast studio (Nov 6), so a phone camera never sits as a column.
     if (W > H && camW < camH) pfW = W;
     var pfX = Math.round((W - pfW) / 2), pfY = Math.round(pfH > H ? (H - pfH) * 0.25 : (H - pfH) / 2);
-    maskX.save(); maskX.clearRect(0, 0, W, H);
-    maskX.fillStyle = '#000'; maskX.fillRect(0, 0, W, H);
-    maskX.drawImage(results.segmentationMask, pfX, pfY, pfW, pfH);
-    maskX.restore();
+    // Person shape from BOTH mask channels (Nov 16 phone fix): a
+    // desktop browser hands the mask back with the shape in its
+    // transparency; a phone can hand it back opaque, the shape only
+    // in its red channel. The lesser of red and alpha per pixel is
+    // the true shape on every browser — build the cutout alpha
+    // ourselves on a small mask canvas and never trust the
+    // delivered transparency alone again.
+    var mscX = mskS.width / W, mscY = mskS.height / H;
+    msx.save(); msx.clearRect(0, 0, mskS.width, mskS.height);
+    msx.drawImage(results.segmentationMask, pfX * mscX, pfY * mscY, pfW * mscX, pfH * mscY);
+    msx.restore();
+    try {
+      var mid = msx.getImageData(0, 0, mskS.width, mskS.height), mdp = mid.data;
+      for (var mi = 0; mi < mdp.length; mi += 4) {
+        var mshape = mdp[mi] < mdp[mi + 3] ? mdp[mi] : mdp[mi + 3];
+        mdp[mi] = 255; mdp[mi + 1] = 255; mdp[mi + 2] = 255; mdp[mi + 3] = mshape;
+      }
+      msx.putImageData(mid, 0, 0);
+    } catch (e) {}
     pctx.save(); pctx.clearRect(0, 0, W, H);
-    try { pctx.filter = 'blur(4px)'; } catch (e) {}
-    pctx.drawImage(maskC, 0, 0, W, H);
+    pctx.drawImage(mskS, 0, 0, W, H);
     try { pctx.filter = 'none'; } catch (e) {}
     pctx.globalCompositeOperation = 'source-in';
     var tint = 'brightness(.98) saturate(1.04)';
