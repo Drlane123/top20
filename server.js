@@ -1833,10 +1833,12 @@ async function emailHotSpotSlot(slot) {
   if (mailStampGet(stampKey) === identity) return { status: "already" };
   const song = db.prepare("SELECT artist_id FROM songs WHERE id = ?").get(card.id);
   const contact = song ? artistContact(song.artist_id) : {};
-  if (!contact.email) { mailStampSet(stampKey, identity); console.log("[mail] hot spot " + slot + ": no email on file for song " + card.id); return { status: "no-email" }; }
+  const record = (status, reason) => { try { mailStampSet("hs_mail_last_" + slot, JSON.stringify({ identity, status, reason: reason || "", artist: contact.name || card.artist || "", email: contact.email || "", title: card.title || "", at: new Date().toISOString() })); } catch (e) {} };
+  if (!contact.email) { mailStampSet(stampKey, identity); record("no-email"); console.log("[mail] hot spot " + slot + ": no email on file for song " + card.id); return { status: "no-email" }; }
   const m = hotspotEmailText(contact.name || card.artist, card, slot);
   const r = await sendEmail(contact.email, m.subject, m.text);
   mailStampSet(stampKey, identity);
+  record(r.sent ? "sent" : "queued", r.reason || "");
   return { status: r.sent ? "sent" : "queued", artist: contact.name || card.artist, email: contact.email };
 }
 function hotspotEmailSweep() { emailHotSpotSlot(1).catch(() => {}); emailHotSpotSlot(2).catch(() => {}); }
@@ -2224,6 +2226,26 @@ function hotspotBoothHtml(hs) {
     </script>
   </div>`;
 }
+function hsMailLine(slot, dealt) {
+  if (!dealt) return "";
+  let identity;
+  if (dealt.placed) {
+    let setOn = "";
+    try { const row = db.prepare("SELECT value FROM admin_config WHERE key = ?").get("hotspot_slot" + slot); if (row && row.value) setOn = JSON.parse(row.value).set_on || ""; } catch (e) {}
+    identity = "placed:" + dealt.id + ":" + setOn;
+  } else identity = "dealt:" + dealt.id + ":" + todayStr();
+  let rec = null;
+  try { const raw = mailStampGet("hs_mail_last_" + slot); if (raw) rec = JSON.parse(raw); } catch (e) {}
+  const when = (iso) => { try { return new Date(iso).toLocaleString("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit", month: "short", day: "numeric" }); } catch (e) { return ""; } };
+  if (rec && rec.identity === identity) {
+    if (rec.status === "sent") return `<p class="sub" style="margin:2px 0 10px;color:#7dd87d">\u2709\uFE0F Email SENT to <b style="color:#fff">${esc(rec.artist)}</b> (${esc(rec.email)}) — ${esc(when(rec.at))} Central</p>`;
+    if (rec.status === "no-email") return `<p class="sub" style="margin:2px 0 10px;color:#ffb35c">\u26A0\uFE0F No email on file for <b style="color:#fff">${esc(rec.artist)}</b> — no email went out for this Hot Spot. Get their email onto their account and it sends next time.</p>`;
+    return `<p class="sub" style="margin:2px 0 10px;color:#ffb35c">\u2709\uFE0F Email for <b style="color:#fff">${esc(rec.artist)}</b> is QUEUED — ${rec.reason === "unconfigured" ? "mail is not switched on, so it is being held as ready-to-send" : "the send did not go through — it is being held as ready-to-send"}. (${esc(when(rec.at))})</p>`;
+  }
+  if (mailStampGet("hs_emailed_" + slot) === identity)
+    return `<p class="sub" style="margin:2px 0 10px;color:#9fb6dd">\u2709\uFE0F The email for this placement fired when you set it. (Full on-desk email records show here from your next placement on.)</p>`;
+  return "";
+}
 function hotspotAdminHtml(songs) {
   const hs = todaysHotSpots();
   const st = hs.settings;
@@ -2235,6 +2257,7 @@ function hotspotAdminHtml(songs) {
     <form method="post" action="/admin/hotspots/place" style="margin:12px 0">
       <input type="hidden" name="slot" value="${slot}">
       <label class="sub">HOT SPOT ${slot} — on the deck now: <b style="color:#fff">${dealt ? esc(dealt.title) + " — " + esc(dealt.artist) : "—"}</b>${dealt ? (dealt.placed ? " (your pick)" : " (buzz deal)") : ""}<br>
+      ${hsMailLine(slot, dealt)}
       <select name="song_id" style="${selStyle}">
         <option value="">— Buzz deal (no placement) —</option>
         ${songs.map((s) => `<option value="${s.id}"${s.id === pid ? " selected" : ""}>${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
