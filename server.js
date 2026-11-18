@@ -1817,7 +1817,7 @@ function hotspotEmailText(artistName, card, slot) {
       "Listen here: https://hottop20.com\nYour song page: https://hottop20.com/song/" + card.id + "\n\n— HOT TOP 20",
   };
 }
-async function emailHotSpotSlot(slot) {
+async function emailHotSpotSlot(slot, force) {
   const hs = todaysHotSpots();
   const card = hs.pair[slot - 1];
   if (!card) return { status: "empty" };
@@ -1830,7 +1830,7 @@ async function emailHotSpotSlot(slot) {
     identity = "dealt:" + card.id + ":" + todayStr();
   }
   const stampKey = "hs_emailed_" + slot;
-  if (mailStampGet(stampKey) === identity) return { status: "already" };
+  if (!force && mailStampGet(stampKey) === identity) return { status: "already" };
   const song = db.prepare("SELECT artist_id FROM songs WHERE id = ?").get(card.id);
   const contact = song ? artistContact(song.artist_id) : {};
   const record = (status, reason) => { try { mailStampSet("hs_mail_last_" + slot, JSON.stringify({ identity, status, reason: reason || "", artist: contact.name || card.artist || "", email: contact.email || "", title: card.title || "", at: new Date().toISOString() })); } catch (e) {} };
@@ -2246,6 +2246,12 @@ function hsMailLine(slot, dealt) {
     return `<p class="sub" style="margin:2px 0 10px;color:#9fb6dd">\u2709\uFE0F The email for this placement fired when you set it. (Full on-desk email records show here from your next placement on.)</p>`;
   return "";
 }
+function hsEmailInit(songs, pid) {
+  const s = (songs || []).find((x) => x.id === pid);
+  if (!s) return "Pick a song above — its artist's email shows right here.";
+  if (s.email) return "\u2709\uFE0F " + esc(s.artist) + "'s email: " + esc(s.email) + " — they get the Hot Spot email the moment you set this deck.";
+  return "\u26A0\uFE0F No email on file for " + esc(s.artist) + " — they can't be emailed until it's on their account.";
+}
 function hotspotAdminHtml(songs) {
   const hs = todaysHotSpots();
   const st = hs.settings;
@@ -2258,12 +2264,18 @@ function hotspotAdminHtml(songs) {
       <input type="hidden" name="slot" value="${slot}">
       <label class="sub">HOT SPOT ${slot} — on the deck now: <b style="color:#fff">${dealt ? esc(dealt.title) + " — " + esc(dealt.artist) : "—"}</b>${dealt ? (dealt.placed ? " (your pick)" : " (buzz deal)") : ""}<br>
       ${hsMailLine(slot, dealt)}
-      <select name="song_id" style="${selStyle}">
+      <select id="hsSel${slot}" onchange="hsShowEmail(${slot})" name="song_id" style="${selStyle}">
         <option value="">— Buzz deal (no placement) —</option>
-        ${songs.map((s) => `<option value="${s.id}"${s.id === pid ? " selected" : ""}>${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)})</option>`).join("")}
-      </select></label>
+        ${songs.map((s) => `<option data-email="${esc(s.email || "")}" data-artist="${esc(s.artist)}" value="${s.id}"${s.id === pid ? " selected" : ""}>${esc(s.title)} — ${esc(s.artist)} (${esc(s.genre)}) — ${s.email ? esc(s.email) : "NO EMAIL ON FILE"}</option>`).join("")}
+      </select><br>
+      <span id="hsEmail${slot}" style="font-size:15px">${hsEmailInit(songs, pid)}</span></label>
       <button class="btn btn-blue" type="submit">Set Hot Spot ${slot}</button>
-    </form>`;
+    </form>${dealt ? `
+    <form method="post" action="/admin/hotspots/send" style="margin:2px 0 16px">
+      <input type="hidden" name="slot" value="${slot}">
+      <button class="btn" type="submit" style="background:#14532d;color:#fff;border:1px solid #3fae5a">\u2709\uFE0F Send the Hot Spot email to ${esc(dealt.artist)} now</button>
+      <span class="sub"> — for the song on this deck right now. Auto-send fires when you set a deck; this button sends it by hand, any time.</span>
+    </form>` : ""}`;
   };
   return `
   <div class="panel" style="border:2px solid #ff7847">
@@ -2271,6 +2283,17 @@ function hotspotAdminHtml(songs) {
     <p class="sub">The DJ booth on the home page, featuring TODAY’S HOT SPOTS — two songs at a time, dealt by <b style="color:#fff">buzz</b> (plays, likes, shares and the artist buzz score). A Hot Spot does <b style="color:#fff">not</b> have to be charting, and it never touches a score or a rank — it’s a showcase. Place a song yourself and it takes that deck immediately; clear it and the buzz deal runs that deck again. Pairs rotate on their own every slot.</p>
     ${slotForm(1)}
     ${slotForm(2)}
+    <script>
+    function hsShowEmail(slot){
+      var sel=document.getElementById('hsSel'+slot); if(!sel) return;
+      var line=document.getElementById('hsEmail'+slot); if(!line) return;
+      var opt=sel.options[sel.selectedIndex];
+      if(!opt || !opt.value){ line.textContent='Buzz deal — no placement on this deck, so no email to send.'; line.style.color='#9fb6dd'; return; }
+      var em=opt.getAttribute('data-email')||''; var ar=opt.getAttribute('data-artist')||'That artist';
+      if(em){ line.textContent='\u2709\uFE0F '+ar+'\u2019s email: '+em+' — they get the Hot Spot email the moment you set this deck.'; line.style.color='#7dd87d'; }
+      else { line.textContent='\u26A0\uFE0F No email on file for '+ar+' — they can\u2019t be emailed until it\u2019s on their account.'; line.style.color='#ffb35c'; }
+    }
+    </script>
     <form method="post" action="/admin/hotspots/settings" style="margin-top:16px">
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px">
         <label class="sub">Hot Spots per day (slate)<br>
@@ -7977,6 +8000,17 @@ app.post("/admin/hotspots/place", requireAdmin, async (req, res) => {
     : mail.status === "already" ? " (That artist already got the Hot Spot email for this run.)" : "";
   return back("Hot Spot " + slot + " set \u2014 it's in the DJ booth on the home page right now." + note);
 });
+app.post("/admin/hotspots/send", requireAdmin, async (req, res) => {
+  const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
+  const slot = Number(req.body.slot);
+  if (slot !== 1 && slot !== 2) return back("That Hot Spot slot doesn't exist.");
+  const mail = await emailHotSpotSlot(slot, true).catch(() => ({ status: "error" }));
+  if (mail.status === "sent") return back("\u2709\uFE0F Sent the Hot Spot email to " + (mail.artist || "the artist") + " (" + (mail.email || "") + ") just now, by hand.");
+  if (mail.status === "queued") return back("\u2709\uFE0F The email for that deck did not go through just now — it is saved as ready-to-send and the desk line under the deck shows it.");
+  if (mail.status === "no-email") return back("No email on file for that artist, so there is nothing to send to. Get their email onto their account first.");
+  if (mail.status === "empty") return back("That deck is empty right now — set a Hot Spot first, then send.");
+  return back("The send did not go through — try again in a moment.");
+});
 app.post("/admin/hotspots/settings", requireAdmin, (req, res) => {
   const back = (m) => res.redirect("/admin/placements?msg=" + encodeURIComponent(m));
   const cur = hotspotSettings();
@@ -8223,7 +8257,7 @@ app.post("/admin/mail/test", requireAdmin, async (req, res) => {
 
 app.get("/admin/placements", requireAdmin, async (req, res) => {
   const songs = db.prepare(`
-    SELECT s.id, s.title, s.genre, u.name AS artist FROM songs s
+    SELECT s.id, s.title, s.genre, u.name AS artist, u.email AS email FROM songs s
     JOIN users u ON u.id = s.artist_id WHERE s.status = 'live' ORDER BY s.title`).all();
   const latest = latestChartDate(db);
   const chartRows = latest ? db.prepare(`
